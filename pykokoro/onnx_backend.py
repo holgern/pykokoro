@@ -37,6 +37,9 @@ ModelQuality = Literal[
 ]
 DEFAULT_MODEL_QUALITY: ModelQuality = "fp32"
 
+# Provider type
+ProviderType = Literal["auto", "cpu", "cuda", "openvino", "directml", "coreml"]
+
 # Quality to filename mapping
 MODEL_QUALITY_FILES: dict[str, str] = {
     "fp32": "model.onnx",
@@ -434,6 +437,7 @@ class Kokoro:
         model_path: Path | None = None,
         voices_path: Path | None = None,
         use_gpu: bool = False,
+        provider: ProviderType | None = None,
         vocab_version: str = "v1.0",
         espeak_config: EspeakConfig | None = None,
         tokenizer_config: Optional["TokenizerConfig"] = None,
@@ -445,7 +449,15 @@ class Kokoro:
         Args:
             model_path: Path to the ONNX model file (auto-downloaded if None)
             voices_path: Path to the voices.bin file (auto-downloaded if None)
-            use_gpu: Whether to use GPU acceleration (requires onnxruntime-gpu)
+            use_gpu: Deprecated. Use provider parameter instead.
+                Legacy GPU flag for backward compatibility.
+            provider: Execution provider for ONNX Runtime:
+                - "auto": Auto-select best available (default)
+                - "cpu": CPU only
+                - "cuda": NVIDIA CUDA GPU (requires onnxruntime-gpu)
+                - "openvino": Intel OpenVINO (requires openvino)
+                - "directml": DirectML for Windows (requires onnxruntime-directml)
+                - "coreml": Apple CoreML (macOS only)
             vocab_version: Vocabulary version for tokenizer
             espeak_config: Optional espeak-ng configuration
                 (deprecated, use tokenizer_config)
@@ -456,7 +468,17 @@ class Kokoro:
         self._session: rt.InferenceSession | None = None
         self._voices_data: dict[str, np.ndarray] | None = None
         self._np = np
+
+        # Deprecation warning for use_gpu
+        if use_gpu:
+            logger.warning(
+                "The 'use_gpu' parameter is deprecated and will be removed in a "
+                "future version. Use 'provider' parameter instead. "
+                "Example: Kokoro(provider='cuda') or Kokoro(provider='auto')"
+            )
+
         self._use_gpu = use_gpu
+        self._provider: ProviderType | None = provider
 
         # Resolve model quality from config if not specified
         resolved_quality: ModelQuality = DEFAULT_MODEL_QUALITY
@@ -510,6 +532,89 @@ class Kokoro:
         if not is_config_downloaded():
             download_config()
 
+    def _select_providers(
+        self,
+        provider: ProviderType | None,
+        use_gpu: bool,
+    ) -> list[str]:
+        """
+        Select ONNX Runtime execution providers based on preference.
+
+        Args:
+            provider: Explicit provider ('auto', 'cpu', 'cuda', 'openvino', etc.)
+            use_gpu: Legacy GPU flag (for backward compatibility)
+
+        Returns:
+            List of providers in priority order
+
+        Raises:
+            RuntimeError: If requested provider is not available
+            ValueError: If provider name is invalid
+        """
+        available = rt.get_available_providers()
+
+        # Environment variable override (highest priority)
+        env_provider = os.getenv("ONNX_PROVIDER")
+        if env_provider:
+            logger.info(f"Using provider from ONNX_PROVIDER env: {env_provider}")
+            return [env_provider, "CPUExecutionProvider"]
+
+        # Auto-selection logic
+        if provider == "auto" or (provider is None and use_gpu):
+            # Priority: CUDA > OpenVINO > CoreML > DirectML
+            for prov in [
+                "CUDAExecutionProvider",
+                "OpenVINOExecutionProvider",
+                "CoreMLExecutionProvider",
+                "DmlExecutionProvider",
+            ]:
+                if prov in available:
+                    logger.info(f"Auto-selected provider: {prov}")
+                    return [prov, "CPUExecutionProvider"]
+            logger.info("Auto-selection: No accelerators found, using CPU")
+            return ["CPUExecutionProvider"]
+
+        # Default to CPU if no provider specified and use_gpu=False
+        if provider is None:
+            logger.info("Using CPU provider")
+            return ["CPUExecutionProvider"]
+
+        # Explicit provider selection
+        provider_map = {
+            "cpu": "CPUExecutionProvider",
+            "cuda": "CUDAExecutionProvider",
+            "openvino": "OpenVINOExecutionProvider",
+            "directml": "DmlExecutionProvider",
+            "coreml": "CoreMLExecutionProvider",
+        }
+
+        selected = provider_map.get(provider.lower())
+        if not selected:
+            raise ValueError(
+                f"Unknown provider: {provider}. "
+                f"Valid options: {list(provider_map.keys())}"
+            )
+
+        if selected not in available:
+            # Provide helpful installation message
+            install_hints = {
+                "CUDAExecutionProvider": "pip install pykokoro[gpu]",
+                "OpenVINOExecutionProvider": "pip install pykokoro[openvino]",
+                "DmlExecutionProvider": "pip install pykokoro[directml]",
+                "CoreMLExecutionProvider": "pip install pykokoro[coreml]",
+            }
+            hint = install_hints.get(
+                selected, f"install the required package for {selected}"
+            )
+            raise RuntimeError(
+                f"{provider.upper()} provider requested but not available.\n"
+                f"Install with: {hint}\n"
+                f"Available providers: {available}"
+            )
+
+        logger.info(f"Using explicitly selected provider: {selected}")
+        return [selected, "CPUExecutionProvider"]
+
     def _init_kokoro(self) -> None:
         """Initialize the ONNX session and load voices."""
         if self._session is not None:
@@ -517,27 +622,60 @@ class Kokoro:
 
         self._ensure_models()
 
-        # Set up execution providers based on GPU preference and environment
-        providers = ["CPUExecutionProvider"]
-        if self._use_gpu:
-            available = rt.get_available_providers()
-            # Prefer CUDA, then CoreML, then DirectML
-            for provider in [
-                "CUDAExecutionProvider",
-                "CoreMLExecutionProvider",
-                "DmlExecutionProvider",
-            ]:
-                if provider in available:
-                    providers = [provider, "CPUExecutionProvider"]
-                    break
+        # Select execution providers
+        providers = self._select_providers(self._provider, self._use_gpu)
 
-        # Allow environment override
-        env_provider = os.getenv("ONNX_PROVIDER")
-        if env_provider:
-            providers = [env_provider]
+        # Try to load ONNX model with automatic fallback
+        # If the primary provider fails and we're in auto mode, try CPU
+        session_loaded = False
+        last_error = None
 
-        # Load ONNX model
-        self._session = rt.InferenceSession(str(self._model_path), providers=providers)
+        for attempt, provider_list in enumerate([providers, ["CPUExecutionProvider"]]):
+            # Skip second attempt if we already tried CPU or 
+            # if explicit provider was requested
+            if attempt == 1:
+                if providers == ["CPUExecutionProvider"]:
+                    break  # Already tried CPU
+                if self._provider and self._provider != "auto":
+                    break  # User explicitly requested a provider, don't fallback
+                if providers[0] == "CPUExecutionProvider":
+                    break  # Primary was already CPU
+
+            try:
+                self._session = rt.InferenceSession(
+                    str(self._model_path), providers=provider_list
+                )
+                session_loaded = True
+
+                # Log what was actually loaded
+                actual_providers = self._session.get_providers()
+                logger.info(f"Loaded ONNX session with providers: {actual_providers}")
+
+                # Warn if we had to fallback
+                if attempt == 1:
+                    failed_provider = providers[0]
+                    logger.warning(
+                        f"Failed to load model with {failed_provider}, "
+                        f"fell back to CPU. Error: {last_error}"
+                    )
+
+                break
+
+            except Exception as e:
+                last_error = str(e)
+                if attempt == 0:
+                    # First attempt failed, will try fallback
+                    logger.debug(f"Provider {provider_list[0]} failed: {e}")
+                    continue
+                else:
+                    # Fallback also failed, re-raise
+                    raise
+
+        if not session_loaded:
+            raise RuntimeError(
+                f"Failed to initialize ONNX session with providers {providers}. "
+                f"Last error: {last_error}"
+            )
 
         # Load voices (numpy archive with voice style vectors)
         self._voices_data = dict(np.load(str(self._voices_path), allow_pickle=True))

@@ -20,7 +20,7 @@ urls = { Homepage = "https://github.com/holgern/pykokoro" }
 dependencies = [
     "kokorog2p",
     "numpy",
-    "onnxruntime",
+    "onnxruntime>=1.17.0",
     "platformdirs",
     "chardet",
     "charset-normalizer",
@@ -51,6 +51,16 @@ dev = [
     "pytest-cov>=4.0.0",
     "ruff>=0.1.0",
     "mypy>=1.0.0",
+]
+gpu = ["onnxruntime-gpu>=1.17.0"]
+openvino = ["onnxruntime-openvino>=1.17.0"]
+directml = ["onnxruntime-directml>=1.17.0"]
+coreml = ["coremltools>=7.0"]
+all = [
+    "onnxruntime-gpu>=1.17.0",
+    "onnxruntime-openvino>=1.17.0",
+    "onnxruntime-directml>=1.17.0",
+    "coremltools>=7.0",
 ]
 
 [tool.setuptools_scm]

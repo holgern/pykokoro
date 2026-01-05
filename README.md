@@ -17,23 +17,54 @@ A Python library for Kokoro TTS (Text-to-Speech) using ONNX runtime.
 
 ## Installation
 
+### Basic Installation (CPU only)
+
 ```bash
 pip install pykokoro
 ```
 
-### Optional Dependencies
+### GPU and Accelerator Support
 
-For GPU acceleration:
+PyKokoro supports multiple hardware accelerators for faster inference:
+
+#### NVIDIA CUDA GPU
 
 ```bash
-# CUDA
-pip install onnxruntime-gpu
+pip install pykokoro[gpu]
+```
 
-# macOS (CoreML)
-# Already included in onnxruntime on macOS
+#### Intel OpenVINO
 
-# Windows (DirectML)
-pip install onnxruntime-directml
+**Note:** OpenVINO is currently incompatible with Kokoro models due to dynamic rank tensor requirements. The provider will automatically fall back to CPU if OpenVINO fails.
+
+```bash
+pip install pykokoro[openvino]
+```
+
+#### DirectML (Windows - AMD/Intel/NVIDIA GPUs)
+
+```bash
+pip install pykokoro[directml]
+```
+
+#### Apple CoreML (macOS)
+
+```bash
+pip install pykokoro[coreml]
+```
+
+#### All Accelerators
+
+```bash
+pip install pykokoro[all]
+```
+
+### Performance Comparison
+
+To find the best provider for your system, run the benchmark:
+
+```bash
+python examples/gpu_benchmark.py
 ```
 
 ## Quick Start
@@ -42,8 +73,8 @@ pip install onnxruntime-directml
 import pykokoro
 import soundfile as sf
 
-# Initialize the TTS engine
-tts = pykokoro.Kokoro()
+# Initialize the TTS engine (auto-selects best provider)
+tts = pykokoro.Kokoro(provider="auto")
 
 # Generate speech
 text = "Hello, world! This is Kokoro speaking."
@@ -53,6 +84,47 @@ audio, sample_rate = tts.create(text, voice="af_sarah", speed=1.0, lang="en-us")
 sf.write("output.wav", audio, sample_rate)
 ```
 
+## Hardware Acceleration
+
+### Automatic Provider Selection (Recommended)
+
+```python
+import pykokoro
+
+# Auto-select best available provider (CUDA > CoreML > DirectML > CPU)
+# Note: OpenVINO is attempted but will fall back to next priority if incompatible
+tts = pykokoro.Kokoro(provider="auto")
+```
+
+### Explicit Provider Selection
+
+```python
+# Force specific provider
+tts = pykokoro.Kokoro(provider="cuda")      # NVIDIA CUDA
+tts = pykokoro.Kokoro(provider="openvino")  # Intel OpenVINO (currently incompatible, will raise error)
+tts = pykokoro.Kokoro(provider="directml")  # Windows DirectML
+tts = pykokoro.Kokoro(provider="coreml")    # Apple CoreML
+tts = pykokoro.Kokoro(provider="cpu")       # CPU only
+```
+
+### Check Available Providers
+
+```bash
+# See all available providers on your system
+python examples/provider_info.py
+
+# Benchmark all providers
+python examples/gpu_benchmark.py
+```
+
+### Environment Variable Override
+
+```bash
+# Force a specific provider via environment variable
+export ONNX_PROVIDER="OpenVINOExecutionProvider"
+python your_script.py
+```
+
 ## Usage Examples
 
 ### Basic Text-to-Speech
@@ -60,8 +132,8 @@ sf.write("output.wav", audio, sample_rate)
 ```python
 import pykokoro
 
-# Create TTS instance
-tts = pykokoro.Kokoro(use_gpu=True, model_quality="fp16")
+# Create TTS instance with GPU acceleration and fp16 model
+tts = pykokoro.Kokoro(provider="cuda", model_quality="fp16")
 
 # Generate audio
 audio, sr = tts.create("Hello world", voice="af_nicole", lang="en-us")
