@@ -2,7 +2,8 @@
 """
 Phoneme comparison between pykokoro and misaki G2P systems.
 
-This script compares phoneme outputs from two different G2P (grapheme-to-phoneme) systems:
+This script compares phoneme outputs from two different
+G2P (grapheme-to-phoneme) systems:
 1. pykokoro's kokorog2p (dictionary + espeak fallback)
 2. misaki's G2P with espeak-ng fallback
 
@@ -42,7 +43,8 @@ import pykokoro
 
 # Import misaki if available
 try:
-    from misaki import en, espeak
+    import misaki.en  # noqa: F401
+    import misaki.espeak  # noqa: F401
 
     MISAKI_AVAILABLE = True
 except ImportError:
@@ -96,16 +98,6 @@ This text includes various linguistic challenges to test phoneme generation accu
 across different G2P systems, including contractions, homographs, informal speech,
 and complex word structures.
 """
-
-
-# Import misaki if available
-try:
-    from misaki import en, espeak
-
-    MISAKI_AVAILABLE = True
-except ImportError:
-    MISAKI_AVAILABLE = False
-    print("WARNING: misaki not available. Install with: pip install misaki")
 
 
 # Test text with various challenging cases
@@ -364,7 +356,11 @@ def generate_audio_narration(differences, output_file="phoneme_diff_report.wav")
 
         # Introduction
         word_count = len(unique_differences)
-        intro_text = f"Phoneme comparison report. Found {len(differences)} differences between pykokoro and misaki across {word_count} unique words. You will hear each unique word once."
+        intro_text = (
+            f"Phoneme comparison report. Found {len(differences)} differences "
+            f"between pykokoro and misaki across {word_count} unique words. "
+            "You will hear each unique word once."
+        )
         intro_samples, sample_rate = kokoro.create(
             intro_text, voice="af_bella", speed=1.0, lang="en-us"
         )
@@ -414,7 +410,10 @@ def generate_audio_narration(differences, output_file="phoneme_diff_report.wav")
             all_samples.append(word2_s)
 
         # Summary
-        summary = f"End of report. You heard {len(unique_differences)} unique words with phoneme differences."
+        summary = (
+            f"End of report. You heard {len(unique_differences)} unique words "
+            "with phoneme differences."
+        )
         summary_s, _ = kokoro.create(summary, voice="af_bella", speed=1.0, lang="en-us")
         all_samples.append(silence)
         all_samples.append(summary_s)
@@ -472,7 +471,8 @@ def main():
     else:
         print("\nNo input file provided. Using default test text.")
         print(
-            "(To analyze a custom file, run: python phoneme_diff_comparison.py your_file.txt)"
+            "(To analyze a custom file, run: "
+            "python phoneme_diff_comparison.py your_file.txt)"
         )
         text = DEFAULT_TEST_TEXT.strip()
 

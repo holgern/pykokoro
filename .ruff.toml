@@ -26,6 +26,7 @@ exclude = ["setup/*", "notebooks/*"]
 "kokorog2p/ko/regular.py" = ["F841"]  # Unused rule variables for future verbose mode
 "kokorog2p/ko/special.py" = ["F841"]  # Unused rule variables for future verbose mode
 "kokorog2p/ko/jamo_to_ipa.py" = ["E501"]  # Long IPA mapping dictionaries
+"examples/contractions_advanced.py" = ["E501"]  # Long dialogue lines for testing contractions
 
 [lint.isort]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]

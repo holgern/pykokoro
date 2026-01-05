@@ -19,6 +19,7 @@ import os
 import soundfile as sf
 
 import pykokoro
+from pykokoro import VoiceBlend
 
 # Enable phoneme debugging to see what phonemes are generated
 os.environ["PYKOKORO_DEBUG_PHONEMES"] = "1"

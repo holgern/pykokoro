@@ -104,10 +104,13 @@ PODCAST_SCRIPT = [
 ]
 
 
+SAMPLE_RATE = 24000  # Kokoro model sample rate
+
+
 def random_pause(min_duration: float = 0.3, max_duration: float = 1.0) -> np.ndarray:
     """Generate random silence between speech segments."""
     silence_duration = random.uniform(min_duration, max_duration)
-    return np.zeros(int(silence_duration * sample_rate), dtype=np.float32)
+    return np.zeros(int(silence_duration * SAMPLE_RATE), dtype=np.float32)
 
 
 def main():
@@ -116,6 +119,7 @@ def main():
     kokoro = pykokoro.Kokoro()
 
     audio_parts = []
+    sample_rate = SAMPLE_RATE  # Initialize with default
 
     print(f"\nGenerating podcast with {len(PODCAST_SCRIPT)} segments...\n")
 
