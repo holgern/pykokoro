@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pykokoro*"]
+
+[project]
+name = "pykokoro"
+description = "A python library for Kokoro TTS"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Holger Nahrstaedt", email = "nahrstaedt@gmail.com"}
+]
+keywords = ["tts", "text-to-speech", "kokoro", "phonemizer", "espeak"]
+urls = { Homepage = "https://github.com/holgern/pykokoro" }
+dependencies = [
+    "kokorog2p",
+    "numpy",
+    "onnxruntime",
+    "platformdirs",
+    "chardet",
+    "charset-normalizer",
+    "huggingface-hub",
+]
+classifiers=[
+    'Development Status :: 4 - Beta',
+    'Intended Audience :: Developers',
+    'Intended Audience :: Science/Research',
+    'License :: OSI Approved :: Apache Software License',
+    'Operating System :: OS Independent',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Topic :: Multimedia :: Sound/Audio :: Speech',
+    'Topic :: Scientific/Engineering :: Artificial Intelligence',
+    'Topic :: Software Development :: Libraries :: Python Modules',
+    'Topic :: Text Processing :: Linguistic',
+]
+
+dynamic=["version"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+[tool.setuptools_scm]
+write_to = "pykokoro/_version.py"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false  # Disabled: too many errors from third-party libs without type stubs
+warn_unused_configs = true
+disallow_untyped_defs = false  # Relaxed: allow some untyped defs for practicality
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = false  # Relaxed
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = false  # Disabled: too many errors from third-party libs
+warn_unreachable = true
+strict_equality = true
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["pykokoro"]
+branch = true
+omit = ["pykokoro/_version.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
