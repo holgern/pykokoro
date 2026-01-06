@@ -17,11 +17,11 @@ Kokoro
 **Key Methods:**
 
 * ``create()`` - Main text-to-speech method with support for:
-  
+
   - Manual pause markers (``enable_pauses=True``)
   - Automatic natural pauses (``split_mode`` + ``trim_silence=True``)
   - Pause variance control (``pause_variance``, ``random_seed``)
-  
+
 * ``create_from_phonemes()`` - Generate from IPA phonemes
 * ``create_from_tokens()`` - Generate from token IDs
 * ``create_stream()`` - Async streaming generation

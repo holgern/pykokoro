@@ -12,8 +12,13 @@ The main entry point is the ``Kokoro`` class:
 
    from pykokoro import Kokoro
 
-   # Initialize with defaults
+   # Initialize with defaults (HuggingFace)
    kokoro = Kokoro()
+
+   # Or specify model source
+   kokoro = Kokoro(model_source="huggingface")  # Default
+   kokoro = Kokoro(model_source="github", model_variant="v1.0")
+   kokoro = Kokoro(model_source="github", model_variant="v1.1-zh")
 
    # Or specify model quality
    kokoro = Kokoro(model_quality="q8")  # q8, q6, or fp16
@@ -40,20 +45,40 @@ The recommended way is using a context manager:
 Model Quality Options
 ~~~~~~~~~~~~~~~~~~~~~
 
-* ``fp16`` - Full precision (highest quality, largest size)
+Available quality options vary by model source:
+
+**HuggingFace (Default):**
+
+* ``fp32`` - Full precision (highest quality, largest size)
+* ``fp16`` - Half precision (good balance)
 * ``q8`` - 8-bit quantized (default, good balance)
-* ``q6`` - 6-bit quantized (smaller, slightly lower quality)
+* ``q8f16`` - 8-bit with fp16
+* ``q4`` - 4-bit quantized (smallest, faster)
+* ``q4f16`` - 4-bit with fp16
+* ``uint8`` - Unsigned 8-bit
+* ``uint8f16`` - Unsigned 8-bit with fp16
+
+**GitHub v1.0:**
+
+* ``fp32`` - Full precision
+* ``fp16`` - Half precision
+* ``fp16-gpu`` - GPU-optimized fp16
+* ``q8`` - 8-bit quantized
+
+**GitHub v1.1-zh:**
+
+* ``fp32`` - Full precision only
 
 .. code-block:: python
 
-   # High quality
-   kokoro_hq = Kokoro(model_quality="fp16")
+   # High quality HuggingFace model
+   kokoro_hq = Kokoro(model_source="huggingface", model_quality="fp16")
 
-   # Balanced (default)
-   kokoro = Kokoro(model_quality="q8")
+   # GitHub v1.0 with GPU optimization
+   kokoro_gpu = Kokoro(model_source="github", model_variant="v1.0", model_quality="fp16-gpu")
 
-   # Compact
-   kokoro_small = Kokoro(model_quality="q6")
+   # GitHub v1.1-zh (103 voices)
+   kokoro_zh = Kokoro(model_source="github", model_variant="v1.1-zh", model_quality="fp32")
 
 Generating Speech
 -----------------
@@ -107,12 +132,22 @@ Voice Selection
 List Available Voices
 ~~~~~~~~~~~~~~~~~~~~~
 
+The number of available voices depends on the model source:
+
+* **HuggingFace & GitHub v1.0**: 54 multi-language voices
+* **GitHub v1.1-zh**: 103 voices (including Chinese)
+
 .. code-block:: python
 
    with Kokoro() as kokoro:
        voices = kokoro.list_voices()
        for voice in voices:
            print(voice)
+
+   # Using v1.1-zh for more voices
+   with Kokoro(model_source="github", model_variant="v1.1-zh") as kokoro:
+       voices = kokoro.list_voices()
+       print(f"Total voices: {len(voices)}")  # 103 voices
 
 Voice Name Format
 ~~~~~~~~~~~~~~~~~
@@ -143,6 +178,23 @@ Common Voices
 **Other Languages:**
 
 See the :doc:`api_reference` for a complete list of voices for Spanish, French, German, Italian, Portuguese, Hindi, Japanese, Korean, and Chinese.
+
+**GitHub v1.1-zh Additional Voices:**
+
+The v1.1-zh model includes additional English and Chinese voices:
+
+* **English**: ``af_maple``, ``af_sol``, ``bf_vale``
+* **Chinese**: ``zf_001`` through ``zf_099``, ``zm_009`` through ``zm_100``
+
+.. code-block:: python
+
+   # Using v1.1-zh English voices
+   with Kokoro(model_source="github", model_variant="v1.1-zh") as kokoro:
+       audio, sr = kokoro.create(
+           "Hello from the v1.1-zh model!",
+           voice="af_maple",
+           lang="en-us"
+       )
 
 Language Settings
 -----------------

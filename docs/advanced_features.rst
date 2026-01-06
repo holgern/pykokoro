@@ -247,7 +247,7 @@ The ``PhonemeSegment`` objects include metadata for automatic pause insertion:
    from pykokoro import split_and_phonemize_text, create_tokenizer
 
    tokenizer = create_tokenizer()
-   
+
    segments = split_and_phonemize_text(
        text,
        tokenizer,
@@ -300,16 +300,16 @@ Use ``random_seed`` for consistent output across runs:
 .. code-block:: python
 
    # Same output every time
-   audio1, sr = kokoro.create(text, voice="af_sarah", 
+   audio1, sr = kokoro.create(text, voice="af_sarah",
                               split_mode="clause", trim_silence=True,
                               random_seed=42)
-   
+
    audio2, sr = kokoro.create(text, voice="af_sarah",
-                              split_mode="clause", trim_silence=True, 
+                              split_mode="clause", trim_silence=True,
                               random_seed=42)
-   
+
    # audio1 and audio2 are identical
-   
+
    # Different output each time
    audio3, sr = kokoro.create(text, voice="af_sarah",
                               split_mode="clause", trim_silence=True,
@@ -384,6 +384,52 @@ GPU Information
 Custom Model Paths
 ------------------
 
+Model Sources
+~~~~~~~~~~~~~
+
+PyKokoro supports multiple model sources:
+
+**HuggingFace (Default):**
+
+.. code-block:: python
+
+   from pykokoro import Kokoro
+
+   # Default: HuggingFace with 54 voices
+   kokoro = Kokoro(model_source="huggingface", model_quality="fp32")
+
+**GitHub v1.0:**
+
+.. code-block:: python
+
+   # GitHub v1.0 with 54 voices
+   kokoro = Kokoro(
+       model_source="github",
+       model_variant="v1.0",
+       model_quality="fp16-gpu"  # GPU-optimized
+   )
+
+**GitHub v1.1-zh (103 voices):**
+
+.. code-block:: python
+
+   # GitHub v1.1-zh with English + Chinese voices
+   kokoro = Kokoro(
+       model_source="github",
+       model_variant="v1.1-zh",
+       model_quality="fp32"  # Only fp32 available
+   )
+
+   # Use English voices
+   audio, sr = kokoro.create(
+       "Hello world!",
+       voice="af_maple",  # v1.1-zh English voice
+       lang="en-us"
+   )
+
+**Note:** Chinese text generation is currently in development. Use English voices from
+v1.1-zh with English text for now.
+
 Use Custom Model Files
 ~~~~~~~~~~~~~~~~~~~~~~
 
@@ -399,6 +445,8 @@ Use Custom Model Files
 Download Models Manually
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
+**HuggingFace Models:**
+
 .. code-block:: python
 
    from pykokoro import download_model, download_voice, download_all_models
@@ -412,6 +460,35 @@ Download Models Manually
    # Download all models
    download_all_models()
 
+**GitHub Models:**
+
+.. code-block:: python
+
+   from pykokoro.onnx_backend import (
+       download_model_github,
+       download_voices_github,
+       download_all_models_github
+   )
+
+   # Download GitHub v1.0 model
+   download_model_github(variant="v1.0", quality="fp16-gpu")
+
+   # Download GitHub v1.0 voices
+   download_voices_github(variant="v1.0")
+
+   # Download all GitHub v1.1-zh files
+   download_all_models_github(
+       variant="v1.1-zh",
+       quality="fp32",
+       progress_callback=lambda msg: print(msg)
+   )
+
+**Available Quality Options by Source:**
+
+* **HuggingFace**: fp32, fp16, q8, q8f16, q4, q4f16, uint8, uint8f16
+* **GitHub v1.0**: fp32, fp16, fp16-gpu, q8
+* **GitHub v1.1-zh**: fp32 only
+
 Get Model Paths
 ~~~~~~~~~~~~~~~
 
@@ -419,11 +496,18 @@ Get Model Paths
 
    from pykokoro import get_model_path, get_voice_path
 
+   # HuggingFace model paths
    model_path = get_model_path(quality="q8")
    voice_path = get_voice_path()
 
    print(f"Model: {model_path}")
    print(f"Voices: {voice_path}")
+
+   # GitHub model paths are stored in variant-specific subdirectories:
+   # ~/.cache/pykokoro/models/onnx/v1.0/kokoro-v1.0.onnx
+   # ~/.cache/pykokoro/models/onnx/v1.1-zh/kokoro-v1.1-zh.onnx
+   # ~/.cache/pykokoro/voices/v1.0/voices-v1.0.bin
+   # ~/.cache/pykokoro/voices/v1.1-zh/voices-v1.1-zh.bin
 
 Advanced Tokenizer Configuration
 ---------------------------------

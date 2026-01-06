@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import sqlite3
+import urllib.request
 from collections.abc import AsyncGenerator, Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,15 +34,23 @@ SAMPLE_RATE = 24000
 
 # Model quality type
 ModelQuality = Literal[
-    "fp32", "fp16", "q8", "q8f16", "q4", "q4f16", "uint8", "uint8f16"
+    "fp32", "fp16", "fp16-gpu", "q8", "q8f16", "q4", "q4f16", "uint8", "uint8f16"
 ]
 DEFAULT_MODEL_QUALITY: ModelQuality = "fp32"
 
 # Provider type
 ProviderType = Literal["auto", "cpu", "cuda", "openvino", "directml", "coreml"]
 
-# Quality to filename mapping
-MODEL_QUALITY_FILES: dict[str, str] = {
+# Model source type
+ModelSource = Literal["huggingface", "github"]
+DEFAULT_MODEL_SOURCE: ModelSource = "huggingface"
+
+# Model variant type (for GitHub source)
+ModelVariant = Literal["v1.0", "v1.1-zh"]
+DEFAULT_MODEL_VARIANT: ModelVariant = "v1.0"
+
+# Quality to filename mapping (Hugging Face)
+MODEL_QUALITY_FILES_HF: dict[str, str] = {
     "fp32": "model.onnx",
     "fp16": "model_fp16.onnx",
     "q8": "model_quantized.onnx",
@@ -52,13 +61,52 @@ MODEL_QUALITY_FILES: dict[str, str] = {
     "uint8f16": "model_uint8f16.onnx",
 }
 
+# Quality to filename mapping (GitHub v1.0 - English)
+MODEL_QUALITY_FILES_GITHUB_V1_0: dict[str, str] = {
+    "fp32": "kokoro-v1.0.onnx",
+    "fp16": "kokoro-v1.0.fp16.onnx",
+    "fp16-gpu": "kokoro-v1.0.fp16-gpu.onnx",
+    "q8": "kokoro-v1.0.int8.onnx",
+}
+
+# Quality to filename mapping (GitHub v1.1-zh - Chinese)
+MODEL_QUALITY_FILES_GITHUB_V1_1_ZH: dict[str, str] = {
+    "fp32": "kokoro-v1.1-zh.onnx",
+}
+
+# Backward compatibility
+MODEL_QUALITY_FILES = MODEL_QUALITY_FILES_HF
+
 # URLs for model files (Hugging Face)
 HF_REPO_ID = "onnx-community/Kokoro-82M-v1.0-ONNX"
 HF_MODEL_SUBFOLDER = "onnx"
 HF_VOICES_SUBFOLDER = "voices"
 HF_CONFIG_FILENAME = "config.json"
 
-# All available voice names
+# URLs for model files (GitHub)
+GITHUB_REPO = "thewh1teagle/kokoro-onnx"
+
+# GitHub v1.0 (English)
+GITHUB_RELEASE_TAG_V1_0 = "model-files-v1.0"
+GITHUB_BASE_URL_V1_0 = (
+    f"https://github.com/{GITHUB_REPO}/releases/download/{GITHUB_RELEASE_TAG_V1_0}"
+)
+GITHUB_VOICES_FILENAME_V1_0 = "voices-v1.0.bin"
+
+# GitHub v1.1-zh (Chinese)
+GITHUB_RELEASE_TAG_V1_1_ZH = "model-files-v1.1"
+GITHUB_BASE_URL_V1_1_ZH = (
+    f"https://github.com/{GITHUB_REPO}/releases/download/{GITHUB_RELEASE_TAG_V1_1_ZH}"
+)
+GITHUB_VOICES_FILENAME_V1_1_ZH = "voices-v1.1-zh.bin"
+
+# Backward compatibility
+GITHUB_RELEASE_TAG = GITHUB_RELEASE_TAG_V1_0
+GITHUB_BASE_URL = GITHUB_BASE_URL_V1_0
+GITHUB_VOICES_FILENAME = GITHUB_VOICES_FILENAME_V1_0
+
+# All available voice names (HuggingFace and GitHub v1.0 - English)
+# These are used for downloading individual voice files from HuggingFace
 VOICE_NAMES = [
     "af",
     "af_alloy",
@@ -115,6 +163,35 @@ VOICE_NAMES = [
     "zm_yunxia",
     "zm_yunyang",
 ]
+
+# Expected voice names for GitHub v1.1-zh (Chinese model)
+# Note: These are loaded dynamically from voices.bin, this list is for reference
+# The v1.1-zh model contains 103 voices with various Chinese speakers
+VOICE_NAMES_ZH = [
+    # Sample voices from the v1.1-zh model:
+    "af_maple",  # Female voice
+    "af_sol",  # Female voice
+    "bf_vale",  # British female voice
+    # Numbered Chinese female voices (zf_XXX)
+    "zf_001",
+    "zf_002",
+    "zf_003",  # ... many more numbered voices
+    # Numbered Chinese male voices (zm_XXX)
+    "zm_009",
+    "zm_010",
+    "zm_011",  # ... many more numbered voices
+    # Note: Full list contains 103 voices total
+    # Use kokoro.get_voices() to retrieve the complete list at runtime
+]
+
+# Voice name documentation by language/variant
+# These voices are dynamically loaded from the model's voices.bin file
+# The actual available voices may vary depending on the model source and variant
+VOICE_NAMES_BY_VARIANT = {
+    "huggingface": VOICE_NAMES,  # All voices (multi-language)
+    "github-v1.0": VOICE_NAMES,  # Same as HuggingFace (multi-language)
+    "github-v1.1-zh": VOICE_NAMES_ZH,  # Chinese-specific voices
+}
 
 
 @dataclass
@@ -384,7 +461,7 @@ def download_all_voices(
 
     # Save all voices to a single .npz file using np.savez
     voices_bin_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(str(voices_bin_path), **voices)  # type: ignore[call-overload]
+    np.savez(str(voices_bin_path), **voices)  # type: ignore[arg-type]
 
     return voices_bin_path
 
@@ -424,6 +501,182 @@ def download_all_models(
     return paths
 
 
+# ============================================================================
+# GitHub Download Functions
+# ============================================================================
+
+
+def _download_from_github(
+    url: str,
+    local_path: Path,
+    force: bool = False,
+) -> Path:
+    """
+    Download a file from GitHub releases using urllib.
+
+    Args:
+        url: Full URL to the file
+        local_path: Local path to save the file
+        force: Force re-download even if file exists
+
+    Returns:
+        Path to the downloaded file
+    """
+    # Check if file already exists
+    if local_path.exists() and not force:
+        logger.debug(f"File already exists: {local_path}")
+        return local_path
+
+    # Create parent directory if it doesn't exist
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Downloading from {url} to {local_path}")
+
+    try:
+        # Download the file
+        with urllib.request.urlopen(url) as response:
+            content = response.read()
+
+        # Write to file
+        with open(local_path, "wb") as f:
+            f.write(content)
+
+        logger.info(f"Downloaded {local_path.name} ({len(content)} bytes)")
+        return local_path
+
+    except Exception as e:
+        logger.error(f"Failed to download {url}: {e}")
+        raise
+
+
+def download_model_github(
+    variant: ModelVariant = DEFAULT_MODEL_VARIANT,
+    quality: ModelQuality = DEFAULT_MODEL_QUALITY,
+    force: bool = False,
+) -> Path:
+    """
+    Download a model file from GitHub releases.
+
+    Args:
+        variant: Model variant (v1.0 for English, v1.1-zh for Chinese)
+        quality: Model quality/quantization level
+        force: Force re-download even if file exists
+
+    Returns:
+        Path to the downloaded model file
+
+    Raises:
+        ValueError: If quality is not available for the variant
+    """
+    # Get the appropriate quality mapping and base URL
+    if variant == "v1.0":
+        quality_files = MODEL_QUALITY_FILES_GITHUB_V1_0
+        base_url = GITHUB_BASE_URL_V1_0
+    elif variant == "v1.1-zh":
+        quality_files = MODEL_QUALITY_FILES_GITHUB_V1_1_ZH
+        base_url = GITHUB_BASE_URL_V1_1_ZH
+    else:
+        raise ValueError(f"Unknown model variant: {variant}")
+
+    # Check if quality is available for this variant
+    if quality not in quality_files:
+        available = ", ".join(quality_files.keys())
+        raise ValueError(
+            f"Quality '{quality}' not available for variant '{variant}'. "
+            f"Available qualities: {available}"
+        )
+
+    # Get filename and construct URL
+    filename = quality_files[quality]
+    url = f"{base_url}/{filename}"
+
+    # Determine local path
+    model_dir = get_model_dir()
+    # Use variant-specific subdirectory to avoid conflicts
+    if variant != "v1.0":
+        model_dir = model_dir / variant
+    local_path = model_dir / filename
+
+    # Download
+    return _download_from_github(url, local_path, force)
+
+
+def download_voices_github(
+    variant: ModelVariant = DEFAULT_MODEL_VARIANT,
+    force: bool = False,
+) -> Path:
+    """
+    Download voices.bin file from GitHub releases.
+
+    Args:
+        variant: Model variant (v1.0 for English, v1.1-zh for Chinese)
+        force: Force re-download even if file exists
+
+    Returns:
+        Path to the downloaded voices.bin file
+    """
+    # Get the appropriate filename and base URL
+    if variant == "v1.0":
+        filename = GITHUB_VOICES_FILENAME_V1_0
+        base_url = GITHUB_BASE_URL_V1_0
+    elif variant == "v1.1-zh":
+        filename = GITHUB_VOICES_FILENAME_V1_1_ZH
+        base_url = GITHUB_BASE_URL_V1_1_ZH
+    else:
+        raise ValueError(f"Unknown model variant: {variant}")
+
+    # Construct URL
+    url = f"{base_url}/{filename}"
+
+    # Determine local path
+    voices_dir = get_voices_dir()
+    # Use variant-specific subdirectory to avoid conflicts
+    if variant != "v1.0":
+        voices_dir = voices_dir / variant
+    local_path = voices_dir / filename
+
+    # Download
+    return _download_from_github(url, local_path, force)
+
+
+def download_all_models_github(
+    variant: ModelVariant = DEFAULT_MODEL_VARIANT,
+    quality: ModelQuality = DEFAULT_MODEL_QUALITY,
+    progress_callback: Callable[[str, int, int], None] | None = None,
+    force: bool = False,
+) -> dict[str, Path]:
+    """
+    Download model and voices files from GitHub.
+
+    Args:
+        variant: Model variant (v1.0 for English, v1.1-zh for Chinese)
+        quality: Model quality/quantization level
+        progress_callback: Optional callback (filename, current, total)
+        force: Force re-download even if files exist
+
+    Returns:
+        Dict mapping filename to path
+    """
+    paths: dict[str, Path] = {}
+
+    # Download model
+    if progress_callback:
+        progress_callback("model", 0, 2)
+    model_path = download_model_github(variant, quality, force)
+    paths[model_path.name] = model_path
+
+    # Download voices
+    if progress_callback:
+        progress_callback("voices", 1, 2)
+    voices_path = download_voices_github(variant, force)
+    paths[voices_path.name] = voices_path
+
+    if progress_callback:
+        progress_callback("complete", 2, 2)
+
+    return paths
+
+
 class Kokoro:
     """
     Native ONNX backend for TTS generation.
@@ -442,6 +695,8 @@ class Kokoro:
         espeak_config: EspeakConfig | None = None,
         tokenizer_config: Optional["TokenizerConfig"] = None,
         model_quality: ModelQuality | None = None,
+        model_source: ModelSource = DEFAULT_MODEL_SOURCE,
+        model_variant: ModelVariant = DEFAULT_MODEL_VARIANT,
     ) -> None:
         """
         Initialize the Kokoro ONNX backend.
@@ -460,6 +715,8 @@ class Kokoro:
             tokenizer_config: Optional tokenizer configuration
                 (for mixed-language support)
             model_quality: Model quality/quantization level (default from config)
+            model_source: Model source ("huggingface" or "github")
+            model_variant: Model variant for GitHub source ("v1.0" or "v1.1-zh")
         """
         self._session: rt.InferenceSession | None = None
         self._voices_data: dict[str, np.ndarray] | None = None
@@ -475,6 +732,8 @@ class Kokoro:
 
         self._use_gpu = use_gpu
         self._provider: ProviderType | None = provider
+        self._model_source = model_source
+        self._model_variant = model_variant
 
         # Resolve model quality from config if not specified
         resolved_quality: ModelQuality = DEFAULT_MODEL_QUALITY
@@ -487,14 +746,50 @@ class Kokoro:
             quality_from_cfg = cfg.get("model_quality", DEFAULT_MODEL_QUALITY)
             # Validate it's a valid quality option and cast to ModelQuality
             if quality_from_cfg in MODEL_QUALITY_FILES:
-                resolved_quality = str(quality_from_cfg)  # type: ignore[assignment]
+                resolved_quality = quality_from_cfg
+
+        # Validate quality is available for the selected source/variant
+        if model_source == "github":
+            if model_variant == "v1.0":
+                available_qualities = MODEL_QUALITY_FILES_GITHUB_V1_0
+            elif model_variant == "v1.1-zh":
+                available_qualities = MODEL_QUALITY_FILES_GITHUB_V1_1_ZH
+            else:
+                raise ValueError(f"Unknown model variant: {model_variant}")
+
+            if resolved_quality not in available_qualities:
+                available = ", ".join(available_qualities.keys())
+                raise ValueError(
+                    f"Quality '{resolved_quality}' not available for "
+                    f"GitHub {model_variant}. Available qualities: {available}"
+                )
+        elif model_source == "huggingface":
+            if resolved_quality not in MODEL_QUALITY_FILES_HF:
+                available = ", ".join(MODEL_QUALITY_FILES_HF.keys())
+                raise ValueError(
+                    f"Quality '{resolved_quality}' not available for HuggingFace. "
+                    f"Available qualities: {available}"
+                )
+
         self._model_quality: ModelQuality = resolved_quality
 
         # Resolve paths
         if model_path is None:
-            model_path = get_model_path(self._model_quality)
+            if model_source == "github":
+                # Download from GitHub if not exists
+                model_path = download_model_github(
+                    model_variant, self._model_quality, force=False
+                )
+            else:
+                # Download from HuggingFace (default)
+                model_path = get_model_path(self._model_quality)
         if voices_path is None:
-            voices_path = get_voices_bin_path()
+            if model_source == "github":
+                # Download from GitHub if not exists
+                voices_path = download_voices_github(model_variant, force=False)
+            else:
+                # Download from HuggingFace (default)
+                voices_path = get_voices_bin_path()
 
         self._model_path = model_path
         self._voices_path = voices_path
@@ -673,8 +968,38 @@ class Kokoro:
                 f"Last error: {last_error}"
             )
 
-        # Load voices (numpy archive with voice style vectors)
-        self._voices_data = dict(np.load(str(self._voices_path), allow_pickle=True))
+        # Load voices (numpy archive with voice style vectors or raw binary)
+        if self._model_source == "github":
+            # GitHub voices.bin format: raw binary file with voice data
+            # We need to parse it to extract individual voices
+            self._voices_data = self._load_voices_bin_github(self._voices_path)
+        else:
+            # HuggingFace format: .npz archive with named voice arrays
+            self._voices_data = dict(np.load(str(self._voices_path), allow_pickle=True))
+
+    def _load_voices_bin_github(self, voices_path: Path) -> dict[str, np.ndarray]:
+        """
+        Load voices from GitHub format .bin file.
+
+        The GitHub voices.bin format is a NumPy archive file (.npz format)
+        containing voice arrays with voice names as keys.
+
+        Args:
+            voices_path: Path to the voices.bin file
+
+        Returns:
+            Dictionary mapping voice names to numpy arrays
+        """
+        # Load the NumPy file - it's actually .npz format despite .bin extension
+        voices_npz = np.load(str(voices_path), allow_pickle=True)
+
+        # Convert NpzFile to dictionary
+        voices: dict[str, np.ndarray] = dict(voices_npz)
+
+        logger.info(f"Successfully loaded {len(voices)} voices from {voices_path}")
+        logger.debug(f"Available voices: {', '.join(sorted(voices.keys()))}")
+
+        return voices
 
     def _create_audio_internal(
         self, phonemes: str, voice: np.ndarray, speed: float, new_format: bool = True
@@ -705,25 +1030,36 @@ class Kokoro:
 
         # Check input names to determine model version
         input_names = [i.name for i in self._session.get_inputs()]
-        if "input_ids" in input_names and not new_format:
-            # Newer model format (exported with input_ids, expects int32 speed)
-            # Speed is typically 1 for normal speed, convert float to int
-            speed_int = max(1, int(round(speed)))
-            inputs = {
-                "input_ids": np.array(tokens_padded, dtype=np.int64),
-                "style": np.array(voice_style, dtype=np.float32),
-                "speed": np.array([speed_int], dtype=np.int32),
-            }
-        elif "input_ids" in input_names and new_format:
-            # Original model format (kokoro-onnx release model, uses float speed)
-            inputs = {
-                "input_ids": tokens_padded,
-                "style": voice_style,
-                "speed": np.ones(1, dtype=np.float32) * speed,
-            }
 
+        # GitHub models (v1.0 and v1.1-zh) use "input_ids" and int32 speed
+        # HuggingFace newer models also use "input_ids" but with float32 speed
+        if "input_ids" in input_names:
+            # Check if this is a GitHub model by checking model source
+            if self._model_source == "github":
+                # GitHub models: input_ids, style (float32), speed (int32)
+                speed_int = max(1, int(round(speed)))
+                inputs = {
+                    "input_ids": np.array(tokens_padded, dtype=np.int64),
+                    "style": np.array(voice_style, dtype=np.float32),
+                    "speed": np.array([speed_int], dtype=np.int32),
+                }
+            elif not new_format:
+                # HuggingFace newer format: input_ids, expects int32 speed
+                speed_int = max(1, int(round(speed)))
+                inputs = {
+                    "input_ids": np.array(tokens_padded, dtype=np.int64),
+                    "style": np.array(voice_style, dtype=np.float32),
+                    "speed": np.array([speed_int], dtype=np.int32),
+                }
+            else:
+                # HuggingFace original format: input_ids, float32 speed
+                inputs = {
+                    "input_ids": tokens_padded,
+                    "style": voice_style,
+                    "speed": np.ones(1, dtype=np.float32) * speed,
+                }
         else:
-            # Original model format (kokoro-onnx release model, uses float speed)
+            # Original model format (uses "tokens" input, float speed)
             inputs = {
                 "tokens": tokens_padded,
                 "style": voice_style,
@@ -732,9 +1068,9 @@ class Kokoro:
 
         result = self._session.run(None, inputs)[0]
         if new_format:
-            audio: np.ndarray = np.asarray(result).T
+            audio = np.asarray(result).T
         else:
-            audio: np.ndarray = np.asarray(result)
+            audio = np.asarray(result)
         # Ensure audio is 1D for compatibility with trim and other operations
         audio = np.squeeze(audio)
         return audio, SAMPLE_RATE
@@ -1401,7 +1737,7 @@ class Kokoro:
         speed: float = 1.0,
         lang: str = "en-us",
         chunk_size: int = 500,
-    ):
+    ) -> Generator[tuple[np.ndarray, int, str], None, None]:
         """
         Generate audio in chunks for long text.
 

@@ -7,8 +7,9 @@ A Python library for Kokoro TTS (Text-to-Speech) using ONNX runtime.
 - **ONNX-based TTS**: Fast, efficient text-to-speech using the Kokoro-82M model
 - **Multiple Languages**: Support for English, Spanish, French, German, Italian,
   Portuguese, and more
-- **Multiple Voices**: 50+ built-in voices with different accents and genders
+- **Multiple Voices**: 54+ built-in voices (or 103 voices with v1.1-zh model)
 - **Voice Blending**: Create custom voices by blending multiple voices
+- **Multiple Model Sources**: Download models from HuggingFace or GitHub (v1.0/v1.1-zh)
 - **Model Quality Options**: Choose from fp32, fp16, q8, q4, and uint8 quantization
   levels
 - **GPU Acceleration**: Optional CUDA, CoreML, or DirectML support
@@ -293,7 +294,9 @@ See `examples/pauses_demo.py`, `examples/pauses_with_splitting.py`, and
 
 ## Available Voices
 
-The library includes 50+ voices across different languages and accents:
+The library includes voices across different languages and accents. The number of available voices depends on the model source:
+
+### HuggingFace & GitHub v1.0 (54 voices)
 
 - **American English**: af_alloy, af_bella, af_sarah, am_adam, am_michael, etc.
 - **British English**: bf_alice, bf_emma, bm_george, bm_lewis
@@ -303,6 +306,20 @@ The library includes 50+ voices across different languages and accents:
 - **Chinese**: zf_xiaobei, zm_yunxi
 - And many more...
 
+### GitHub v1.1-zh (103 voices)
+
+Includes all voices from v1.0 plus additional Chinese voices:
+
+- **English voices**: af_maple, af_sol, bf_vale (confirmed working)
+- **Chinese voices**: zf_001 through zf_099, zm_009 through zm_100
+
+**Example - Using v1.1-zh with English:**
+
+```python
+tts = pykokoro.Kokoro(model_source="github", model_variant="v1.1-zh")
+audio, sr = tts.create("Hello world!", voice="af_maple", lang="en-us")
+```
+
 List all available voices:
 
 ```python
@@ -310,18 +327,80 @@ voices = tts.get_voices()
 print(voices)
 ```
 
+## Model Sources
+
+PyKokoro supports downloading models from multiple sources:
+
+### HuggingFace (Default)
+
+The default source with 54 multi-language voices:
+
+```python
+tts = pykokoro.Kokoro(
+    model_source="huggingface",
+    model_quality="fp32"  # fp32, fp16, q8, q8f16, q4, q4f16, uint8, uint8f16
+)
+```
+
+### GitHub v1.0
+
+54 voices with additional `fp16-gpu` optimized quality:
+
+```python
+tts = pykokoro.Kokoro(
+    model_source="github",
+    model_variant="v1.0",
+    model_quality="fp16-gpu"  # fp32, fp16, fp16-gpu, q8
+)
+```
+
+### GitHub v1.1-zh (English + Chinese)
+
+103 voices including English and Chinese speakers:
+
+```python
+tts = pykokoro.Kokoro(
+    model_source="github",
+    model_variant="v1.1-zh",
+    model_quality="fp32"  # Only fp32 available
+)
+
+# Use English voices from v1.1-zh
+voices = tts.get_voices()  # Returns 103 voices
+audio, sr = tts.create("Hello world", voice="af_maple", lang="en-us")
+```
+
+**Note:** Chinese text generation requires proper phonemization support (currently in development).
+
 ## Model Quality Options
 
-Choose the model quality based on your needs:
+Available quality options vary by source:
 
+**HuggingFace Models:**
 - `fp32`: Full precision (highest quality, largest size)
 - `fp16`: Half precision (good quality, smaller size)
 - `q8`: 8-bit quantized (fast, small)
+- `q8f16`: 8-bit with fp16 (balanced)
 - `q4`: 4-bit quantized (fastest, smallest)
+- `q4f16`: 4-bit with fp16 (compact)
 - `uint8`: Unsigned 8-bit (compatible)
+- `uint8f16`: Unsigned 8-bit with fp16
+
+**GitHub v1.0 Models:**
+- `fp32`: Full precision
+- `fp16`: Half precision
+- `fp16-gpu`: GPU-optimized fp16
+- `q8`: 8-bit quantized
+
+**GitHub v1.1-zh Models:**
+- `fp32`: Full precision only
 
 ```python
-tts = pykokoro.Kokoro(model_quality="q8")
+# HuggingFace with q8
+tts = pykokoro.Kokoro(model_source="huggingface", model_quality="q8")
+
+# GitHub v1.0 with GPU-optimized fp16
+tts = pykokoro.Kokoro(model_source="github", model_variant="v1.0", model_quality="fp16-gpu")
 ```
 
 ## Configuration

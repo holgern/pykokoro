@@ -47,7 +47,12 @@ def benchmark_provider(provider_name: str) -> tuple[float, float] | None:
         print(f"{'=' * 60}")
 
         # Initialize with specific provider
-        kokoro = pykokoro.Kokoro(provider=provider_name)
+        kokoro = pykokoro.Kokoro(
+            provider=provider_name,
+            model_source="github",  # GitHub source
+            model_variant="v1.0",  # English model
+            model_quality="fp32",  # Use fp16 quality (available on GitHub)
+        )
 
         # Warmup run (important for GPU providers)
         print("Running warmup...")

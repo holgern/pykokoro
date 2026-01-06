@@ -181,3 +181,35 @@ If model downloads fail:
 1. Check your internet connection
 2. Verify you have write permissions to the cache directory
 3. Try downloading manually and placing in ``~/.cache/pykokoro/``
+4. For GitHub models, ensure the release URLs are accessible
+
+**Manual Model Download:**
+
+PyKokoro automatically downloads models on first use, but you can download them manually:
+
+.. code-block:: python
+
+   from pykokoro import Kokoro
+
+   # HuggingFace models (default)
+   kokoro = Kokoro(model_quality="fp16")  # Auto-downloads from HuggingFace
+
+   # GitHub v1.0 models
+   kokoro = Kokoro(
+       model_source="github",
+       model_variant="v1.0",
+       model_quality="fp16-gpu"  # Auto-downloads from GitHub
+   )
+
+   # GitHub v1.1-zh models (103 voices)
+   kokoro = Kokoro(
+       model_source="github",
+       model_variant="v1.1-zh",
+       model_quality="fp32"  # Auto-downloads from GitHub
+   )
+
+Models are cached in:
+
+* **HuggingFace**: ``~/.cache/pykokoro/models/onnx/`` and ``~/.cache/pykokoro/voices/``
+* **GitHub v1.0**: ``~/.cache/pykokoro/models/onnx/v1.0/`` and ``~/.cache/pykokoro/voices/v1.0/``
+* **GitHub v1.1-zh**: ``~/.cache/pykokoro/models/onnx/v1.1-zh/`` and ``~/.cache/pykokoro/voices/v1.1-zh/``
