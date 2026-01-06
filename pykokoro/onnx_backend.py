@@ -1008,7 +1008,7 @@ class Kokoro:
         pause_medium: float = 0.6,
         pause_long: float = 1.0,
         split_mode: str | None = None,
-        trim_silence: bool = True,
+        trim_silence: bool = False,
     ) -> tuple[np.ndarray, int]:
         """
         Generate audio from text or phonemes.

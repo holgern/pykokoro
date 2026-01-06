@@ -165,10 +165,6 @@ def split_and_phonemize_text(
     Returns:
         List of PhonemeSegments, each guaranteed to have phonemes <= max_phoneme_length
     """
-    import re
-
-    # Safety filter: Remove <<CHAPTER: ...>> markers that epub2text might add
-    text = re.sub(r"^\s*<<CHAPTER:[^>]*>>\s*\n*", "", text, count=1, flags=re.MULTILINE)
 
     def warn(msg: str) -> None:
         """Issue a warning."""
