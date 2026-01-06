@@ -93,15 +93,14 @@ def main():
     )
 
     print("Pause statistics:")
+    short_total = pause_counts["(.)"] * 0.3
+    medium_total = pause_counts["(..)"] * 0.6
+    long_total = pause_counts["(...)"] * 1.2
+    print(f"  Short pauses (.):     {pause_counts['(.)']} × 0.3s = {short_total:.1f}s")
     print(
-        f"  Short pauses (.):     {pause_counts['(.)']} × 0.3s = {pause_counts['(.)'] * 0.3:.1f}s"
+        f"  Medium pauses (..):   {pause_counts['(..)']} × 0.6s = {medium_total:.1f}s"
     )
-    print(
-        f"  Medium pauses (..):   {pause_counts['(..)']} × 0.6s = {pause_counts['(..)'] * 0.6:.1f}s"
-    )
-    print(
-        f"  Long pauses (...):    {pause_counts['(...)']} × 1.2s = {pause_counts['(...)'] * 1.2:.1f}s"
-    )
+    print(f"  Long pauses (...):    {pause_counts['(...)']} × 1.2s = {long_total:.1f}s")
     print(f"  Total pause time:     ~{total_pause_time:.1f}s")
     print(f"  Estimated speech time: ~{duration - total_pause_time:.1f}s")
     print()

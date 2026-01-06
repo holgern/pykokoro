@@ -102,7 +102,7 @@ Simple Blend
    with Kokoro() as kokoro:
        # Equal blend
        blend = VoiceBlend.parse("af_bella + af_sarah")
-       
+
        audio, sr = kokoro.create(
            "This is a blended voice",
            voice=blend
@@ -120,7 +120,7 @@ Weighted Blend
    with Kokoro() as kokoro:
        # 70% bella, 30% sarah
        blend = VoiceBlend.parse("af_bella*0.7 + af_sarah*0.3")
-       
+
        audio, sr = kokoro.create(
            "Weighted blend example",
            voice=blend
@@ -198,7 +198,7 @@ With Sentence Splitting
    long_text = """
    This is a long passage of text that demonstrates sentence splitting.
    Each sentence will be processed separately for better quality.
-   
+
    This is a new paragraph. It will also be handled efficiently.
    The split_mode parameter controls how text is divided.
    """
@@ -221,10 +221,10 @@ With Pause Markers and Splitting
 
    text = """
    Welcome to this demonstration. (..)
-   
+
    This text uses both pause markers and sentence splitting. (.)
    The combination creates very natural-sounding speech. (..)
-   
+
    Try it yourself!
    """
 
@@ -255,7 +255,7 @@ Variable Speed Example
 
    with Kokoro() as kokoro:
        audio_parts = []
-       
+
        for speed in speeds:
            audio, sr = kokoro.create(
                f"Speed {speed}x: {text}",
@@ -263,11 +263,11 @@ Variable Speed Example
                speed=speed
            )
            audio_parts.append(audio)
-           
+
            # Add silence between examples
            silence = np.zeros(int(sr * 0.5), dtype=np.float32)
            audio_parts.append(silence)
-       
+
        # Concatenate all parts
        final_audio = np.concatenate(audio_parts)
        sf.write("speed_demo.wav", final_audio, sr)
@@ -298,16 +298,16 @@ Process Multiple Files
    with Kokoro() as kokoro:
        for filename, text in scripts.items():
            print(f"Generating {filename}...")
-           
+
            audio, sr = kokoro.create(
                text,
                voice="af_bella",
                speed=1.0
            )
-           
+
            output_path = output_dir / f"{filename}.wav"
            sf.write(output_path, audio, sr)
-           
+
            print(f"  Saved to {output_path}")
 
 Process CSV File
@@ -328,21 +328,21 @@ Process CSV File
    with Kokoro() as kokoro:
        with open(csv_file, 'r', encoding='utf-8') as f:
            reader = csv.DictReader(f)
-           
+
            for row in reader:
                audio_id = row['id']
                text = row['text']
                voice = row.get('voice', 'af_bella')
                speed = float(row.get('speed', 1.0))
-               
+
                print(f"Processing {audio_id}...")
-               
+
                audio, sr = kokoro.create(
                    text,
                    voice=voice,
                    speed=speed
                )
-               
+
                output_path = output_dir / f"{audio_id}.wav"
                sf.write(output_path, audio, sr)
 
@@ -358,12 +358,12 @@ Text to Phonemes
 
    with Kokoro() as kokoro:
        text = "Hello, world!"
-       
+
        # Convert to phonemes
        phonemes = kokoro.tokenizer.phonemize(text, lang="en-us")
        print(f"Text: {text}")
        print(f"Phonemes: {phonemes}")
-       
+
        # Generate from phonemes
        audio, sr = kokoro.create_from_phonemes(
            phonemes,
@@ -482,10 +482,10 @@ Chapter Processing
    with Kokoro() as kokoro:
        for i, (title, text) in enumerate(chapters.items(), 1):
            print(f"Processing {title}...")
-           
+
            # Add chapter announcement
            full_text = f"{title}. (...) {text}"
-           
+
            audio, sr = kokoro.create(
                full_text,
                voice="af_bella",
@@ -493,7 +493,7 @@ Chapter Processing
                enable_pauses=True,
                split_mode="sentence"
            )
-           
+
            output_file = output_dir / f"chapter_{i:02d}.wav"
            sf.write(output_file, audio, sr)
            print(f"  Saved to {output_file}")
@@ -532,13 +532,13 @@ Process and Play
            "This is a streaming example",
            voice="af_bella"
        )
-       
+
        # Chunk and queue
        chunk_size = 1024
        for i in range(0, len(audio), chunk_size):
            chunk = audio[i:i+chunk_size]
            audio_queue.put(chunk)
-       
+
        # Play
        with sd.OutputStream(
            channels=1,
@@ -571,18 +571,18 @@ TTS API Endpoint
        text = data.get('text', '')
        voice = data.get('voice', 'af_bella')
        speed = float(data.get('speed', 1.0))
-       
+
        if not text:
            return {'error': 'No text provided'}, 400
-       
+
        # Generate audio
        audio, sr = kokoro.create(text, voice=voice, speed=speed)
-       
+
        # Convert to bytes
        buffer = BytesIO()
        sf.write(buffer, audio, sr, format='WAV')
        buffer.seek(0)
-       
+
        return send_file(
            buffer,
            mimetype='audio/wav',
@@ -620,9 +620,9 @@ Simple CLI
        parser.add_argument('-v', '--voice', default='af_bella', help='Voice name')
        parser.add_argument('-s', '--speed', type=float, default=1.0, help='Speech speed')
        parser.add_argument('--pauses', action='store_true', help='Enable pause markers')
-       
+
        args = parser.parse_args()
-       
+
        with Kokoro() as kokoro:
            audio, sr = kokoro.create(
                args.text,

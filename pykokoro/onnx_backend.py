@@ -916,29 +916,30 @@ class Kokoro:
         # Validate spaCy requirement
         if split_mode in ["sentence", "clause"]:
             try:
-                import spacy
-            except ImportError:
+                import spacy  # noqa: F401
+            except ImportError as err:
                 raise ImportError(
                     f"spaCy is required for split_mode='{split_mode}'. "
-                    "Install with: pip install spacy && python -m spacy download en_core_web_sm"
-                )
+                    "Install with: pip install spacy && "
+                    "python -m spacy download en_core_web_sm"
+                ) from err
 
         from .phonemes import split_and_phonemize_text
 
         # Split text directly into segments
+        # split_and_phonemize_text() uses cascading split modes to ensure
+        # all segments stay within max_phoneme_length (510)
         segments = split_and_phonemize_text(
             text,
             tokenizer=self.tokenizer,
             lang=lang,
             split_mode=split_mode,
-            # Use defaults for max_chars (300) and max_phoneme_length (510)
-            # These are handled internally by split_and_phonemize_text() with smart recursion
         )
 
         # Generate audio for each segment
         segment_parts = []
         for segment in segments:
-            # segment.phonemes is guaranteed to be <= 510 by split_and_phonemize_text()
+            # segment.phonemes is guaranteed to be <= 510 by cascading logic
             audio, _ = self._create_audio_internal(segment.phonemes, voice_style, speed)
             if trim_silence:
                 audio, _ = trim_audio(audio)
@@ -1024,7 +1025,8 @@ class Kokoro:
             pause_long: Duration for (...) in seconds
             split_mode: Optional text splitting mode. Options: None (default,
                 automatic phoneme-based), "paragraph" (double newlines),
-                "sentence" (requires spaCy), "clause" (sentences + commas, requires spaCy)
+                "sentence" (requires spaCy), "clause" (sentences + commas,
+                requires spaCy)
             trim_silence: Whether to trim silence from segment boundaries
 
         Returns:

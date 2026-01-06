@@ -58,15 +58,15 @@ make clean
 
 ## Documentation Structure
 
-* `index.rst` - Main documentation index
-* `quickstart.rst` - Quick start guide for new users
-* `installation.rst` - Installation instructions
-* `basic_usage.rst` - Basic usage guide
-* `advanced_features.rst` - Advanced features and techniques
-* `examples.rst` - Practical examples
-* `api_reference.rst` - Complete API reference
-* `changelog.rst` - Version history and changes
-* `conf.py` - Sphinx configuration
+- `index.rst` - Main documentation index
+- `quickstart.rst` - Quick start guide for new users
+- `installation.rst` - Installation instructions
+- `basic_usage.rst` - Basic usage guide
+- `advanced_features.rst` - Advanced features and techniques
+- `examples.rst` - Practical examples
+- `api_reference.rst` - Complete API reference
+- `changelog.rst` - Version history and changes
+- `conf.py` - Sphinx configuration
 
 ## Publishing to Read the Docs
 
@@ -78,11 +78,11 @@ The documentation is configured to work with Read the Docs automatically:
 
 ## Documentation Style Guide
 
-* Use reStructuredText (.rst) format
-* Follow NumPy docstring style for API documentation
-* Include code examples for all features
-* Keep line length to ~80-100 characters
-* Use proper Sphinx directives (.. code-block::, .. note::, etc.)
+- Use reStructuredText (.rst) format
+- Follow NumPy docstring style for API documentation
+- Include code examples for all features
+- Keep line length to ~80-100 characters
+- Use proper Sphinx directives (.. code-block::, .. note::, etc.)
 
 ## Updating Documentation
 

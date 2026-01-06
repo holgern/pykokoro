@@ -71,7 +71,6 @@ People walk to work. Cars fill the streets. The city comes alive."""
                 tokenizer=tokenizer,
                 lang="en-us",
                 split_mode=mode,
-                max_chars=300,
                 language_model="en_core_web_sm",
             )
 
@@ -101,7 +100,9 @@ People walk to work. Cars fill the streets. The city comes alive."""
     print_separator("MODE COMPARISON SUMMARY")
     print(f"{'Mode':<15} {'Segments':<10} {'Behavior':<50}")
     print("-" * 80)
-    print(f"{'paragraph':<15} {'3':<10} {'Split on double newlines (\\n\\n)':<50}")
+    newline_repr = r"\n\n"
+    behavior_text = f"Split on double newlines ({newline_repr})"
+    print(f"{'paragraph':<15} {'3':<10} {behavior_text:<50}")
     print(
         f"{'sentence':<15} {'9':<10} {'Split on sentence boundaries (using spaCy)':<50}"
     )

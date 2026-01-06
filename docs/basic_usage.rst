@@ -259,7 +259,7 @@ Split Modes
    with Kokoro() as kokoro:
        long_text = """
        This is the first sentence. This is the second sentence.
-       
+
        This is a new paragraph with more content.
        """
 

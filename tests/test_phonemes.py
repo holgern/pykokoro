@@ -140,12 +140,10 @@ class TestSplitAndPhonemizeText:
         assert all(s.phonemes for s in segments)
 
     def test_long_text_recursive_splitting(self, tokenizer):
-        """Test that long text gets split recursively to meet phoneme limit."""
+        """Test that long text gets split with cascading modes to meet phoneme limit."""
         # Create a very long text that will exceed phoneme limit
         long_text = " ".join(["word"] * 200)
-        segments = split_and_phonemize_text(
-            long_text, tokenizer, max_chars=100, split_mode="sentence"
-        )
+        segments = split_and_phonemize_text(long_text, tokenizer, split_mode="sentence")
 
         # Should create multiple segments
         assert len(segments) > 1
@@ -182,23 +180,191 @@ class TestSplitAndPhonemizeText:
         assert all(s.lang == "en-gb" for s in segments)
 
     def test_warning_callback_on_truncation(self, tokenizer):
-        """Test that warning callback is called for very long phonemes."""
+        """Test warning callback for very long phonemes that can't be split."""
         warnings = []
 
         def warn_callback(msg: str):
             warnings.append(msg)
 
-        # Create text that will be very long (force truncation by setting low max_chars)
-        long_text = "supercalifragilisticexpialidocious" * 50
+        # Create a single very long word that can't be split further
+        # Even at word level, this will be too long and must be truncated
+        long_word = "supercalifragilisticexpialidocious" * 50
         segments = split_and_phonemize_text(
-            long_text,
+            long_word,
             tokenizer,
-            max_chars=10,  # Very small to force truncation
+            split_mode="word",  # Start at word level
             warn_callback=warn_callback,
         )
 
         # Should have created segments
         assert len(segments) >= 1
+        # Should have warned about truncation
+        # (since a single word that's too long can't be split further)
+        if len(segments[0].phonemes) >= 510:
+            # If phonemes were at/near the limit, a warning should have been issued
+            assert len(warnings) > 0
+
+
+class TestCascadingSplitModes:
+    """Tests for cascading split mode behavior when phonemes are too long."""
+
+    @pytest.fixture
+    def tokenizer(self):
+        """Create a tokenizer instance."""
+        return create_tokenizer()
+
+    def test_cascade_paragraph_to_sentence(self, tokenizer):
+        """Test that paragraph mode cascades to sentence when segment is too long."""
+        # Create a paragraph with multiple sentences, where the paragraph exceeds limit
+        # but individual sentences do not
+        long_paragraph = (
+            "This is the first sentence that has some reasonable length. "
+            "This is the second sentence with more words. "
+            "This is the third sentence. "
+        ) * 10  # Repeat to make it long
+
+        segments = split_and_phonemize_text(
+            long_paragraph,
+            tokenizer,
+            split_mode="paragraph",
+            max_phoneme_length=100,  # Low limit to force cascade
+        )
+
+        # Should have created multiple segments (cascaded to sentence)
+        assert len(segments) > 1
+        # All segments should be within limit
+        for seg in segments:
+            assert len(seg.phonemes) <= 100
+
+    def test_cascade_sentence_to_clause(self, tokenizer):
+        """Test that sentence mode cascades to clause when sentence is too long."""
+        # Create a long sentence with commas
+        long_sentence = (
+            "This is a sentence with many clauses, separated by commas, "
+            "and each clause has some words, to make it longer, "
+            "so it exceeds the limit, and needs to be split."
+        )
+
+        segments = split_and_phonemize_text(
+            long_sentence,
+            tokenizer,
+            split_mode="sentence",
+            max_phoneme_length=80,  # Low limit to force cascade
+        )
+
+        # Should have created multiple segments (cascaded to clause)
+        assert len(segments) > 1
+        # All segments should be within limit
+        for seg in segments:
+            assert len(seg.phonemes) <= 80
+
+    def test_cascade_clause_to_word(self, tokenizer):
+        """Test that clause mode cascades to word when clause is too long."""
+        # Create a clause without commas (just words)
+        long_clause = " ".join(["word"] * 50)
+
+        segments = split_and_phonemize_text(
+            long_clause,
+            tokenizer,
+            split_mode="clause",
+            max_phoneme_length=50,  # Low limit to force cascade to word
+        )
+
+        # Should have created multiple segments (cascaded to word)
+        assert len(segments) > 1
+        # All segments should be within limit
+        for seg in segments:
+            assert len(seg.phonemes) <= 50
+
+    def test_word_level_truncation_last_resort(self, tokenizer):
+        """Test that word level truncates when a single word exceeds limit."""
+        warnings = []
+
+        def warn_callback(msg: str):
+            warnings.append(msg)
+
+        # Single very long word
+        very_long_word = "a" * 1000
+
+        segments = split_and_phonemize_text(
+            very_long_word,
+            tokenizer,
+            split_mode="word",
+            max_phoneme_length=50,
+            warn_callback=warn_callback,
+        )
+
+        # Should have created one segment (truncated)
+        assert len(segments) == 1
+        # Should be at limit
+        assert len(segments[0].phonemes) <= 50
+        # Should have warned
+        assert len(warnings) > 0
+        assert "truncat" in warnings[0].lower()
+
+    def test_no_unnecessary_cascade(self, tokenizer):
+        """Test that text within limit doesn't cascade to finer modes."""
+        # Short text that fits comfortably
+        short_text = "Hello world. This is short."
+
+        segments = split_and_phonemize_text(
+            short_text,
+            tokenizer,
+            split_mode="paragraph",
+            max_phoneme_length=510,
+        )
+
+        # Should create minimal segments (not over-split)
+        # With paragraph mode, this should be 1 segment
+        assert len(segments) == 1
+        assert len(segments[0].phonemes) <= 510
+
+    def test_metadata_preserved_during_cascade(self, tokenizer):
+        """Test that paragraph/sentence indices are preserved when cascading."""
+        # Two paragraphs, first one needs to cascade
+        text = (
+            "First paragraph sentence one. "
+            "First paragraph sentence two.\n\nSecond paragraph."
+        )
+
+        segments = split_and_phonemize_text(
+            text,
+            tokenizer,
+            split_mode="paragraph",
+            max_phoneme_length=80,  # Force first paragraph to cascade
+        )
+
+        # Should have multiple segments
+        assert len(segments) > 1
+
+        # Check that paragraph indices are preserved
+        para_indices = [seg.paragraph for seg in segments]
+        # Should have segments from both paragraph 0 and paragraph 1
+        assert 0 in para_indices
+        assert 1 in para_indices
+
+    def test_cascade_with_mixed_lengths(self, tokenizer):
+        """Test cascade behavior with mix of short and long segments."""
+        # Create text with one very long sentence and one short sentence
+        text = (
+            "This is a very long sentence with many many words "
+            "that will exceed the phoneme limit " * 5 + "Short."
+        )
+
+        segments = split_and_phonemize_text(
+            text,
+            tokenizer,
+            split_mode="sentence",
+            max_phoneme_length=100,
+        )
+
+        # Should have multiple segments
+        assert len(segments) > 1
+        # All should be within limit
+        for seg in segments:
+            assert len(seg.phonemes) <= 100
+        # At least one segment should be the short sentence
+        assert any(len(seg.phonemes) < 20 for seg in segments)
 
 
 class TestPhonemeSegmentPauseAfter:

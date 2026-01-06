@@ -62,7 +62,7 @@ PyKokoro comes with 70+ voices. Here are some popular ones:
    audio1, sr = kokoro.create("American female voice", voice="af_bella")
    audio2, sr = kokoro.create("American male voice", voice="am_adam")
 
-   # British English  
+   # British English
    audio3, sr = kokoro.create("British female voice", voice="bf_emma")
    audio4, sr = kokoro.create("British male voice", voice="bm_george")
 
@@ -150,7 +150,7 @@ Use Kokoro as a context manager for automatic cleanup:
 
    with Kokoro() as kokoro:
        audio, sr = kokoro.create("Hello, world!", voice="af_bella")
-       
+
        import soundfile as sf
        sf.write("output.wav", audio, sr)
    # Automatically closed
@@ -167,7 +167,7 @@ For long text, use ``split_mode`` to automatically split at natural boundaries:
    long_text = """
    This is a long passage of text. It has multiple sentences.
    The split mode will handle this intelligently.
-   
+
    This is a new paragraph. It will be processed efficiently.
    """
 
@@ -177,7 +177,7 @@ For long text, use ``split_mode`` to automatically split at natural boundaries:
            voice="af_bella",
            split_mode="sentence"  # Split at sentence boundaries
        )
-       
+
        import soundfile as sf
        sf.write("long_text.wav", audio, sr)
 
@@ -207,10 +207,10 @@ Here's a complete example putting it all together:
    # Example usage
    text = """
    Welcome to PyKokoro! (..)
-   
+
    This library makes text-to-speech generation simple. (.)
    You can control voice, speed, and add natural pauses. (..)
-   
+
    Enjoy creating audio content!
    """
 

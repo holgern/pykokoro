@@ -18,7 +18,7 @@ Basic Voice Blending
    with Kokoro() as kokoro:
        # Blend two voices equally
        blend = VoiceBlend.parse("af_bella + af_sarah")
-       
+
        audio, sr = kokoro.create(
            "This is a blended voice",
            voice=blend
@@ -36,7 +36,7 @@ Control the contribution of each voice:
    with Kokoro() as kokoro:
        # 70% bella, 30% sarah
        blend = VoiceBlend.parse("af_bella*0.7 + af_sarah*0.3")
-       
+
        audio, sr = kokoro.create(
            "Weighted blend",
            voice=blend
@@ -59,7 +59,7 @@ Blend more than two voices:
        blend = VoiceBlend.parse(
            "af_bella*0.5 + af_sarah*0.3 + af_nicole*0.2"
        )
-       
+
        audio, sr = kokoro.create(
            "Complex blend",
            voice=blend
@@ -99,7 +99,7 @@ Using create_from_phonemes()
    with Kokoro() as kokoro:
        # Get phonemes for text
        phonemes = kokoro.tokenizer.phonemize("Hello, world!")
-       
+
        # Generate from phonemes
        audio, sr = kokoro.create_from_phonemes(
            phonemes,
@@ -123,7 +123,7 @@ Convert text to phonemes:
            lang="en-us"
        )
        print(f"Phonemes: {phonemes}")
-       
+
        # Get detailed phoneme info
        result = kokoro.tokenizer.text_to_phonemes(
            "Hello",
@@ -142,10 +142,10 @@ Work with phoneme segments for batch processing:
    from pykokoro import phonemize_text_list, create_tokenizer
 
    tokenizer = create_tokenizer()
-   
+
    texts = ["Hello", "World", "How are you?"]
    segments = phonemize_text_list(texts, tokenizer, lang="en-us")
-   
+
    for segment in segments:
        print(f"Text: {segment.text}")
        print(f"Phonemes: {segment.phonemes}")
@@ -157,33 +157,48 @@ Advanced Text Splitting
 Split and Phonemize in One Step
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For advanced text processing with splitting and phoneme generation:
+For advanced text processing with automatic splitting and phoneme generation.
+
+The ``split_and_phonemize_text`` function intelligently handles long text by:
+
+1. Splitting text using your chosen mode (paragraph, sentence, or clause)
+2. Phonemizing each segment
+3. **Automatically cascading to finer split modes** if segments exceed the phoneme limit
+4. Only truncating as last resort (when even individual words are too long)
+
+**Cascade behavior:**
+
+- ``paragraph`` mode → ``sentence`` → ``clause`` → ``word`` → truncate
+- ``sentence`` mode → ``clause`` → ``word`` → truncate
+- ``clause`` mode → ``word`` → truncate
+- ``word`` mode → truncate (with warning)
 
 .. code-block:: python
 
    from pykokoro import split_and_phonemize_text, create_tokenizer
 
    tokenizer = create_tokenizer()
-   
+
    long_text = """
    This is the first sentence. This is the second.
-   
+
    This is a new paragraph.
    """
-   
+
+   # The function automatically ensures all segments stay within limit
    segments = split_and_phonemize_text(
        long_text,
        tokenizer,
        lang="en-us",
-       split_mode="sentence",
-       max_chars=300,
-       max_phoneme_length=510
+       split_mode="sentence",  # Will cascade to clause/word if needed
+       max_phoneme_length=510  # Kokoro's maximum
    )
-   
+
    for segment in segments:
        print(f"Paragraph {segment.paragraph}, Sentence {segment.sentence}")
        print(f"Text: {segment.text}")
        print(f"Phonemes: {segment.phonemes[:50]}...")
+       # segment.phonemes is guaranteed to be <= 510
 
 Split Modes in Detail
 ~~~~~~~~~~~~~~~~~~~~~
@@ -328,7 +343,7 @@ Get Model Paths
 
    model_path = get_model_path(quality="q8")
    voice_path = get_voice_path()
-   
+
    print(f"Model: {model_path}")
    print(f"Voices: {voice_path}")
 
@@ -387,10 +402,10 @@ Trim Silence from Audio
    # Generate audio with silence
    with Kokoro() as kokoro:
        audio, sr = kokoro.create("Hello!", voice="af_bella")
-   
+
    # Trim silence
    trimmed_audio, trim_info = trim(audio)
-   
+
    print(f"Original: {len(audio)} samples")
    print(f"Trimmed: {len(trimmed_audio)} samples")
    print(f"Trim info: {trim_info}")
@@ -425,7 +440,7 @@ Get Cache Paths
 
    cache_path = get_user_cache_path()
    config_path = get_user_config_path()
-   
+
    print(f"Cache: {cache_path}")
    print(f"Config: {config_path}")
 

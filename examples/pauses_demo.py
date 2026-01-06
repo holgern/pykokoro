@@ -144,9 +144,8 @@ def main():
     print("All examples generated successfully!")
     print("=" * 60)
     print("\nTotal files created: 5")
-    print(
-        f"Total duration: {duration1 + duration2 + duration3 + duration4 + duration5:.2f}s"
-    )
+    total_duration = duration1 + duration2 + duration3 + duration4 + duration5
+    print(f"Total duration: {total_duration:.2f}s")
 
 
 if __name__ == "__main__":
