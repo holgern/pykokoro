@@ -16,9 +16,9 @@ Output:
 """
 
 import onnxruntime as rt
+import soundfile as sf
 
 import pykokoro
-import soundfile as sf
 
 # Test sentence
 TEST_TEXT = "PyKokoro supports multiple hardware acceleration providers for optimal performance."
@@ -111,12 +111,12 @@ def test_auto_provider():
     print("TESTING AUTO PROVIDER SELECTION")
     print("=" * 70)
 
-    print(f"\nInitializing Kokoro with provider='auto'...")
+    print("\nInitializing Kokoro with provider='auto'...")
     kokoro = pykokoro.Kokoro(provider="auto")
 
-    print(f"\nGenerating speech...")
+    print("\nGenerating speech...")
     print(f'Text: "{TEST_TEXT}"')
-    print(f"Voice: af_bella")
+    print("Voice: af_bella")
 
     samples, sample_rate = kokoro.create(TEST_TEXT, voice="af_bella", speed=1.0)
 
@@ -132,7 +132,7 @@ def test_auto_provider():
     sf.write(output_file, samples, sample_rate)
 
     duration = len(samples) / sample_rate
-    print(f"\n✓ Success!")
+    print("\n✓ Success!")
     print(f"  Generated {duration:.2f}s of audio")
     print(f"  Saved to: {output_file}")
 

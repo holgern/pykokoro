@@ -434,6 +434,21 @@ def format_chapters_range(indices: list[int], total_chapters: int) -> str:
     return f"chapters_{min_chapter}-{max_chapter}"
 
 
+def generate_silence(duration: float, sample_rate: int = 24000) -> Any:
+    """Generate silence array of specified duration.
+
+    Args:
+        duration: Duration in seconds
+        sample_rate: Audio sample rate (default: 24000 for Kokoro)
+
+    Returns:
+        Numpy array of zeros (float32)
+    """
+    import numpy as np
+
+    return np.zeros(int(duration * sample_rate), dtype=np.float32)
+
+
 def format_filename_template(
     template: str,
     book_title: str = "",

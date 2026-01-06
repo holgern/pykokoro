@@ -23,9 +23,9 @@ import pykokoro
 
 # Extensive text with lots of direct speech and contractions
 TEXT = """
-The Conversation
+The Conversation (..)
 
-Chapter One: The Meeting
+Chapter One: The Meeting (...)
 
 'I don't like you,' a man told me once, standing in the doorway of an old café.
 His words hung in the air like smoke...
@@ -48,7 +48,7 @@ wrong—it's people who think they'll solve everything with empty words. They're
 the world, but they won't deliver... They'll say "I'd've helped if I could've," but that's just
 an excuse, isn't it?'
 
-Chapter Two: The Argument
+Chapter Two: The Argument (...)
 
 "Look..." I said, trying to stay calm, 'I don't know what happened to you, but you shouldn't
 take it out on strangers! That's not fair, and it won't make you feel better.'
@@ -70,7 +70,7 @@ That stopped him. His expression softened slightly. 'You're... what?'
 "I'm sorry..." I repeated. 'I don't know what happened, and I won't pretend I do. But I can
 see you're in pain, and that's real. Your feelings're valid, even if I don't understand them yet.'
 
-Chapter Three: The Story
+Chapter Three: The Story (...)
 
 He was silent for a long moment. Then he sighed. 'You wanna know what happened? You really
 wanna hear this?'
@@ -95,7 +95,7 @@ But then... then it all fell apart..."
 care of us. But they didn't! They couldn't, or wouldn't—I don't know which. Suddenly,
 I'd lost everything I'd've worked for..."
 
-Chapter Four: The Revelation
+Chapter Four: The Revelation (...)
 
 'My wife said, "Don't worry, we'll manage." But I knew we wouldn't... Not really. The savings'd
 run out, the bills'd pile up. I told her, "I can't do this!" and she said, "Yes, you can!
@@ -117,7 +117,7 @@ He looked at the ground. "My wife... she'd said she'll stick by me. She'd promis
 leave. But she did... She'd've stayed, she said, if I'd've gotten help. But I wouldn't. I
 couldn't admit I'd failed..."
 
-Chapter Five: The Understanding
+Chapter Five: The Understanding (...)
 
 'I'm so sorry...' I said. "That's... that's terrible..."
 
@@ -142,7 +142,7 @@ done. But you won't, will you?"
 
 'No...' I said. "I won't. Because I don't know what I'd've done in your situation. Nobody does."
 
-Chapter Six: The Resolution
+Chapter Six: The Resolution (...)
 
 'You know what the worst part is?' he asked. "It's knowing that if I'd've had one more chance,
 I'd've done it all differently! I wouldn't've made the same mistakes. I'd've listened to my
@@ -166,7 +166,7 @@ wouldn't've stayed to listen..."
 "But you would've..." I said. 'If you'd've met someone like yourself, someone hurting and
 angry, you'd've stopped. You'd've listened. Because that's who you are.'
 
-Chapter Seven: New Beginnings
+Chapter Seven: New Beginnings (...)
 
 'How'd you know that?' he asked.
 
@@ -193,7 +193,7 @@ thought you'll judge me, that you won't understand. But I was wrong! I shouldn't
 
 "We all make assumptions..." I said. 'The important thing is recognizing when we're wrong.'
 
-Chapter Eight: Parting Words
+Chapter Eight: Parting Words (...)
 
 'I'd've never imagined this conversation'd go this way...' he said. "I thought I'd drive you
 off with my anger. That's what I'd've wanted, I think. But you wouldn't go... You stayed."
@@ -215,7 +215,7 @@ can't know what would've happened. We can only know what will happen if we choos
 'I've got different experiences...' I said. "That's all. You've got your own wisdom that I don't
 have. We've all got something to teach each other."
 
-Chapter Nine: The Promise
+Chapter Nine: The Promise (...)
 
 "Before you go..." he said, 'I wanna make a promise. I'm gonna do better! I won't give up, even
 when it's hard. I'll keep trying, even when I'd rather quit. I'd've made this promise before,
@@ -238,7 +238,7 @@ I won't make new ones, but I'll try to do better!"
 
 "That's all anyone can do!" I said.
 
-Chapter Ten: Reflection
+Chapter Ten: Reflection (...)
 
 As I walked away from the café that day, I couldn't help but think about our conversation...
 He'd've seemed so angry at first, so closed off. I'd've never guessed we'd end up having such
@@ -270,7 +270,7 @@ I'd've never expected this day to turn out the way it did! But I'm glad it did. 
 changed it, even if I could've. Because sometimes, the most unexpected conversations're the
 ones that matter most!
 
-Epilogue
+Epilogue (...)
 
 The following Tuesday, I returned to the café as promised. I didn't know if he'd come, but
 I'd've been there anyway... I'd've kept my word.
@@ -339,6 +339,8 @@ def main():
             voice=VOICE,
             speed=1.0,
             lang=LANG,
+            enable_pauses=True,
+            split_mode="paragraph",  # Split by paragraphs for better pacing
         )
 
         output_file = "contractions_advanced_demo.wav"

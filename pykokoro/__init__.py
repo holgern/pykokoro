@@ -18,11 +18,9 @@ from .onnx_backend import (
     get_voice_path,
 )
 from .phonemes import (
-    PhonemeBook,
-    PhonemeChapter,
     PhonemeSegment,
-    create_phoneme_book_from_chapters,
     phonemize_text_list,
+    split_and_phonemize_text,
 )
 from .tokenizer import (
     EspeakConfig,
@@ -59,8 +57,6 @@ __all__ = [
     "Tokenizer",
     "VoiceBlend",
     # Phoneme classes
-    "PhonemeBook",
-    "PhonemeChapter",
     "PhonemeSegment",
     # Config classes
     "TokenizerConfig",
@@ -89,5 +85,5 @@ __all__ = [
     # Helper functions
     "create_tokenizer",
     "phonemize_text_list",
-    "create_phoneme_book_from_chapters",
+    "split_and_phonemize_text",
 ]

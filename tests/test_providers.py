@@ -1,7 +1,7 @@
 """Test ONNX Runtime provider selection."""
 
-import pytest
 import onnxruntime as rt
+import pytest
 
 from pykokoro import Kokoro
 

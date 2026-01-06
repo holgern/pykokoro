@@ -451,13 +451,9 @@ class Kokoro:
             voices_path: Path to the voices.bin file (auto-downloaded if None)
             use_gpu: Deprecated. Use provider parameter instead.
                 Legacy GPU flag for backward compatibility.
-            provider: Execution provider for ONNX Runtime:
-                - "auto": Auto-select best available (default)
-                - "cpu": CPU only
-                - "cuda": NVIDIA CUDA GPU (requires onnxruntime-gpu)
-                - "openvino": Intel OpenVINO (requires openvino)
-                - "directml": DirectML for Windows (requires onnxruntime-directml)
-                - "coreml": Apple CoreML (macOS only)
+            provider: Execution provider for ONNX Runtime. Options:
+                "auto" (auto-select best), "cpu", "cuda" (NVIDIA),
+                "openvino" (Intel), "directml" (Windows), "coreml" (macOS)
             vocab_version: Vocabulary version for tokenizer
             espeak_config: Optional espeak-ng configuration
                 (deprecated, use tokenizer_config)
@@ -631,7 +627,7 @@ class Kokoro:
         last_error = None
 
         for attempt, provider_list in enumerate([providers, ["CPUExecutionProvider"]]):
-            # Skip second attempt if we already tried CPU or 
+            # Skip second attempt if we already tried CPU or
             # if explicit provider was requested
             if attempt == 1:
                 if providers == ["CPUExecutionProvider"]:
@@ -863,6 +859,142 @@ class Kokoro:
         assert blended is not None, "No voices in blend"
         return blended
 
+    def _generate_from_phoneme_batches(
+        self,
+        batches: list[str],
+        voice_style: np.ndarray,
+        speed: float,
+        trim_silence: bool,
+    ) -> np.ndarray:
+        """Generate and concatenate audio from phoneme batches.
+
+        Args:
+            batches: List of phoneme strings (each <= MAX_PHONEME_LENGTH)
+            voice_style: Voice style vector
+            speed: Speech speed
+            trim_silence: Whether to trim silence from each batch
+
+        Returns:
+            Concatenated audio array
+        """
+        audio_parts = []
+
+        for batch in batches:
+            audio, _ = self._create_audio_internal(batch, voice_style, speed)
+            if trim_silence:
+                audio, _ = trim_audio(audio)
+            audio_parts.append(audio)
+
+        return (
+            np.concatenate(audio_parts)
+            if audio_parts
+            else np.array([], dtype=np.float32)
+        )
+
+    def _process_with_split_mode(
+        self,
+        text: str,
+        voice_style: np.ndarray,
+        speed: float,
+        lang: str,
+        split_mode: str,
+        trim_silence: bool,
+    ) -> np.ndarray:
+        """Process text using sentence/paragraph splitting for better prosody.
+
+        Args:
+            text: Input text
+            voice_style: Voice style vector
+            speed: Speech speed
+            lang: Language code
+            split_mode: Split mode ('paragraph', 'sentence', 'clause')
+            trim_silence: Whether to trim silence from segments
+
+        Returns:
+            Generated audio array
+        """
+        # Validate spaCy requirement
+        if split_mode in ["sentence", "clause"]:
+            try:
+                import spacy
+            except ImportError:
+                raise ImportError(
+                    f"spaCy is required for split_mode='{split_mode}'. "
+                    "Install with: pip install spacy && python -m spacy download en_core_web_sm"
+                )
+
+        from .phonemes import split_and_phonemize_text
+
+        # Split text directly into segments
+        segments = split_and_phonemize_text(
+            text,
+            tokenizer=self.tokenizer,
+            lang=lang,
+            split_mode=split_mode,
+            # Use defaults for max_chars (300) and max_phoneme_length (510)
+            # These are handled internally by split_and_phonemize_text() with smart recursion
+        )
+
+        # Generate audio for each segment
+        segment_parts = []
+        for segment in segments:
+            # segment.phonemes is guaranteed to be <= 510 by split_and_phonemize_text()
+            audio, _ = self._create_audio_internal(segment.phonemes, voice_style, speed)
+            if trim_silence:
+                audio, _ = trim_audio(audio)
+            segment_parts.append(audio)
+
+        return (
+            np.concatenate(segment_parts)
+            if segment_parts
+            else np.array([], dtype=np.float32)
+        )
+
+    def _process_text_segment(
+        self,
+        text: str,
+        voice_style: np.ndarray,
+        speed: float,
+        lang: str,
+        split_mode: str | None,
+        trim_silence: bool,
+    ) -> np.ndarray:
+        """Process a text segment into audio, handling splitting automatically.
+
+        Args:
+            text: Input text segment
+            voice_style: Voice style vector
+            speed: Speech speed
+            lang: Language code
+            split_mode: Optional split mode for better prosody
+            trim_silence: Whether to trim silence
+
+        Returns:
+            Generated audio array
+        """
+        if split_mode is not None:
+            # Use text-level splitting for better prosody
+            return self._process_with_split_mode(
+                text, voice_style, speed, lang, split_mode, trim_silence
+            )
+        else:
+            # Simple approach: phonemize → check length → split if needed
+            phonemes = self.tokenizer.phonemize(text, lang=lang)
+
+            # Check if phonemes exceed limit
+            if len(phonemes) <= MAX_PHONEME_LENGTH:
+                # Single batch
+                audio, _ = self._create_audio_internal(phonemes, voice_style, speed)
+                if trim_silence:
+                    audio, _ = trim_audio(audio)
+                return audio
+            else:
+                # Need to split phonemes
+                batches = self._split_phonemes(phonemes)
+                return self._generate_from_phoneme_batches(
+                    batches, voice_style, speed, trim_silence
+                )
+
     def create(
         self,
         text: str,
@@ -870,6 +1002,12 @@ class Kokoro:
         speed: float = 1.0,
         lang: str = "en-us",
         is_phonemes: bool = False,
+        enable_pauses: bool = False,
+        pause_short: float = 0.3,
+        pause_medium: float = 0.6,
+        pause_long: float = 1.0,
+        split_mode: str | None = None,
+        trim_silence: bool = True,
     ) -> tuple[np.ndarray, int]:
         """
         Generate audio from text or phonemes.
@@ -880,6 +1018,14 @@ class Kokoro:
             speed: Speech speed (1.0 = normal)
             lang: Language code (e.g., 'en-us', 'en-gb', 'es', 'fr')
             is_phonemes: If True, treat 'text' as phonemes instead of text
+            enable_pauses: If True, process pause markers (.), (..), (...)
+            pause_short: Duration for (.) in seconds
+            pause_medium: Duration for (..) in seconds
+            pause_long: Duration for (...) in seconds
+            split_mode: Optional text splitting mode. Options: None (default,
+                automatic phoneme-based), "paragraph" (double newlines),
+                "sentence" (requires spaCy), "clause" (sentences + commas, requires spaCy)
+            trim_silence: Whether to trim silence from segment boundaries
 
         Returns:
             Tuple of (audio samples as numpy array, sample rate)
@@ -894,36 +1040,51 @@ class Kokoro:
         else:
             voice_style = voice
 
-        # Convert text to phonemes (or use directly if already phonemes)
+        # If already phonemes, use directly
         if is_phonemes:
             phonemes = text
-        else:
-            phonemes = self.tokenizer.phonemize(text, lang=lang)
-
-        # Debug logging for phoneme generation
-        if os.getenv("PYKOKORO_DEBUG_PHONEMES"):
-            if not is_phonemes:
-                logger.info(f"Text: {text[:100]}...")
-                logger.info(f"Language: {lang}")
-            logger.info(f"Phonemes: {phonemes[:100]}...")
-            logger.info(f"Phoneme length: {len(phonemes)} characters")
-
-        # Split phonemes into batches at sentence boundaries
-        batches = self._split_phonemes(phonemes)
-
-        # Debug logging for batch splitting
-        if os.getenv("PYKOKORO_DEBUG_PHONEMES"):
-            logger.info(f"Split into {len(batches)} batches")
-            for i, batch in enumerate(batches, 1):
-                logger.info(f"  Batch {i}: {len(batch)} chars - {batch[:80]}...")
+            batches = self._split_phonemes(phonemes)
+            return self._generate_from_phoneme_batches(
+                batches, voice_style, speed, trim_silence
+            ), SAMPLE_RATE
 
         audio_parts = []
 
-        for batch in batches:
-            audio_part, _ = self._create_audio_internal(batch, voice_style, speed)
-            # Trim silence from each part
-            audio_part, _ = trim_audio(audio_part)
-            audio_parts.append(audio_part)
+        # Process pauses if enabled
+        if enable_pauses:
+            from .utils import generate_silence
+
+            initial_pause, segments_with_pauses = self.tokenizer.split_with_pauses(
+                text, pause_short, pause_medium, pause_long
+            )
+
+            # Add initial silence
+            if initial_pause > 0:
+                audio_parts.append(generate_silence(initial_pause, SAMPLE_RATE))
+
+            # Process each pause-delimited segment
+            for segment_text, pause_after in segments_with_pauses:
+                if not segment_text.strip():
+                    if pause_after > 0:
+                        audio_parts.append(generate_silence(pause_after, SAMPLE_RATE))
+                    continue
+
+                # Process segment (with optional split_mode)
+                segment_audio = self._process_text_segment(
+                    segment_text, voice_style, speed, lang, split_mode, trim_silence
+                )
+                audio_parts.append(segment_audio)
+
+                # Add pause after segment
+                if pause_after > 0:
+                    audio_parts.append(generate_silence(pause_after, SAMPLE_RATE))
+
+        else:
+            # No pause processing
+            segment_audio = self._process_text_segment(
+                text, voice_style, speed, lang, split_mode, trim_silence
+            )
+            audio_parts.append(segment_audio)
 
         if not audio_parts:
             return np.array([], dtype=np.float32), SAMPLE_RATE
@@ -940,7 +1101,7 @@ class Kokoro:
         Generate audio from phonemes directly.
 
         This bypasses text-to-phoneme conversion, useful when working
-        with pre-tokenized content from PhonemeBook.
+        with pre-tokenized phoneme content.
 
         Args:
             phonemes: IPA phoneme string

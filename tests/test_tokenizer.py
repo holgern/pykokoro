@@ -627,3 +627,187 @@ class TestMixedLanguageSupport:
             assert cache_size_1 == cache_size_2
         except ImportError:
             pytest.skip("lingua-language-detector not available")
+
+
+class TestSplitWithPauses:
+    """Tests for split_with_pauses() method."""
+
+    def test_no_markers(self):
+        """Test text without pause markers."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("Hello world")
+        assert initial == 0.0
+        assert len(segments) == 1
+        assert segments[0] == ("Hello world", 0.0)
+
+    def test_single_short_pause(self):
+        """Test single short pause marker (.)."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("A (.) B")
+        assert initial == 0.0
+        assert len(segments) == 2
+        assert segments[0] == ("A", 0.3)
+        assert segments[1] == ("B", 0.0)
+
+    def test_single_medium_pause(self):
+        """Test single medium pause marker (..)."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("A (..) B")
+        assert initial == 0.0
+        assert len(segments) == 2
+        assert segments[0] == ("A", 0.6)
+        assert segments[1] == ("B", 0.0)
+
+    def test_single_long_pause(self):
+        """Test single long pause marker (...)."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("A (...) B")
+        assert initial == 0.0
+        assert len(segments) == 2
+        assert segments[0] == ("A", 1.0)
+        assert segments[1] == ("B", 0.0)
+
+    def test_multiple_pauses(self):
+        """Test multiple different pause markers."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("A (.) B (..) C (...) D")
+        assert initial == 0.0
+        assert len(segments) == 4
+        assert segments[0] == ("A", 0.3)
+        assert segments[1] == ("B", 0.6)
+        assert segments[2] == ("C", 1.0)
+        assert segments[3] == ("D", 0.0)
+
+    def test_consecutive_pauses(self):
+        """Test consecutive pause markers add durations."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("A (...) (..) B")
+        assert initial == 0.0
+        assert len(segments) == 2
+        assert segments[0] == ("A", 1.6)  # 1.0 + 0.6
+        assert segments[1] == ("B", 0.0)
+
+    def test_consecutive_pauses_all_types(self):
+        """Test three consecutive pauses."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("Start (...) (..) (.) End")
+        assert initial == 0.0
+        assert len(segments) == 2
+        assert segments[0][0] == "Start"
+        assert segments[0][1] == pytest.approx(1.9)  # 1.0 + 0.6 + 0.3
+        assert segments[1] == ("End", 0.0)
+
+    def test_leading_pause(self):
+        """Test pause marker at the start."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("(...) Hello")
+        assert initial == 1.0
+        assert len(segments) == 1
+        assert segments[0] == ("Hello", 0.0)
+
+    def test_leading_multiple_pauses(self):
+        """Test multiple pause markers at the start."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("(...) (..) Hello")
+        assert initial == 1.6  # 1.0 + 0.6
+        assert len(segments) == 1
+        assert segments[0] == ("Hello", 0.0)
+
+    def test_trailing_pause(self):
+        """Test pause marker at the end."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("Bye (...)")
+        assert initial == 0.0
+        assert len(segments) == 1
+        assert segments[0] == ("Bye", 1.0)
+
+    def test_trailing_multiple_pauses(self):
+        """Test multiple pause markers at the end."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("Bye (..) (...)")
+        assert initial == 0.0
+        assert len(segments) == 1
+        assert segments[0] == ("Bye", 1.6)  # 0.6 + 1.0
+
+    def test_only_pauses(self):
+        """Test text with only pause markers."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("(...) (..) (.)")
+        assert initial == pytest.approx(1.9)  # All pauses accumulate as initial
+        assert len(segments) == 0
+
+    def test_empty_text(self):
+        """Test empty text."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("")
+        assert initial == 0.0
+        assert len(segments) == 0
+
+    def test_whitespace_only(self):
+        """Test text with only whitespace."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("   \n\t   ")
+        assert initial == 0.0
+        assert len(segments) == 0
+
+    def test_custom_durations(self):
+        """Test custom pause durations."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses(
+            "A (.) B (..) C (...) D",
+            pause_short=0.5,
+            pause_medium=1.0,
+            pause_long=2.0,
+        )
+        assert initial == 0.0
+        assert segments[0] == ("A", 0.5)
+        assert segments[1] == ("B", 1.0)
+        assert segments[2] == ("C", 2.0)
+        assert segments[3] == ("D", 0.0)
+
+    def test_malformed_markers_not_detected(self):
+        """Test that malformed markers are not treated as pauses."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("Test (.. more text")
+        assert initial == 0.0
+        assert len(segments) == 1
+        assert segments[0] == ("Test (.. more text", 0.0)
+
+    def test_parentheses_in_text(self):
+        """Test that regular parentheses are preserved."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("Test (example) here")
+        assert initial == 0.0
+        assert len(segments) == 1
+        assert segments[0] == ("Test (example) here", 0.0)
+
+    def test_mixed_content(self):
+        """Test realistic text with pauses."""
+        tokenizer = Tokenizer()
+        text = "Chapter 5 (...) I'm Klaus. (.) Welcome to the show!"
+        initial, segments = tokenizer.split_with_pauses(text)
+        assert initial == 0.0
+        assert len(segments) == 3
+        assert segments[0] == ("Chapter 5", 1.0)
+        assert segments[1] == ("I'm Klaus.", 0.3)
+        assert segments[2] == ("Welcome to the show!", 0.0)
+
+    def test_whitespace_handling(self):
+        """Test that whitespace around markers is handled correctly."""
+        tokenizer = Tokenizer()
+        initial, segments = tokenizer.split_with_pauses("A   (.)   B")
+        assert initial == 0.0
+        assert len(segments) == 2
+        assert segments[0] == ("A", 0.3)
+        assert segments[1] == ("B", 0.0)
+
+    def test_newlines_with_pauses(self):
+        """Test text with newlines and pauses."""
+        tokenizer = Tokenizer()
+        text = "Line 1 (...)\nLine 2 (.) Line 3"
+        initial, segments = tokenizer.split_with_pauses(text)
+        assert initial == 0.0
+        assert len(segments) == 3
+        assert segments[0] == ("Line 1", 1.0)
+        assert segments[1] == ("Line 2", 0.3)
+        assert segments[2] == ("Line 3", 0.0)

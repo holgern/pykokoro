@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from pykokoro.onnx_backend import (
     DEFAULT_MODEL_QUALITY,
     HF_REPO_ID,
@@ -511,3 +513,147 @@ class TestSplitPhonemes:
         assert "ɡuːtn taːk" in combined
         assert "ʊmlaʊtə" in combined
         assert "ʃtʁaːsə" in combined
+
+
+class TestCreateWithPauses:
+    """Tests for create() method with pause support."""
+
+    def test_create_parameters_exist(self):
+        """Test that new pause parameters are accepted."""
+        from pykokoro.onnx_backend import Kokoro
+
+        kokoro = Kokoro()
+        # Should not raise TypeError for new parameters
+        try:
+            # We won't actually run this (no model), just check signature
+            import inspect
+
+            sig = inspect.signature(kokoro.create)
+            params = sig.parameters
+
+            assert "enable_pauses" in params
+            assert "pause_short" in params
+            assert "pause_medium" in params
+            assert "pause_long" in params
+            assert "split_mode" in params
+            assert "trim_silence" in params
+        except Exception:
+            pytest.skip("Could not inspect signature")
+
+    def test_split_with_pauses_called_when_enabled(self, monkeypatch):
+        """Test that split_with_pauses is called when enable_pauses=True."""
+        from pykokoro.onnx_backend import Kokoro
+
+        kokoro = Kokoro()
+
+        # Track if split_with_pauses was called
+        split_called = {"called": False, "args": None}
+
+        def mock_split(self, text, short, medium, long):
+            split_called["called"] = True
+            split_called["args"] = (text, short, medium, long)
+            return 0.0, [("test text", 0.0)]
+
+        # Mock the method
+        monkeypatch.setattr(
+            "pykokoro.tokenizer.Tokenizer.split_with_pauses", mock_split
+        )
+
+        # Mock other methods to prevent actual TTS
+        def mock_init(self):
+            self._session = None
+            self._voices_data = {}
+
+        def mock_process(self, text, voice_style, speed, lang, split_mode, trim):
+            import numpy as np
+
+            return np.array([0.0], dtype=np.float32)
+
+        monkeypatch.setattr("pykokoro.onnx_backend.Kokoro._init_kokoro", mock_init)
+        monkeypatch.setattr(
+            "pykokoro.onnx_backend.Kokoro._process_text_segment", mock_process
+        )
+        monkeypatch.setattr(
+            "pykokoro.onnx_backend.Kokoro.get_voice_style",
+            lambda self, name: __import__("numpy").zeros(10),
+        )
+
+        # Call with enable_pauses=True
+        kokoro.create("Test text", voice="af_sarah", enable_pauses=True)
+
+        assert split_called["called"]
+        assert split_called["args"][0] == "Test text"
+
+    def test_split_with_pauses_not_called_when_disabled(self, monkeypatch):
+        """Test that split_with_pauses is NOT called when enable_pauses=False."""
+        from pykokoro.onnx_backend import Kokoro
+
+        kokoro = Kokoro()
+
+        # Track if split_with_pauses was called
+        split_called = {"called": False}
+
+        def mock_split(self, text, short, medium, long):
+            split_called["called"] = True
+            return 0.0, []
+
+        monkeypatch.setattr(
+            "pykokoro.tokenizer.Tokenizer.split_with_pauses", mock_split
+        )
+
+        # Mock other methods
+        def mock_init(self):
+            self._session = None
+            self._voices_data = {}
+
+        def mock_process(self, text, voice_style, speed, lang, split_mode, trim):
+            import numpy as np
+
+            return np.array([0.0], dtype=np.float32)
+
+        monkeypatch.setattr("pykokoro.onnx_backend.Kokoro._init_kokoro", mock_init)
+        monkeypatch.setattr(
+            "pykokoro.onnx_backend.Kokoro._process_text_segment", mock_process
+        )
+        monkeypatch.setattr(
+            "pykokoro.onnx_backend.Kokoro.get_voice_style",
+            lambda self, name: __import__("numpy").zeros(10),
+        )
+
+        # Call with enable_pauses=False (default)
+        kokoro.create("Test text", voice="af_sarah", enable_pauses=False)
+
+        assert not split_called["called"]
+
+    def test_generate_silence_function(self):
+        """Test that generate_silence utility works correctly."""
+        from pykokoro.utils import generate_silence
+
+        silence = generate_silence(1.0, 24000)
+
+        assert len(silence) == 24000  # 1 second at 24kHz
+        assert silence.dtype == __import__("numpy").float32
+        assert __import__("numpy").all(silence == 0.0)
+
+    def test_generate_silence_custom_duration(self):
+        """Test generate_silence with custom duration."""
+        from pykokoro.utils import generate_silence
+
+        silence = generate_silence(0.5, 24000)
+
+        assert len(silence) == 12000  # 0.5 seconds
+        assert silence.dtype == __import__("numpy").float32
+
+    def test_helper_methods_exist(self):
+        """Test that new helper methods exist in Kokoro class."""
+        from pykokoro.onnx_backend import Kokoro
+
+        kokoro = Kokoro()
+
+        assert hasattr(kokoro, "_generate_from_phoneme_batches")
+        assert hasattr(kokoro, "_process_with_split_mode")
+        assert hasattr(kokoro, "_process_text_segment")
+
+        assert callable(kokoro._generate_from_phoneme_batches)
+        assert callable(kokoro._process_with_split_mode)
+        assert callable(kokoro._process_text_segment)

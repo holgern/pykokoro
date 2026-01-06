@@ -35,7 +35,8 @@ pip install pykokoro[gpu]
 
 #### Intel OpenVINO
 
-**Note:** OpenVINO is currently incompatible with Kokoro models due to dynamic rank tensor requirements. The provider will automatically fall back to CPU if OpenVINO fails.
+**Note:** OpenVINO is currently incompatible with Kokoro models due to dynamic rank
+tensor requirements. The provider will automatically fall back to CPU if OpenVINO fails.
 
 ```bash
 pip install pykokoro[openvino]
@@ -175,6 +176,84 @@ print(phonemes)  # hə'loʊ wɜːld
 # Generate from phonemes
 audio, sr = tts.create_from_phonemes(phonemes, voice="af_sarah")
 ```
+
+### Inter-Word Pauses
+
+Control pause timing in speech with explicit markers for natural-sounding narration:
+
+```python
+# Use pause markers in your text
+text = "Chapter 5 (...) I'm Klaus. (.) Welcome to the show!"
+
+# Enable pause processing
+audio, sr = tts.create(
+    text,
+    voice="am_michael",
+    enable_pauses=True
+)
+```
+
+**Pause Markers:**
+
+- `(.)` - Short pause (300ms by default)
+- `(..)` - Medium pause (600ms by default)
+- `(...)` - Long pause (1000ms by default)
+
+**Custom Pause Durations:**
+
+```python
+audio, sr = tts.create(
+    text,
+    voice="am_michael",
+    enable_pauses=True,
+    pause_short=0.2,    # (.) = 200ms
+    pause_medium=0.5,   # (..) = 500ms
+    pause_long=1.5      # (...) = 1500ms
+)
+```
+
+**Advanced: Combining with Text Splitting**
+
+For long texts, combine pause markers with automatic text splitting for better prosody:
+
+```python
+long_text = """
+Welcome to the podcast (...) Today we discuss AI.
+
+First topic: neural networks. (.) Second topic: deep learning.
+(..) Third topic: real-world applications. (...)
+"""
+
+audio, sr = tts.create(
+    long_text,
+    voice="af_sarah",
+    enable_pauses=True,
+    split_mode="sentence"  # Smart sentence splitting (requires spaCy)
+)
+```
+
+**Split Modes:**
+
+- `None` (default) - Automatic phoneme-based splitting
+- `"paragraph"` - Split on double newlines
+- `"sentence"` - Split on sentence boundaries (requires spaCy)
+- `"clause"` - Split on sentences + commas (requires spaCy)
+
+**Note:** For `split_mode="sentence"` or `split_mode="clause"`, install spaCy:
+
+```bash
+pip install spacy
+python -m spacy download en_core_web_sm
+```
+
+**Pause Behavior:**
+
+- **Consecutive pauses**: Durations add together (e.g., `(...) (..)` = 1.6s)
+- **Leading pauses**: Silence inserted before speech starts (e.g., `(...) Hello`)
+- **Disabling**: Set `enable_pauses=False` to treat markers as regular text
+
+See `examples/pauses_demo.py` and `examples/pauses_with_splitting.py` for complete
+examples.
 
 ## Available Voices
 
