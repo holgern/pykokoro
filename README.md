@@ -294,7 +294,8 @@ See `examples/pauses_demo.py`, `examples/pauses_with_splitting.py`, and
 
 ## Available Voices
 
-The library includes voices across different languages and accents. The number of available voices depends on the model source:
+The library includes voices across different languages and accents. The number of
+available voices depends on the model source:
 
 ### HuggingFace & GitHub v1.0 (54 voices)
 
@@ -370,13 +371,15 @@ voices = tts.get_voices()  # Returns 103 voices
 audio, sr = tts.create("Hello world", voice="af_maple", lang="en-us")
 ```
 
-**Note:** Chinese text generation requires proper phonemization support (currently in development).
+**Note:** Chinese text generation requires proper phonemization support (currently in
+development).
 
 ## Model Quality Options
 
 Available quality options vary by source:
 
 **HuggingFace Models:**
+
 - `fp32`: Full precision (highest quality, largest size)
 - `fp16`: Half precision (good quality, smaller size)
 - `q8`: 8-bit quantized (fast, small)
@@ -387,12 +390,14 @@ Available quality options vary by source:
 - `uint8f16`: Unsigned 8-bit with fp16
 
 **GitHub v1.0 Models:**
+
 - `fp32`: Full precision
 - `fp16`: Half precision
 - `fp16-gpu`: GPU-optimized fp16
 - `q8`: 8-bit quantized
 
 **GitHub v1.1-zh Models:**
+
 - `fp32`: Full precision only
 
 ```python

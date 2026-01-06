@@ -188,18 +188,19 @@ def main():
         # Has custom options
         if "t" in fastest[0]:  # Thread count
             threads = fastest[0].split("_")[1].replace("t", "")
-            print(f"  kokoro = pykokoro.Kokoro(")
+            print("  kokoro = pykokoro.Kokoro(")
             print(f'      provider="{base_provider}",')
             print(f'      provider_options={{"intra_op_num_threads": {threads}}}')
-            print(f"  )")
+            print("  )")
         elif fastest[0].startswith("openvino"):  # Precision
             precision = fastest[0].split("_")[1].upper()
-            print(f"  kokoro = pykokoro.Kokoro(")
+            print("  kokoro = pykokoro.Kokoro(")
             print(f'      provider="{base_provider}",')
             print(
-                f'      provider_options={{"precision": "{precision}", "num_of_threads": 8}}'
+                f'      provider_options={{"precision": "{precision}", '
+                f'"num_of_threads": 8}}'
             )
-            print(f"  )")
+            print("  )")
     else:
         print(f'  kokoro = pykokoro.Kokoro(provider="{fastest[0]}")')
 

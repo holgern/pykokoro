@@ -5,8 +5,9 @@ This example shows different ways to configure execution providers
 using SessionOptions and provider_options.
 """
 
-import pykokoro
 import soundfile as sf
+
+import pykokoro
 
 # Example 1: Simple - Use defaults
 print("=" * 60)
@@ -102,7 +103,8 @@ try:
         )
         sf.write("provider_demo_cuda.wav", audio, sr)
         print(
-            f"✓ Generated audio with CUDA (2GB limit): {len(audio)} samples at {sr} Hz\n"
+            f"✓ Generated audio with CUDA (2GB limit): "
+            f"{len(audio)} samples at {sr} Hz\n"
         )
         kokoro_cuda.close()
     else:

@@ -730,7 +730,8 @@ class Kokoro:
                 - device_type: "CPU_FP32", "GPU", etc.
                 - precision: "FP32", "FP16", "BF16" (auto-set from model_quality)
                 - num_of_threads: Number of threads (default: auto)
-                - cache_dir: Model cache directory (default: ~/.cache/pykokoro/openvino_cache)
+                - cache_dir: Model cache directory
+                  (default: ~/.cache/pykokoro/openvino_cache)
                 - enable_opencl_throttling: "true"/"false" for iGPU
 
                 CUDA:

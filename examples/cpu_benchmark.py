@@ -315,7 +315,7 @@ def test_combined_optimal():
         kokoro = pykokoro.Kokoro(provider="cpu", provider_options=optimal_config)
         samples, sr = kokoro.create(TEXT, voice="af_bella")
         sf.write("cpu_benchmark_optimal.wav", samples, sr)
-        print(f"  Saved sample to: cpu_benchmark_optimal.wav")
+        print("  Saved sample to: cpu_benchmark_optimal.wav")
         kokoro.close()
 
         return optimal_config
@@ -331,7 +331,7 @@ def main():
     print("=" * 70)
 
     cpu_count = os.cpu_count() or 4
-    print(f"\nSystem Information:")
+    print("\nSystem Information:")
     print(f"  CPU cores available: {cpu_count}")
     print(f"  Test text length: {len(TEXT)} characters")
 
