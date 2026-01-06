@@ -177,9 +177,13 @@ print(phonemes)  # hə'loʊ wɜːld
 audio, sr = tts.create_from_phonemes(phonemes, voice="af_sarah")
 ```
 
-### Inter-Word Pauses
+### Pause Control
 
-Control pause timing in speech with explicit markers for natural-sounding narration:
+PyKokoro offers two powerful ways to control pauses in generated speech:
+
+#### 1. Manual Pause Markers
+
+Add explicit pauses using simple markers in your text:
 
 ```python
 # Use pause markers in your text
@@ -212,32 +216,53 @@ audio, sr = tts.create(
 )
 ```
 
-**Advanced: Combining with Text Splitting**
+#### 2. Automatic Natural Pauses (NEW!)
 
-For long texts, combine pause markers with automatic text splitting for better prosody:
+For more natural speech, enable automatic pause insertion at linguistic boundaries:
 
 ```python
-long_text = """
-Welcome to the podcast (...) Today we discuss AI.
+text = """
+Artificial intelligence is transforming our world. Machine learning models
+are becoming more sophisticated, efficient, and accessible.
 
-First topic: neural networks. (.) Second topic: deep learning.
-(..) Third topic: real-world applications. (...)
+Deep learning, a subset of AI, uses neural networks with many layers. These
+networks can learn complex patterns from data, enabling breakthroughs in
+computer vision, natural language processing, and speech recognition.
 """
 
+# Automatic pauses at clause, sentence, and paragraph boundaries
 audio, sr = tts.create(
-    long_text,
+    text,
     voice="af_sarah",
-    enable_pauses=True,
-    split_mode="sentence"  # Smart sentence splitting (requires spaCy)
+    split_mode="clause",     # Split on commas and sentences
+    trim_silence=True,       # Enable automatic pause insertion
+    pause_short=0.25,        # Pause after clauses (commas)
+    pause_medium=0.5,        # Pause after sentences
+    pause_long=1.0,          # Pause after paragraphs
+    pause_variance=0.05,     # Add natural variance (default)
+    random_seed=42           # For reproducible results (optional)
 )
 ```
 
+**Key Features:**
+
+- **Natural boundaries**: Automatically detects clauses, sentences, and paragraphs
+- **Variance**: Gaussian variance prevents robotic timing (±100ms by default)
+- **Reproducible**: Use `random_seed` for consistent output
+- **Composable**: Works with manual pause markers (`enable_pauses=True`)
+
 **Split Modes:**
 
-- `None` (default) - Automatic phoneme-based splitting
+- `None` (default) - Automatic phoneme-based splitting, no automatic pauses
 - `"paragraph"` - Split on double newlines
 - `"sentence"` - Split on sentence boundaries (requires spaCy)
-- `"clause"` - Split on sentences + commas (requires spaCy)
+- `"clause"` - Split on sentences + commas (requires spaCy, recommended)
+
+**Pause Variance Options:**
+
+- `pause_variance=0.0` - No variance (exact pauses)
+- `pause_variance=0.05` - Default (±100ms at 95% confidence)
+- `pause_variance=0.1` - More variation (±200ms at 95% confidence)
 
 **Note:** For `split_mode="sentence"` or `split_mode="clause"`, install spaCy:
 
@@ -246,14 +271,25 @@ pip install spacy
 python -m spacy download en_core_web_sm
 ```
 
-**Pause Behavior:**
+**Combining Both Approaches:**
 
-- **Consecutive pauses**: Durations add together (e.g., `(...) (..)` = 1.6s)
-- **Leading pauses**: Silence inserted before speech starts (e.g., `(...) Hello`)
-- **Disabling**: Set `enable_pauses=False` to treat markers as regular text
+Use manual markers for special emphasis and automatic pauses for natural rhythm:
 
-See `examples/pauses_demo.py` and `examples/pauses_with_splitting.py` for complete
-examples.
+```python
+text = "Welcome! (...) Let's discuss AI, machine learning, and deep learning."
+
+audio, sr = tts.create(
+    text,
+    voice="af_sarah",
+    enable_pauses=True,      # Manual (...) marker
+    split_mode="clause",     # Automatic pauses at commas
+    trim_silence=True,
+    pause_variance=0.05
+)
+```
+
+See `examples/pauses_demo.py`, `examples/pauses_with_splitting.py`, and
+`examples/automatic_pauses_demo.py` for complete examples.
 
 ## Available Voices
 

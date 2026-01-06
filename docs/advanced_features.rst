@@ -237,6 +237,84 @@ Splits on both sentences and commas for finer control:
        split_mode="clause"  # Splits on sentences and commas
    )
 
+Automatic Pause Control
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``PhonemeSegment`` objects include metadata for automatic pause insertion:
+
+.. code-block:: python
+
+   from pykokoro import split_and_phonemize_text, create_tokenizer
+
+   tokenizer = create_tokenizer()
+   
+   segments = split_and_phonemize_text(
+       text,
+       tokenizer,
+       split_mode="clause"
+   )
+
+   # Each segment tracks its position
+   for segment in segments:
+       print(f"Paragraph: {segment.paragraph}")
+       print(f"Sentence: {segment.sentence}")
+       print(f"Pause after: {segment.pause_after}")  # Can be set for custom pauses
+
+When using ``Kokoro.create()`` with ``trim_silence=True`` and a ``split_mode``,
+these segment boundaries are used to automatically insert natural pauses:
+
+.. code-block:: python
+
+   from pykokoro import Kokoro
+
+   with Kokoro() as kokoro:
+       # Automatic pause insertion based on segment boundaries
+       audio, sr = kokoro.create(
+           long_text,
+           voice="af_sarah",
+           split_mode="clause",
+           trim_silence=True,       # Enable automatic pauses
+           pause_short=0.25,        # Clause boundaries
+           pause_medium=0.5,        # Sentence boundaries
+           pause_long=1.0,          # Paragraph boundaries
+           pause_variance=0.05,     # Natural variance (Gaussian)
+           random_seed=42           # For reproducible results
+       )
+
+**Pause Variance Details:**
+
+The ``pause_variance`` parameter adds Gaussian (normal distribution) variance to
+pause durations, making speech sound more natural:
+
+* **0.0** - No variance, exact pause durations
+* **0.05** - Default, ±100ms at 95% confidence interval
+* **0.1** - Higher variance, ±200ms at 95% confidence
+
+The variance ensures that pauses are never exactly the same length, mimicking
+natural human speech rhythm.
+
+**Reproducibility:**
+
+Use ``random_seed`` for consistent output across runs:
+
+.. code-block:: python
+
+   # Same output every time
+   audio1, sr = kokoro.create(text, voice="af_sarah", 
+                              split_mode="clause", trim_silence=True,
+                              random_seed=42)
+   
+   audio2, sr = kokoro.create(text, voice="af_sarah",
+                              split_mode="clause", trim_silence=True, 
+                              random_seed=42)
+   
+   # audio1 and audio2 are identical
+   
+   # Different output each time
+   audio3, sr = kokoro.create(text, voice="af_sarah",
+                              split_mode="clause", trim_silence=True,
+                              random_seed=None)  # or omit parameter
+
 Custom Warning Callbacks
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 

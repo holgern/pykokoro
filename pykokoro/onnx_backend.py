@@ -809,6 +809,28 @@ class Kokoro:
 
         return batches if batches else [phonemes]
 
+    def _apply_pause_variance(
+        self,
+        pause_duration: float,
+        variance_std: float,
+        rng: np.random.Generator,
+    ) -> float:
+        """Apply Gaussian variance to pause duration.
+
+        Args:
+            pause_duration: Base pause duration in seconds
+            variance_std: Standard deviation for Gaussian distribution
+            rng: NumPy random generator for reproducibility
+
+        Returns:
+            Pause duration with variance applied (never negative)
+        """
+        if variance_std <= 0:
+            return pause_duration
+
+        variance = rng.normal(0, variance_std)
+        return max(0.0, pause_duration + variance)
+
     def get_voices(self) -> list[str]:
         """Get list of available voice names."""
         self._init_kokoro()
@@ -899,8 +921,21 @@ class Kokoro:
         lang: str,
         split_mode: str,
         trim_silence: bool,
+        pause_short: float,
+        pause_medium: float,
+        pause_long: float,
+        pause_variance: float,
+        rng: np.random.Generator,
     ) -> np.ndarray:
         """Process text using sentence/paragraph splitting for better prosody.
+
+        When trim_silence is enabled, this method adds natural pauses between
+        segments based on their boundaries:
+        - After clause (within sentence): pause_short
+        - After sentence (within paragraph): pause_medium
+        - After paragraph: pause_long
+
+        Pauses include Gaussian variance for more natural speech rhythm.
 
         Args:
             text: Input text
@@ -909,6 +944,11 @@ class Kokoro:
             lang: Language code
             split_mode: Split mode ('paragraph', 'sentence', 'clause')
             trim_silence: Whether to trim silence from segments
+            pause_short: Duration for clause pauses in seconds
+            pause_medium: Duration for sentence pauses in seconds
+            pause_long: Duration for paragraph pauses in seconds
+            pause_variance: Standard deviation for Gaussian pause variance
+            rng: NumPy random generator for reproducibility
 
         Returns:
             Generated audio array
@@ -936,7 +976,31 @@ class Kokoro:
             split_mode=split_mode,
         )
 
+        # Populate pause_after field based on segment boundaries
+        if trim_silence:
+            for i, segment in enumerate(segments):
+                if i < len(segments) - 1:  # Not the last segment
+                    next_segment = segments[i + 1]
+
+                    # Determine pause type based on boundary
+                    if next_segment.paragraph != segment.paragraph:
+                        # Paragraph boundary
+                        base_pause = pause_long
+                    elif next_segment.sentence != segment.sentence:
+                        # Sentence boundary (within same paragraph)
+                        base_pause = pause_medium
+                    else:
+                        # Clause boundary (within same sentence)
+                        base_pause = pause_short
+
+                    # Apply variance
+                    segment.pause_after = self._apply_pause_variance(
+                        base_pause, pause_variance, rng
+                    )
+
         # Generate audio for each segment
+        from .utils import generate_silence
+
         segment_parts = []
         for segment in segments:
             # segment.phonemes is guaranteed to be <= 510 by cascading logic
@@ -944,6 +1008,10 @@ class Kokoro:
             if trim_silence:
                 audio, _ = trim_audio(audio)
             segment_parts.append(audio)
+
+            # Add pause after segment if specified
+            if segment.pause_after > 0:
+                segment_parts.append(generate_silence(segment.pause_after, SAMPLE_RATE))
 
         return (
             np.concatenate(segment_parts)
@@ -959,6 +1027,11 @@ class Kokoro:
         lang: str,
         split_mode: str | None,
         trim_silence: bool,
+        pause_short: float,
+        pause_medium: float,
+        pause_long: float,
+        pause_variance: float,
+        rng: np.random.Generator,
     ) -> np.ndarray:
         """Process a text segment into audio, handling splitting automatically.
 
@@ -969,6 +1042,11 @@ class Kokoro:
             lang: Language code
             split_mode: Optional split mode for better prosody
             trim_silence: Whether to trim silence
+            pause_short: Duration for clause pauses in seconds
+            pause_medium: Duration for sentence pauses in seconds
+            pause_long: Duration for paragraph pauses in seconds
+            pause_variance: Standard deviation for Gaussian pause variance
+            rng: NumPy random generator for reproducibility
 
         Returns:
             Generated audio array
@@ -976,7 +1054,17 @@ class Kokoro:
         if split_mode is not None:
             # Use text-level splitting for better prosody
             return self._process_with_split_mode(
-                text, voice_style, speed, lang, split_mode, trim_silence
+                text,
+                voice_style,
+                speed,
+                lang,
+                split_mode,
+                trim_silence,
+                pause_short,
+                pause_medium,
+                pause_long,
+                pause_variance,
+                rng,
             )
         else:
             # Simple approach: phonemize → check length → split if needed
@@ -1009,6 +1097,8 @@ class Kokoro:
         pause_long: float = 1.0,
         split_mode: str | None = None,
         trim_silence: bool = False,
+        pause_variance: float = 0.05,
+        random_seed: int | None = None,
     ) -> tuple[np.ndarray, int]:
         """
         Generate audio from text or phonemes.
@@ -1020,19 +1110,34 @@ class Kokoro:
             lang: Language code (e.g., 'en-us', 'en-gb', 'es', 'fr')
             is_phonemes: If True, treat 'text' as phonemes instead of text
             enable_pauses: If True, process pause markers (.), (..), (...)
-            pause_short: Duration for (.) in seconds
-            pause_medium: Duration for (..) in seconds
-            pause_long: Duration for (...) in seconds
+            pause_short: Duration for (.) in seconds, or clause pauses when
+                trim_silence=True with split_mode
+            pause_medium: Duration for (..) in seconds, or sentence pauses when
+                trim_silence=True with split_mode
+            pause_long: Duration for (...) in seconds, or paragraph pauses when
+                trim_silence=True with split_mode
             split_mode: Optional text splitting mode. Options: None (default,
                 automatic phoneme-based), "paragraph" (double newlines),
                 "sentence" (requires spaCy), "clause" (sentences + commas,
-                requires spaCy)
-            trim_silence: Whether to trim silence from segment boundaries
+                requires spaCy). When combined with trim_silence=True,
+                automatically adds natural pauses between segments.
+            trim_silence: Whether to trim silence from segment boundaries.
+                When used with split_mode, adds natural pauses between
+                segments (clause/sentence/paragraph boundaries).
+            pause_variance: Standard deviation for Gaussian variance added to
+                automatic pauses (in seconds). Only applies when trim_silence=True
+                and split_mode is set. Default 0.05 (±100ms at 95% confidence).
+                Set to 0.0 to disable variance.
+            random_seed: Optional random seed for reproducible pause variance.
+                If None, pauses will vary between runs.
 
         Returns:
             Tuple of (audio samples as numpy array, sample rate)
         """
         self._init_kokoro()
+
+        # Initialize random generator for reproducible variance
+        rng = np.random.default_rng(random_seed)
 
         # Resolve voice to style vector
         if isinstance(voice, VoiceBlend):
@@ -1073,7 +1178,17 @@ class Kokoro:
 
                 # Process segment (with optional split_mode)
                 segment_audio = self._process_text_segment(
-                    segment_text, voice_style, speed, lang, split_mode, trim_silence
+                    segment_text,
+                    voice_style,
+                    speed,
+                    lang,
+                    split_mode,
+                    trim_silence,
+                    pause_short,
+                    pause_medium,
+                    pause_long,
+                    pause_variance,
+                    rng,
                 )
                 audio_parts.append(segment_audio)
 
@@ -1084,7 +1199,17 @@ class Kokoro:
         else:
             # No pause processing
             segment_audio = self._process_text_segment(
-                text, voice_style, speed, lang, split_mode, trim_silence
+                text,
+                voice_style,
+                speed,
+                lang,
+                split_mode,
+                trim_silence,
+                pause_short,
+                pause_medium,
+                pause_long,
+                pause_variance,
+                rng,
             )
             audio_parts.append(segment_audio)
 

@@ -6,15 +6,37 @@ This page provides detailed API documentation for all public classes and functio
 Main Classes
 ------------
 
+Kokoro
+~~~~~~
+
 .. autoclass:: pykokoro.Kokoro
    :members:
    :undoc-members:
    :show-inheritance:
 
+**Key Methods:**
+
+* ``create()`` - Main text-to-speech method with support for:
+  
+  - Manual pause markers (``enable_pauses=True``)
+  - Automatic natural pauses (``split_mode`` + ``trim_silence=True``)
+  - Pause variance control (``pause_variance``, ``random_seed``)
+  
+* ``create_from_phonemes()`` - Generate from IPA phonemes
+* ``create_from_tokens()`` - Generate from token IDs
+* ``create_stream()`` - Async streaming generation
+* ``create_stream_sync()`` - Sync streaming generation
+
+VoiceBlend
+~~~~~~~~~~
+
 .. autoclass:: pykokoro.VoiceBlend
    :members:
    :undoc-members:
    :show-inheritance:
+
+ModelQuality
+~~~~~~~~~~~~
 
 .. autoclass:: pykokoro.ModelQuality
    :members:

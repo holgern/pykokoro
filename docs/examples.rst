@@ -237,6 +237,48 @@ With Pause Markers and Splitting
        )
        sf.write("combined_demo.wav", audio, sr)
 
+Automatic Natural Pauses (NEW!)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For the most natural-sounding speech, use automatic pause insertion:
+
+.. code-block:: python
+
+   from pykokoro import Kokoro
+   import soundfile as sf
+
+   text = """
+   Artificial intelligence is transforming our world. Machine learning
+   models are becoming more sophisticated, efficient, and accessible.
+
+   Deep learning uses neural networks with many layers. These networks
+   can learn complex patterns, enabling breakthroughs in vision and
+   language processing.
+   """
+
+   with Kokoro() as kokoro:
+       audio, sr = kokoro.create(
+           text,
+           voice="af_sarah",
+           split_mode="clause",      # Split on commas and sentences
+           trim_silence=True,        # Enable automatic pauses
+           pause_short=0.25,         # Clause pauses
+           pause_medium=0.5,         # Sentence pauses
+           pause_long=1.0,           # Paragraph pauses
+           pause_variance=0.05,      # Natural variance
+           random_seed=42            # For reproducibility
+       )
+       sf.write("automatic_pauses.wav", audio, sr)
+
+**Key Benefits:**
+
+* Automatic detection of clause, sentence, and paragraph boundaries
+* Natural Gaussian variance prevents robotic timing
+* No manual markers needed
+* Combines with manual markers for maximum control
+
+See ``examples/automatic_pauses_demo.py`` for a complete demonstration.
+
 Speed Control
 -------------
 

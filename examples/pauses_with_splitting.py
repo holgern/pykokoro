@@ -48,6 +48,7 @@ def main():
     print("  • Smart text splitting (split_mode='sentence')")
     print("  • Explicit pause control using (.), (..), and (...)")
     print("  • Automatic handling of long sentences")
+    print("  • Natural pause variance for more human-like speech")
     print()
 
     print("Processing text...")
@@ -63,6 +64,8 @@ def main():
         pause_short=0.3,
         pause_medium=0.6,
         pause_long=1.2,
+        pause_variance=0.05,  # Add natural variance (±100ms at 95% confidence)
+        random_seed=42,  # For reproducible results
     )
 
     output_file = "pauses_splitting_demo.wav"
@@ -111,12 +114,20 @@ def main():
     print("  ✓ Natural sentence boundaries preserved")
     print("  ✓ Explicit pause control at important points")
     print("  ✓ Automatic handling of phoneme length limits")
+    print("  ✓ Natural variance prevents robotic timing")
     print("  ✓ Better overall prosody and naturalness")
     print()
     print("Try experimenting with different split_modes:")
     print("  • split_mode='paragraph' - Split on double newlines")
     print("  • split_mode='sentence' - Split on sentences (requires spaCy)")
     print("  • split_mode='clause' - Split on commas too (requires spaCy)")
+    print()
+    print("Pause variance options:")
+    print("  • pause_variance=0.0 - No variance (exact pauses)")
+    print("  • pause_variance=0.05 - Default (±100ms at 95% confidence)")
+    print("  • pause_variance=0.1 - More variation (±200ms at 95% confidence)")
+    print("  • random_seed=42 - Reproducible results")
+    print("  • random_seed=None - Different pauses each time")
     print()
 
 

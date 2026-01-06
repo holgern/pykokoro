@@ -202,10 +202,14 @@ Recommended range: 0.5 to 2.0
 Pause Control
 -------------
 
-Add pauses using simple markers in your text:
+PyKokoro provides two powerful ways to control pauses in your generated speech:
 
-Pause Markers
-~~~~~~~~~~~~~
+1. Manual Pause Markers
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Add explicit pauses using simple markers in your text:
+
+**Pause Markers:**
 
 * ``(.)`` - Short pause (0.3 seconds by default)
 * ``(..)`` - Medium pause (0.6 seconds by default)
@@ -227,8 +231,7 @@ Pause Markers
            enable_pauses=True  # Must enable pause processing
        )
 
-Custom Pause Durations
-~~~~~~~~~~~~~~~~~~~~~~
+**Custom Pause Durations:**
 
 .. code-block:: python
 
@@ -242,10 +245,78 @@ Custom Pause Durations
            pause_long=0.8      # Long pause (...)
        )
 
+2. Automatic Natural Pauses (NEW!)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For more natural speech, enable automatic pause insertion at linguistic boundaries:
+
+.. code-block:: python
+
+   with Kokoro() as kokoro:
+       text = """
+       Artificial intelligence is transforming our world. Machine learning
+       models are becoming more sophisticated, efficient, and accessible.
+
+       Deep learning uses neural networks with many layers. These networks
+       can learn complex patterns, enabling breakthroughs in vision and
+       language processing.
+       """
+
+       audio, sr = kokoro.create(
+           text,
+           voice="af_sarah",
+           split_mode="clause",     # Split on commas and sentences
+           trim_silence=True,       # Enable automatic pause insertion
+           pause_short=0.25,        # Pause after clauses (commas)
+           pause_medium=0.5,        # Pause after sentences
+           pause_long=1.0,          # Pause after paragraphs
+           pause_variance=0.05,     # Add natural variance
+           random_seed=42           # For reproducibility (optional)
+       )
+
+**How It Works:**
+
+When ``trim_silence=True`` and ``split_mode`` is set, PyKokoro automatically:
+
+* Detects linguistic boundaries (clauses, sentences, paragraphs)
+* Inserts appropriate pauses based on boundary type:
+
+  - **Clause boundary** (comma within sentence) → ``pause_short``
+  - **Sentence boundary** (within paragraph) → ``pause_medium``
+  - **Paragraph boundary** → ``pause_long``
+
+* Adds Gaussian variance to prevent robotic timing
+
+**Pause Variance:**
+
+* ``pause_variance=0.0`` - No variance (exact pauses)
+* ``pause_variance=0.05`` - Default (±100ms at 95% confidence)
+* ``pause_variance=0.1`` - More variation (±200ms at 95% confidence)
+
+**Combining Both Approaches:**
+
+Use manual markers for special emphasis and automatic pauses for natural rhythm:
+
+.. code-block:: python
+
+   with Kokoro() as kokoro:
+       text = "Welcome! (...) Let's discuss AI, deep learning, and robotics."
+
+       audio, sr = kokoro.create(
+           text,
+           voice="af_sarah",
+           enable_pauses=True,      # Manual (...) marker
+           split_mode="clause",     # Automatic pauses at commas
+           trim_silence=True,
+           pause_variance=0.05
+       )
+
 Text Splitting
 --------------
 
-For long text, use ``split_mode`` to automatically split at natural boundaries:
+For long text, use ``split_mode`` to automatically split at natural boundaries.
+
+This improves prosody and handles phoneme length limits automatically.
 
 Split Modes
 ~~~~~~~~~~~
@@ -277,10 +348,11 @@ Sentence splitting requires spaCy:
    pip install spacy
    python -m spacy download en_core_web_sm
 
-Trimming Silence
-~~~~~~~~~~~~~~~~
+Automatic Pauses with Text Splitting
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Remove leading/trailing silence from each segment:
+When combining ``split_mode`` with ``trim_silence=True``, PyKokoro automatically
+adds natural pauses between segments:
 
 .. code-block:: python
 
@@ -288,8 +360,30 @@ Remove leading/trailing silence from each segment:
        audio, sr = kokoro.create(
            long_text,
            voice="af_bella",
-           split_mode="sentence",
-           trim_silence=True  # Remove silence between segments
+           split_mode="clause",      # Best for natural pauses
+           trim_silence=True,        # Enable automatic pauses
+           pause_short=0.25,         # Clause pauses
+           pause_medium=0.5,         # Sentence pauses
+           pause_long=1.0,           # Paragraph pauses
+           pause_variance=0.05       # Natural variance
+       )
+
+This creates more natural-sounding speech with appropriate pauses at linguistic
+boundaries without requiring manual pause markers.
+
+Trimming Silence Only
+~~~~~~~~~~~~~~~~~~~~~~
+
+To remove silence without adding automatic pauses, use ``trim_silence=True``
+without ``split_mode``:
+
+.. code-block:: python
+
+   with Kokoro() as kokoro:
+       audio, sr = kokoro.create(
+           text,
+           voice="af_bella",
+           trim_silence=True  # Just trim, no automatic pauses
        )
 
 Error Handling
