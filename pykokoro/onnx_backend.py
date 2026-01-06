@@ -691,6 +691,8 @@ class Kokoro:
         voices_path: Path | None = None,
         use_gpu: bool = False,
         provider: ProviderType | None = None,
+        session_options: rt.SessionOptions | None = None,
+        provider_options: dict[str, Any] | None = None,
         vocab_version: str = "v1.0",
         espeak_config: EspeakConfig | None = None,
         tokenizer_config: Optional["TokenizerConfig"] = None,
@@ -709,6 +711,48 @@ class Kokoro:
             provider: Execution provider for ONNX Runtime. Options:
                 "auto" (auto-select best), "cpu", "cuda" (NVIDIA),
                 "openvino" (Intel), "directml" (Windows), "coreml" (macOS)
+            session_options: Pre-configured ONNX Runtime SessionOptions object.
+                If provided, this takes precedence over provider_options.
+                For advanced users who need full control over session configuration.
+            provider_options: Dictionary of provider and session options.
+                Supports both SessionOptions attributes and provider-specific options.
+
+                Common SessionOptions attributes:
+                - intra_op_num_threads: Parallelism within operations (default: auto)
+                - inter_op_num_threads: Parallelism across operations (default: 1)
+                - graph_optimization_level: 0-3 or GraphOptimizationLevel enum
+                - execution_mode: Sequential or parallel
+                - enable_profiling: Enable ONNX profiling
+
+                Provider-specific options:
+
+                OpenVINO:
+                - device_type: "CPU_FP32", "GPU", etc.
+                - precision: "FP32", "FP16", "BF16" (auto-set from model_quality)
+                - num_of_threads: Number of threads (default: auto)
+                - cache_dir: Model cache directory (default: ~/.cache/pykokoro/openvino_cache)
+                - enable_opencl_throttling: "true"/"false" for iGPU
+
+                CUDA:
+                - device_id: GPU device ID (default: 0)
+                - gpu_mem_limit: Memory limit in bytes
+                - arena_extend_strategy: "kNextPowerOfTwo", "kSameAsRequested"
+                - cudnn_conv_algo_search: "EXHAUSTIVE", "HEURISTIC", "DEFAULT"
+
+                DirectML:
+                - device_id: GPU device ID
+                - disable_metacommands: "true"/"false"
+
+                CoreML:
+                - MLComputeUnits: "ALL", "CPU_ONLY", "CPU_AND_GPU"
+                - EnableOnSubgraphs: "true"/"false"
+
+                Example:
+                    provider_options={
+                        "precision": "FP16",
+                        "num_of_threads": 8,
+                        "intra_op_num_threads": 4
+                    }
             vocab_version: Vocabulary version for tokenizer
             espeak_config: Optional espeak-ng configuration
                 (deprecated, use tokenizer_config)
@@ -732,17 +776,27 @@ class Kokoro:
 
         self._use_gpu = use_gpu
         self._provider: ProviderType | None = provider
+        self._session_options = session_options
         self._model_source = model_source
         self._model_variant = model_variant
+
+        # Load config for defaults
+        from .utils import load_config
+
+        cfg = load_config()
+
+        # Resolve provider_options from config if not specified
+        if provider_options is None and "provider_options" in cfg:
+            provider_options = cfg.get("provider_options")
+            logger.info(f"Loaded provider_options from config: {provider_options}")
+
+        self._provider_options = provider_options
 
         # Resolve model quality from config if not specified
         resolved_quality: ModelQuality = DEFAULT_MODEL_QUALITY
         if model_quality is not None:
             resolved_quality = model_quality
         else:
-            from .utils import load_config
-
-            cfg = load_config()
             quality_from_cfg = cfg.get("model_quality", DEFAULT_MODEL_QUALITY)
             # Validate it's a valid quality option and cast to ModelQuality
             if quality_from_cfg in MODEL_QUALITY_FILES:
@@ -823,11 +877,205 @@ class Kokoro:
         if not is_config_downloaded():
             download_config()
 
+    def _get_default_provider_options(self, provider: str) -> dict[str, str]:
+        """
+        Get sensible default options for a provider.
+
+        Uses PyKokoro cache path and model quality for smart defaults.
+
+        Args:
+            provider: Provider name (e.g., "OpenVINOExecutionProvider")
+
+        Returns:
+            Dictionary of default provider options (string values)
+        """
+        defaults: dict[str, str] = {}
+
+        if provider == "OpenVINOExecutionProvider":
+            # Use cache dir from PyKokoro
+            cache_dir = get_user_cache_path() / "openvino_cache"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+            defaults = {
+                "device_type": "CPU_FP32",
+                "cache_dir": str(cache_dir),
+                "enable_opencl_throttling": "false",
+            }
+
+            # Auto-set precision based on model_quality
+            if self._model_quality in ["fp16", "fp16-gpu"]:
+                defaults["precision"] = "FP16"
+            elif self._model_quality == "fp32":
+                defaults["precision"] = "FP32"
+            else:
+                # For quantized models, use FP32 precision in OpenVINO
+                defaults["precision"] = "FP32"
+
+        elif provider == "CUDAExecutionProvider":
+            defaults = {
+                "device_id": "0",
+                "arena_extend_strategy": "kNextPowerOfTwo",
+            }
+
+        elif provider == "DmlExecutionProvider":
+            defaults = {
+                "device_id": "0",
+            }
+
+        return defaults
+
+    def _get_provider_specific_options(
+        self,
+        provider: str,
+        all_options: dict[str, Any],
+    ) -> dict[str, str]:
+        """
+        Extract provider-specific options for the given provider.
+
+        Filters out SessionOptions attributes and converts values to strings
+        as required by ONNX Runtime.
+
+        Args:
+            provider: Provider name (e.g., "OpenVINOExecutionProvider")
+            all_options: Dictionary of all options (mixed session and provider options)
+
+        Returns:
+            Dictionary of provider-specific options with string values
+        """
+        # Define known provider options
+        provider_options_map: dict[str, list[str]] = {
+            "OpenVINOExecutionProvider": [
+                "device_type",
+                "precision",
+                "num_of_threads",
+                "cache_dir",
+                "enable_opencl_throttling",
+            ],
+            "CUDAExecutionProvider": [
+                "device_id",
+                "gpu_mem_limit",
+                "arena_extend_strategy",
+                "cudnn_conv_algo_search",
+                "do_copy_in_default_stream",
+            ],
+            "DmlExecutionProvider": ["device_id", "disable_metacommands"],
+            "CoreMLExecutionProvider": [
+                "MLComputeUnits",
+                "EnableOnSubgraphs",
+                "ModelFormat",
+            ],
+        }
+
+        known_options = provider_options_map.get(provider, [])
+
+        # General SessionOptions attributes (exclude from provider options)
+        session_attrs = {
+            "intra_op_num_threads",
+            "inter_op_num_threads",
+            "num_threads",
+            "threads",
+            "graph_optimization_level",
+            "execution_mode",
+            "enable_profiling",
+            "enable_mem_pattern",
+            "enable_cpu_mem_arena",
+            "enable_mem_reuse",
+            "log_severity_level",
+            "log_verbosity_level",
+        }
+
+        # Extract only provider-specific options
+        provider_opts: dict[str, str] = {}
+        for key, value in all_options.items():
+            if key in session_attrs:
+                continue  # Skip SessionOptions attributes
+
+            if known_options and key not in known_options:
+                logger.warning(
+                    f"Unknown option '{key}' for {provider}. "
+                    f"Known options: {known_options}"
+                )
+                continue
+
+            # Convert to string as required by ONNX Runtime
+            provider_opts[key] = str(value)
+
+        return provider_opts
+
+    def _apply_provider_options(
+        self,
+        sess_opt: rt.SessionOptions,
+        options: dict[str, Any],
+    ) -> None:
+        """
+        Apply provider options to SessionOptions.
+
+        Handles both SessionOptions attributes and provider-specific configs.
+
+        Args:
+            sess_opt: SessionOptions to modify
+            options: Dictionary of options to apply
+        """
+        # Map of common option names to SessionOptions attributes
+        session_option_attrs: dict[str, str] = {
+            "intra_op_num_threads": "intra_op_num_threads",
+            "inter_op_num_threads": "inter_op_num_threads",
+            "num_threads": "intra_op_num_threads",  # Alias
+            "threads": "intra_op_num_threads",  # Alias
+            "graph_optimization_level": "graph_optimization_level",
+            "execution_mode": "execution_mode",
+            "enable_profiling": "enable_profiling",
+            "enable_mem_pattern": "enable_mem_pattern",
+            "enable_cpu_mem_arena": "enable_cpu_mem_arena",
+            "enable_mem_reuse": "enable_mem_reuse",
+            "log_severity_level": "log_severity_level",
+            "log_verbosity_level": "log_verbosity_level",
+        }
+
+        # Apply SessionOptions attributes
+        for opt_name, value in options.items():
+            if opt_name in session_option_attrs:
+                attr_name = session_option_attrs[opt_name]
+                setattr(sess_opt, attr_name, value)
+                logger.debug(f"Set SessionOptions.{attr_name} = {value}")
+
+    def _create_session_options(self) -> rt.SessionOptions:
+        """
+        Create SessionOptions with user configuration and sensible defaults.
+
+        Priority:
+        1. User-provided SessionOptions object (self._session_options)
+        2. User-provided provider_options dict (self._provider_options)
+        3. Sensible defaults
+
+        Returns:
+            Configured SessionOptions instance
+        """
+        # If user provided a SessionOptions object, use it directly
+        if self._session_options is not None:
+            logger.info("Using user-provided SessionOptions")
+            return self._session_options
+
+        # Create new SessionOptions with defaults
+        sess_opt = rt.SessionOptions()
+
+        # Sensible defaults - let ONNX Runtime decide thread count
+        # Only set these if user doesn't override
+        sess_opt.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess_opt.execution_mode = rt.ExecutionMode.ORT_SEQUENTIAL
+
+        # Apply user provider_options if provided
+        if self._provider_options:
+            logger.info(f"Applying provider options: {self._provider_options}")
+            self._apply_provider_options(sess_opt, self._provider_options)
+
+        return sess_opt
+
     def _select_providers(
         self,
         provider: ProviderType | None,
         use_gpu: bool,
-    ) -> list[str]:
+    ) -> list[str | tuple[str, dict[str, str]]]:
         """
         Select ONNX Runtime execution providers based on preference.
 
@@ -836,7 +1084,8 @@ class Kokoro:
             use_gpu: Legacy GPU flag (for backward compatibility)
 
         Returns:
-            List of providers in priority order
+            List of providers in priority order. Can be simple strings or
+            tuples of (provider_name, options_dict) for provider-specific options.
 
         Raises:
             RuntimeError: If requested provider is not available
@@ -844,11 +1093,33 @@ class Kokoro:
         """
         available = rt.get_available_providers()
 
+        # Helper function to create provider list with options
+        def _make_provider_list(prov: str) -> list[str | tuple[str, dict[str, str]]]:
+            """Create provider list, adding options if needed."""
+            # Get default options for this provider
+            default_opts = self._get_default_provider_options(prov)
+
+            # Get user-provided provider-specific options
+            provider_opts = {}
+            if self._provider_options:
+                provider_opts = self._get_provider_specific_options(
+                    prov, self._provider_options
+                )
+
+            # Merge defaults with user options (user options take precedence)
+            merged_opts = {**default_opts, **provider_opts}
+
+            if merged_opts:
+                logger.info(f"Using {prov} with options: {merged_opts}")
+                return [(prov, merged_opts), "CPUExecutionProvider"]
+            else:
+                return [prov, "CPUExecutionProvider"]
+
         # Environment variable override (highest priority)
         env_provider = os.getenv("ONNX_PROVIDER")
         if env_provider:
             logger.info(f"Using provider from ONNX_PROVIDER env: {env_provider}")
-            return [env_provider, "CPUExecutionProvider"]
+            return _make_provider_list(env_provider)
 
         # Auto-selection logic
         if provider == "auto" or (provider is None and use_gpu):
@@ -861,7 +1132,7 @@ class Kokoro:
             ]:
                 if prov in available:
                     logger.info(f"Auto-selected provider: {prov}")
-                    return [prov, "CPUExecutionProvider"]
+                    return _make_provider_list(prov)
             logger.info("Auto-selection: No accelerators found, using CPU")
             return ["CPUExecutionProvider"]
 
@@ -904,7 +1175,7 @@ class Kokoro:
             )
 
         logger.info(f"Using explicitly selected provider: {selected}")
-        return [selected, "CPUExecutionProvider"]
+        return _make_provider_list(selected)
 
     def _init_kokoro(self) -> None:
         """Initialize the ONNX session and load voices."""
@@ -912,6 +1183,9 @@ class Kokoro:
             return
 
         self._ensure_models()
+
+        # Create session options
+        sess_options = self._create_session_options()
 
         # Select execution providers
         providers = self._select_providers(self._provider, self._use_gpu)
@@ -929,12 +1203,18 @@ class Kokoro:
                     break  # Already tried CPU
                 if self._provider and self._provider != "auto":
                     break  # User explicitly requested a provider, don't fallback
-                if providers[0] == "CPUExecutionProvider":
+                # Check if primary provider was already CPU (handle both str and tuple)
+                primary_provider = providers[0]
+                if isinstance(primary_provider, tuple):
+                    primary_provider = primary_provider[0]
+                if primary_provider == "CPUExecutionProvider":
                     break  # Primary was already CPU
 
             try:
                 self._session = rt.InferenceSession(
-                    str(self._model_path), providers=provider_list
+                    str(self._model_path),
+                    sess_options=sess_options,
+                    providers=provider_list,
                 )
                 session_loaded = True
 
@@ -945,6 +1225,8 @@ class Kokoro:
                 # Warn if we had to fallback
                 if attempt == 1:
                     failed_provider = providers[0]
+                    if isinstance(failed_provider, tuple):
+                        failed_provider = failed_provider[0]
                     logger.warning(
                         f"Failed to load model with {failed_provider}, "
                         f"fell back to CPU. Error: {last_error}"
@@ -956,7 +1238,10 @@ class Kokoro:
                 last_error = str(e)
                 if attempt == 0:
                     # First attempt failed, will try fallback
-                    logger.debug(f"Provider {provider_list[0]} failed: {e}")
+                    provider_name = provider_list[0]
+                    if isinstance(provider_name, tuple):
+                        provider_name = provider_name[0]
+                    logger.debug(f"Provider {provider_name} failed: {e}")
                     continue
                 else:
                     # Fallback also failed, re-raise
