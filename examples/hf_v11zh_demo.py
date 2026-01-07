@@ -25,12 +25,12 @@ def main():
 
     try:
         kokoro = pykokoro.Kokoro(
-            model_source="huggingface", model_variant="v1.1-zh-hf", model_quality="fp32"
+            model_source="huggingface", model_variant="v1.1-zh", model_quality="fp32"
         )
 
         # Get available voices
         available_voices = kokoro.get_voices()
-        print(f"✓ Model loaded successfully!")
+        print("✓ Model loaded successfully!")
         print(f"✓ Available voices: {len(available_voices)}")
         print(f"✓ Sample voices: {', '.join(available_voices[:10])}...")
         print()
@@ -47,7 +47,7 @@ def main():
             test_text, voice=voice_to_use, speed=1.0, lang="en-us"
         )
 
-        print(f"✓ Audio generated successfully!")
+        print("✓ Audio generated successfully!")
         print(f"  Duration: {len(samples) / sample_rate:.2f} seconds")
         print(f"  Sample rate: {sample_rate} Hz")
         print(f"  Samples: {len(samples):,}")

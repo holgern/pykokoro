@@ -1,30 +1,56 @@
 Changelog
 =========
 
-Version 0.3.1 (TBD)
+Version 0.0.4 (TBD)
 -------------------
+
+**Breaking Changes:**
+
+* Removed redundant ``v1.1-zh-hf`` model variant - Use ``model_variant="v1.1-zh"`` with ``model_source="huggingface"`` instead
+* Changed cache directory structure to ``~/.cache/pykokoro/{models|voices}/{source}/{variant}/``
+* Removed deprecated functions: ``download_model_hf_v11zh()``, ``download_voices_hf_v11zh()``, ``download_all_models_hf_v11zh()``
+* Function signatures updated: ``download_model()``, ``download_voice()``, ``download_all_voices()``, and ``download_all_models()`` now require ``variant`` parameter
+* Path helper functions ``get_model_dir()`` and ``get_voices_dir()`` now require ``source`` and ``variant`` parameters
+
+**Migration Guide:**
+
+For users upgrading from v0.0.3:
+
+.. code-block:: python
+
+    # Old (v0.3.x) - NO LONGER WORKS
+    kokoro = Kokoro(model_variant="v1.1-zh-hf")
+    download_model_hf_v11zh(quality="fp16")
+
+    # New (v0.4.0+)
+    kokoro = Kokoro(
+        model_source="huggingface",
+        model_variant="v1.1-zh"
+    )
+    download_model(variant="v1.1-zh", quality="fp16")
+
+**Improvements:**
+
+* Unified path structure across all model sources and variants
+* Consolidated duplicate download functions for cleaner API
+* Shared configuration files between HuggingFace and GitHub sources
+* Improved code maintainability with consistent path handling
+* All quantization levels supported for v1.1-zh: fp32, fp16, q8, q8f16, q4, q4f16, uint8, uint8f16
 
 **New Features:**
 
 * Added support for HuggingFace Kokoro v1.1-zh model (``onnx-community/Kokoro-82M-v1.1-zh-ONNX``)
-* New model variant ``v1.1-zh-hf`` with 103 voices and full quantization support
-* Added ``download_model_hf_v11zh()`` for downloading v1.1-zh models with quantization
-* Added ``download_voices_hf_v11zh()`` for downloading all 103 voices
-* Added ``download_all_models_hf_v11zh()`` for complete v1.1-zh setup
-
-**Improvements:**
-
-* All quantization levels supported for v1.1-zh: fp32, fp16, q8, q8f16, q4, q4f16, uint8, uint8f16
+* Added 103 voices for v1.1-zh variant
 * Voice files automatically combined into efficient .npz format
 * Progress callbacks for voice downloads
 
 **Documentation:**
 
-* Added examples and documentation for HuggingFace v1.1-zh usage
-* Updated advanced features guide with v1.1-zh-hf variant
-* Added ``examples/hf_v11zh_demo.py`` demonstration script
+* Updated advanced features guide with unified variant usage
+* Updated ``examples/hf_v11zh_demo.py`` demonstration script
+* Added migration guide for v0.4.0 breaking changes
 
-Version 0.3.0 (2026-01-07)
+Version 0.0.3 (2026-01-07)
 --------------------------
 
 **Major Refactoring:**
@@ -63,7 +89,7 @@ Version 0.3.0 (2026-01-07)
 * Added internal architecture section to advanced features guide
 * Updated changelog with refactoring details
 
-Version 0.2.0 (2025-01-06)
+Version 0.0.1 (2025-01-06)
 --------------------------
 
 **Breaking Changes:**
@@ -108,7 +134,7 @@ Version 0.2.0 (2025-01-06)
 * Added comprehensive examples
 * Added API reference
 
-Version 0.1.0 (Initial Release)
+Version 0.0.1 (Initial Release)
 -------------------------------
 
 **Initial Features:**

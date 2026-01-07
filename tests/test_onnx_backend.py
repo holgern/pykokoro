@@ -6,14 +6,13 @@ import pytest
 
 from pykokoro.onnx_backend import (
     DEFAULT_MODEL_QUALITY,
-    HF_REPO_ID,
+    HF_REPO_V1_0,
     LANG_CODE_TO_ONNX,
     MAX_PHONEME_LENGTH,
-    MODEL_QUALITY_FILES,
+    MODEL_QUALITY_FILES_HF,
     VOICE_NAMES,
     VoiceBlend,
     get_model_dir,
-    get_model_filename,
     get_model_path,
     get_onnx_lang_code,
     is_model_downloaded,
@@ -77,44 +76,42 @@ class TestModelPaths:
 
     def test_model_quality_files_not_empty(self):
         """Should have model quality files defined."""
-        assert len(MODEL_QUALITY_FILES) > 0
-        assert "fp32" in MODEL_QUALITY_FILES
-        assert "q8" in MODEL_QUALITY_FILES
+        assert len(MODEL_QUALITY_FILES_HF) > 0
+        assert "fp32" in MODEL_QUALITY_FILES_HF
+        assert "q8" in MODEL_QUALITY_FILES_HF
 
     def test_model_base_url_valid(self):
-        """Should have valid HF_REPO_ID pointing to HuggingFace."""
-        # Note: MODEL_BASE_URL replaced with HF_REPO_ID in new version
-        assert isinstance(HF_REPO_ID, str)
-        assert "Kokoro" in HF_REPO_ID
+        """Should have valid HF_REPO_V1_0 pointing to HuggingFace."""
+        # Note: MODEL_BASE_URL replaced with HF_REPO_V1_0 in new version
+        assert isinstance(HF_REPO_V1_0, str)
+        assert "Kokoro" in HF_REPO_V1_0
 
     def test_get_model_dir_returns_path(self):
         """Should return a Path object."""
-        model_dir = get_model_dir()
+        model_dir = get_model_dir(source="huggingface", variant="v1.0")
         assert isinstance(model_dir, Path)
 
     def test_get_model_path_returns_full_path(self):
         """Should return full path to model file for given quality."""
-        path = get_model_path("fp32")
+        path = get_model_path(quality="fp32", source="huggingface", variant="v1.0")
         assert isinstance(path, Path)
         assert path.name == "model.onnx"
-        assert get_model_dir() in path.parents or path.parent == get_model_dir()
+        assert get_model_dir(
+            source="huggingface", variant="v1.0"
+        ) in path.parents or path.parent == get_model_dir(
+            source="huggingface", variant="v1.0"
+        )
 
     def test_get_model_path_q8(self):
         """Should return correct path for q8 quality."""
-        path = get_model_path("q8")
+        path = get_model_path(quality="q8", source="huggingface", variant="v1.0")
         assert path.name == "model_quantized.onnx"
-
-    def test_get_model_filename(self):
-        """Should return correct filename for each quality."""
-        assert get_model_filename("fp32") == "model.onnx"
-        assert get_model_filename("fp16") == "model_fp16.onnx"
-        assert get_model_filename("q8") == "model_quantized.onnx"
 
     def test_is_model_downloaded_false_for_missing_file(self):
         """Should return False when model file doesn't exist."""
         # This relies on a fresh cache dir or cleaned state
         # We test with a quality that is likely not downloaded
-        result = is_model_downloaded("q4f16")
+        result = is_model_downloaded(quality="q4f16")
         # Can't assert False since it might be downloaded, just assert it returns bool
         assert isinstance(result, bool)
 

@@ -435,7 +435,7 @@ PyKokoro supports multiple model sources:
    # Supports all quantization levels
    kokoro = Kokoro(
        model_source="huggingface",
-       model_variant="v1.1-zh-hf",
+       model_variant="v1.1-zh",
        model_quality="q8"  # All qualities available: fp32, fp16, q8, q4, etc.
    )
 
@@ -470,14 +470,14 @@ Download Models Manually
 
    from pykokoro import download_model, download_voice, download_all_models
 
-   # Download specific model quality
-   download_model(quality="q8")
+   # Download specific model quality (v1.0 by default)
+   download_model(variant="v1.0", quality="q8")
 
    # Download specific voice
-   download_voice("af_bella")
+   download_voice(voice_name="af_bella", variant="v1.0")
 
    # Download all models
-   download_all_models()
+   download_all_models(variant="v1.0")
 
 **GitHub Models:**
 
@@ -507,22 +507,27 @@ Download Models Manually
 .. code-block:: python
 
    from pykokoro import (
-       download_model_hf_v11zh,
-       download_voices_hf_v11zh,
-       download_all_models_hf_v11zh
+       download_model,
+       download_all_voices,
+       download_all_models,
+       download_config
    )
 
    # Download HuggingFace v1.1-zh model (with quantization)
-   download_model_hf_v11zh(quality="q8")
+   download_model(variant="v1.1-zh", quality="q8")
 
    # Download all 103 voices for v1.1-zh
    def progress(voice_name, current, total):
        print(f"Downloading {current}/{total}: {voice_name}")
-   
-   download_voices_hf_v11zh(progress_callback=progress)
+
+   download_all_voices(variant="v1.1-zh", progress_callback=progress)
+
+   # Download configuration for v1.1-zh
+   download_config(variant="v1.1-zh")
 
    # Download everything (model + config + all voices)
-   download_all_models_hf_v11zh(
+   download_all_models(
+       variant="v1.1-zh",
        quality="q8",
        progress_callback=lambda msg: print(msg)
    )
