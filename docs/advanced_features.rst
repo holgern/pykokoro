@@ -687,30 +687,30 @@ While most users interact with the high-level ``Kokoro`` API, advanced users can
    from pykokoro.onnx_session import OnnxSessionManager
    from pykokoro.voice_manager import VoiceManager
    from pykokoro.audio_generator import AudioGenerator
-   
+
    # Create ONNX session with custom options
    session_manager = OnnxSessionManager(
        device="cuda",
        providers=["CUDAExecutionProvider"],
        user_session_options={"intra_op_num_threads": 4}
    )
-   
+
    session = session_manager.create_session(
        model_path="/path/to/model.onnx"
    )
-   
+
    # Load voices with custom blend
    voice_manager = VoiceManager(model_source="huggingface")
    voice_manager.load_voices("/path/to/voices.bin")
    voice_data = voice_manager.get_blended_voice("af_bella*0.7 + af_sarah*0.3")
-   
+
    # Generate audio
    audio_gen = AudioGenerator(
        session=session,
        sample_rate=24000,
        lang="en-us"
    )
-   
+
    audio = audio_gen.generate_audio_from_phonemes(
        phonemes="həˈloʊ wɝld",
        voice_data=voice_data,
@@ -725,25 +725,25 @@ Create custom pronunciation mappings:
 .. code-block:: python
 
    from pykokoro.phoneme_dictionary import PhonemeDictionary
-   
+
    # Create dictionary
    dictionary = PhonemeDictionary()
-   
+
    # Add custom pronunciations
    dictionary.add_word("PyKokoro", "paɪ kəˈkɔɹoʊ")
    dictionary.add_word("ONNX", "ɑnɪks")
-   
+
    # Save to file
    dictionary.save("custom_pronunciations.json")
-   
+
    # Load and use
    loaded_dict = PhonemeDictionary.load("custom_pronunciations.json")
-   
+
    # Apply to tokenizer
    from pykokoro import create_tokenizer
    tokenizer = create_tokenizer()
    tokenizer.phoneme_dictionary = loaded_dict
-   
+
    # Now "PyKokoro" will use custom pronunciation
    phonemes = tokenizer.phonemize("Welcome to PyKokoro!")
 

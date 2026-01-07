@@ -547,64 +547,6 @@ class Tokenizer:
         word_phonemes = self.text_to_phonemes_with_words(text, lang=lang)
         return " ".join(f"{word} [{phonemes}]" for word, phonemes in word_phonemes)
 
-    def split_with_pauses(
-        self,
-        text: str,
-        pause_short: float = 0.3,
-        pause_medium: float = 0.6,
-        pause_long: float = 1.0,
-    ) -> tuple[float, list[tuple[str, float]]]:
-        """Split text at pause markers and return segments with pause durations.
-
-        .. deprecated::
-            This method is deprecated. Use the standalone function
-            :func:`pykokoro.phonemes.split_text_with_pauses` instead.
-            This method will be removed in a future version.
-
-        Detects and splits on pause markers: (.), (..), (...)
-        Removes the markers from the text segments.
-        Consecutive pause markers have their durations added together.
-
-        Args:
-            text: Input text with optional pause markers
-            pause_short: Duration for (.) in seconds
-            pause_medium: Duration for (..) in seconds
-            pause_long: Duration for (...) in seconds
-
-        Returns:
-            Tuple of (initial_pause_duration, segments_list) where segments_list
-            is a list of (text_segment, pause_after_seconds) tuples
-
-        Example:
-            >>> split_with_pauses("Hello (.) World (...) Foo")
-            (0.0, [("Hello", 0.3), ("World", 1.0), ("Foo", 0.0)])
-
-            >>> split_with_pauses("Start (...) (..) End")
-            (0.0, [("Start", 1.6), ("End", 0.0)])  # 1.0 + 0.6 = 1.6
-
-            >>> split_with_pauses("(...) Hello")
-            (1.0, [("Hello", 0.0)])  # Leading pause
-        """
-        import warnings
-
-        warnings.warn(
-            "Tokenizer.split_with_pauses() is deprecated. "
-            "Use pykokoro.phonemes.split_text_with_pauses() instead. "
-            "This method will be removed in a future version.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        # Delegate to standalone function in phonemes module
-        from .phonemes import split_text_with_pauses
-
-        return split_text_with_pauses(
-            text=text,
-            pause_short=pause_short,
-            pause_medium=pause_medium,
-            pause_long=pause_long,
-        )
-
     def get_vocab_info(self) -> dict:
         """Get information about the current vocabulary.
 

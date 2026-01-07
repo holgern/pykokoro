@@ -285,7 +285,8 @@ class TestSessionCreation:
             # Accept either error: provider not available or session creation failed
             with pytest.raises(
                 RuntimeError,
-                match="(Failed to create ONNX session|CUDA provider requested but not available)",
+                match="(Failed to create ONNX session|"
+                "CUDA provider requested but not available)",
             ):
                 manager.create_session(model_path, allow_fallback=False)
 
