@@ -50,7 +50,7 @@ That's it! You've generated your first audio file.
 Choosing a Voice
 ~~~~~~~~~~~~~~~~
 
-PyKokoro comes with 70+ voices. Here are some popular ones:
+PyKokoro comes with 54 voices (v1.0) or 103 voices (v1.1-zh). Here are some popular ones:
 
 .. code-block:: python
 

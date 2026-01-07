@@ -22,7 +22,7 @@ Features
 
 * **High-Quality TTS**: Natural-sounding speech synthesis using the Kokoro model
 * **Multiple Languages**: Support for English (US/GB), Spanish, French, German, Italian, Portuguese, Hindi, Japanese, Korean, and Chinese
-* **Voice Selection**: Choose from 70+ different voices with various styles and accents
+* **Voice Selection**: Choose from 54 voices (v1.0) or 103 voices (v1.1-zh) with various styles and accents
 * **Voice Blending**: Create custom voice styles by blending multiple voices
 * **Pause Control**: Add precise pauses using simple markers: `(.)`, `(..)`, `(...)`
 * **Smart Text Splitting**: Automatically split long text at sentence, paragraph, or clause boundaries

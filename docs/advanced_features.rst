@@ -398,26 +398,22 @@ PyKokoro supports multiple model sources:
    # Default: HuggingFace with 54 voices
    kokoro = Kokoro(model_source="huggingface", model_quality="fp32")
 
-**GitHub v1.0:**
+**HuggingFace v1.0 (Default - 54 voices, 8 quality options):**
 
 .. code-block:: python
 
-   # GitHub v1.0 with 54 voices
-   kokoro = Kokoro(
-       model_source="github",
-       model_variant="v1.0",
-       model_quality="fp16-gpu"  # GPU-optimized
-   )
+   # Default: HuggingFace v1.0
+   kokoro = Kokoro(model_quality="q8")  # Recommended default
 
-**GitHub v1.1-zh (103 voices):**
+**HuggingFace v1.1-zh (103 voices, 8 quality options):**
 
 .. code-block:: python
 
-   # GitHub v1.1-zh with English + Chinese voices
+   # HuggingFace v1.1-zh with English + Chinese voices
+   # Supports all quantization levels: fp32, fp16, q8, q8f16, q4, q4f16, uint8, uint8f16
    kokoro = Kokoro(
-       model_source="github",
        model_variant="v1.1-zh",
-       model_quality="fp32"  # Only fp32 available
+       model_quality="q8"  # All qualities available
    )
 
    # Use English voices
@@ -427,16 +423,26 @@ PyKokoro supports multiple model sources:
        lang="en-us"
    )
 
-**HuggingFace v1.1-zh (103 voices, Multiple Quantizations):**
+**GitHub v1.0 (54 voices, 4 quality options):**
 
 .. code-block:: python
 
-   # HuggingFace v1.1-zh with English + Chinese voices
-   # Supports all quantization levels
+   # GitHub v1.0 with GPU-optimized fp16
    kokoro = Kokoro(
-       model_source="huggingface",
+       model_source="github",
+       model_variant="v1.0",
+       model_quality="fp16-gpu"  # Options: fp32, fp16, fp16-gpu, q8
+   )
+
+**GitHub v1.1-zh (103 voices, fp32 only):**
+
+.. code-block:: python
+
+   # GitHub v1.1-zh with English + Chinese voices
+   kokoro = Kokoro(
+       model_source="github",
        model_variant="v1.1-zh",
-       model_quality="q8"  # All qualities available: fp32, fp16, q8, q4, etc.
+       model_quality="fp32"  # Only fp32 available
    )
 
    # Use English voices

@@ -4,6 +4,12 @@ Changelog
 Version 0.0.4 (TBD)
 -------------------
 
+**Bug Fixes:**
+
+* Fixed deprecated ``local_dir_use_symlinks`` parameter in HuggingFace downloads (removes deprecation warnings)
+* Fixed Windows CI test failures related to temporary file permissions in encoding detection tests
+* Properly close temporary files before deletion to support Windows file locking behavior
+
 **Breaking Changes:**
 
 * Removed redundant ``v1.1-zh-hf`` model variant - Use ``model_variant="v1.1-zh"`` with ``model_source="huggingface"`` instead
@@ -140,7 +146,7 @@ Version 0.0.1 (Initial Release)
 **Initial Features:**
 
 * Text-to-speech synthesis using Kokoro model
-* Support for 70+ voices across multiple languages
+* Support for 54 voices (v1.0) across multiple languages
 * Support for English (US/GB), Spanish, French, German, Italian, Portuguese, Hindi, Japanese, Korean, Chinese
 * Voice blending capabilities
 * Phoneme-based generation

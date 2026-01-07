@@ -185,23 +185,29 @@ If model downloads fail:
 
 **Manual Model Download:**
 
-PyKokoro automatically downloads models on first use, but you can download them manually:
+PyKokoro automatically downloads models on first use, but you can trigger downloads manually:
 
 .. code-block:: python
 
    from pykokoro import Kokoro
 
-   # HuggingFace models (default)
+   # HuggingFace v1.0 (default - 54 voices, 8 quality options)
    kokoro = Kokoro(model_quality="fp16")  # Auto-downloads from HuggingFace
 
-   # GitHub v1.0 models
+   # HuggingFace v1.1-zh (103 voices, 8 quality options)
+   kokoro = Kokoro(
+       model_variant="v1.1-zh",
+       model_quality="q8"  # Auto-downloads from HuggingFace
+   )
+
+   # GitHub v1.0 (54 voices, 4 quality options)
    kokoro = Kokoro(
        model_source="github",
        model_variant="v1.0",
        model_quality="fp16-gpu"  # Auto-downloads from GitHub
    )
 
-   # GitHub v1.1-zh models (103 voices)
+   # GitHub v1.1-zh (103 voices, fp32 only)
    kokoro = Kokoro(
        model_source="github",
        model_variant="v1.1-zh",
@@ -210,6 +216,7 @@ PyKokoro automatically downloads models on first use, but you can download them 
 
 Models are cached in:
 
-* **HuggingFace**: ``~/.cache/pykokoro/models/onnx/`` and ``~/.cache/pykokoro/voices/``
-* **GitHub v1.0**: ``~/.cache/pykokoro/models/onnx/v1.0/`` and ``~/.cache/pykokoro/voices/v1.0/``
-* **GitHub v1.1-zh**: ``~/.cache/pykokoro/models/onnx/v1.1-zh/`` and ``~/.cache/pykokoro/voices/v1.1-zh/``
+* **HuggingFace v1.0**: ``~/.cache/pykokoro/models/huggingface/v1.0/`` and ``~/.cache/pykokoro/voices/huggingface/v1.0/``
+* **HuggingFace v1.1-zh**: ``~/.cache/pykokoro/models/huggingface/v1.1-zh/`` and ``~/.cache/pykokoro/voices/huggingface/v1.1-zh/``
+* **GitHub v1.0**: ``~/.cache/pykokoro/models/github/v1.0/`` and ``~/.cache/pykokoro/voices/github/v1.0/``
+* **GitHub v1.1-zh**: ``~/.cache/pykokoro/models/github/v1.1-zh/`` and ``~/.cache/pykokoro/voices/github/v1.1-zh/``
