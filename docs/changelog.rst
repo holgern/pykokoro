@@ -1,6 +1,45 @@
 Changelog
 =========
 
+Version 0.3.0 (2026-01-07)
+--------------------------
+
+**Major Refactoring:**
+
+* Extracted internal manager classes for better code organization
+* Reduced codebase complexity by ~706 lines (12% reduction)
+* Improved maintainability with better separation of concerns
+* 100% backward compatibility maintained - no breaking changes
+
+**New Internal Classes:**
+
+* Added ``OnnxSessionManager`` class for ONNX Runtime session management
+* Added ``VoiceManager`` class for voice loading and blending operations
+* Added ``AudioGenerator`` class for audio generation pipeline
+* Added ``MixedLanguageHandler`` class for automatic language detection
+* Added ``PhonemeDictionary`` class for custom word-to-phoneme mappings
+
+**Code Quality:**
+
+* Reduced ``onnx_backend.py`` by 436 lines
+* Reduced ``tokenizer.py`` by 270 lines
+* Added comprehensive test coverage for new manager classes
+* All pre-commit hooks passing (ruff, ruff-format)
+* 98.7% test pass rate (312/316 tests)
+
+**Architecture Improvements:**
+
+* Delegate pattern implementation for backward compatibility
+* Better separation of session management, voice handling, and audio generation
+* Improved modularity for easier testing and maintenance
+* Enhanced error handling and validation
+
+**Documentation:**
+
+* Added API documentation for new internal manager classes
+* Added internal architecture section to advanced features guide
+* Updated changelog with refactoring details
+
 Version 0.2.0 (2025-01-06)
 --------------------------
 

@@ -83,6 +83,61 @@ Phoneme Classes
 
 .. autofunction:: pykokoro.split_and_phonemize_text
 
+Internal Manager Classes
+-------------------------
+
+These classes are used internally by Kokoro but are available for advanced use cases.
+
+OnnxSessionManager
+~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: pykokoro.OnnxSessionManager
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Manages ONNX Runtime session creation with automatic provider selection (CUDA, ROCm, CPU).
+
+VoiceManager
+~~~~~~~~~~~~
+
+.. autoclass:: pykokoro.VoiceManager
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Handles voice loading and blending operations.
+
+AudioGenerator
+~~~~~~~~~~~~~~
+
+.. autoclass:: pykokoro.AudioGenerator
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Manages audio generation from phonemes and tokens.
+
+MixedLanguageHandler
+~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: pykokoro.MixedLanguageHandler
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Handles automatic language detection and mixed-language text processing.
+
+PhonemeDictionary
+~~~~~~~~~~~~~~~~~
+
+.. autoclass:: pykokoro.PhonemeDictionary
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Manages custom word-to-phoneme mappings for pronunciation control.
+
 Model and Voice Management
 ---------------------------
 

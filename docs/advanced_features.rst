@@ -629,6 +629,124 @@ Performance Tips
 
    Splitting long text improves quality and reduces memory usage.
 
+Internal Architecture
+---------------------
+
+Understanding PyKokoro's Internal Structure
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+PyKokoro uses a modular architecture with specialized manager classes for different responsibilities:
+
+**OnnxSessionManager** (``pykokoro/onnx_session.py``)
+
+Manages ONNX Runtime session creation and configuration:
+
+* Automatic provider selection (CUDA → ROCm → CPU)
+* Session options and execution providers
+* Fallback handling when GPU is unavailable
+
+**VoiceManager** (``pykokoro/voice_manager.py``)
+
+Handles voice loading and blending:
+
+* Loads voice embeddings from binary files
+* Implements voice blending with weighted combinations
+* Validates voice availability across model variants
+
+**AudioGenerator** (``pykokoro/audio_generator.py``)
+
+Manages the audio generation pipeline:
+
+* Converts phonemes to tokens
+* Runs ONNX inference for audio generation
+* Handles speed adjustment and audio post-processing
+
+**MixedLanguageHandler** (``pykokoro/mixed_language_handler.py``)
+
+Automatic language detection for multilingual text:
+
+* Detects language boundaries in mixed-language text
+* Routes text segments to appropriate language models
+* Configurable confidence thresholds
+
+**PhonemeDictionary** (``pykokoro/phoneme_dictionary.py``)
+
+Custom word-to-phoneme mappings:
+
+* Override default pronunciation for specific words
+* Support for context-aware phoneme substitution
+* JSON-based dictionary format
+
+Using Manager Classes Directly
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+While most users interact with the high-level ``Kokoro`` API, advanced users can work with manager classes directly:
+
+.. code-block:: python
+
+   from pykokoro.onnx_session import OnnxSessionManager
+   from pykokoro.voice_manager import VoiceManager
+   from pykokoro.audio_generator import AudioGenerator
+   
+   # Create ONNX session with custom options
+   session_manager = OnnxSessionManager(
+       device="cuda",
+       providers=["CUDAExecutionProvider"],
+       user_session_options={"intra_op_num_threads": 4}
+   )
+   
+   session = session_manager.create_session(
+       model_path="/path/to/model.onnx"
+   )
+   
+   # Load voices with custom blend
+   voice_manager = VoiceManager(model_source="huggingface")
+   voice_manager.load_voices("/path/to/voices.bin")
+   voice_data = voice_manager.get_blended_voice("af_bella*0.7 + af_sarah*0.3")
+   
+   # Generate audio
+   audio_gen = AudioGenerator(
+       session=session,
+       sample_rate=24000,
+       lang="en-us"
+   )
+   
+   audio = audio_gen.generate_audio_from_phonemes(
+       phonemes="həˈloʊ wɝld",
+       voice_data=voice_data,
+       speed=1.0
+   )
+
+Custom Phoneme Dictionaries
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Create custom pronunciation mappings:
+
+.. code-block:: python
+
+   from pykokoro.phoneme_dictionary import PhonemeDictionary
+   
+   # Create dictionary
+   dictionary = PhonemeDictionary()
+   
+   # Add custom pronunciations
+   dictionary.add_word("PyKokoro", "paɪ kəˈkɔɹoʊ")
+   dictionary.add_word("ONNX", "ɑnɪks")
+   
+   # Save to file
+   dictionary.save("custom_pronunciations.json")
+   
+   # Load and use
+   loaded_dict = PhonemeDictionary.load("custom_pronunciations.json")
+   
+   # Apply to tokenizer
+   from pykokoro import create_tokenizer
+   tokenizer = create_tokenizer()
+   tokenizer.phoneme_dictionary = loaded_dict
+   
+   # Now "PyKokoro" will use custom pronunciation
+   phonemes = tokenizer.phonemize("Welcome to PyKokoro!")
+
 Next Steps
 ----------
 
