@@ -146,7 +146,7 @@ def main():
     print("=" * 70)
     print("Source: github.com/thewh1teagle/kokoro-onnx (v1.1-zh)")
     print("Note: Testing with English text and English voice from v1.1-zh model")
-    print(f"Text: {ENGLISH_TEXT[:50]}...")
+    print(f"Text: {CHINESE_TEXT[:50]}...")
 
     print("\nInitializing TTS engine with GitHub v1.1-zh model...")
     kokoro_v11 = pykokoro.Kokoro(
@@ -162,15 +162,20 @@ def main():
         v for v in available_voices_v11 if v in ["af_maple", "af_sol", "bf_vale"]
     ]
     print(f"English voices: {', '.join(english_voices_v11)}")
+    chinese_voices_v11 = [
+        v for v in available_voices_v11 if v not in ["af_maple", "af_sol", "bf_vale"]
+    ]
+    print(f"Chinese voices: {', '.join(chinese_voices_v11)}")
+
 
     # Use af_maple (English female voice)
-    voice_to_use_v11 = "af_maple"
+    voice_to_use_v11 = "zf_001"
     print(
         f"\nGenerating audio with GitHub v1.1-zh model "
         f"using voice '{voice_to_use_v11}'..."
     )
     samples_v11, sample_rate_v11 = kokoro_v11.create(
-        ENGLISH_TEXT,
+        CHINESE_TEXT,
         voice=voice_to_use_v11,
         speed=1.0,
         lang="en-us",
@@ -201,7 +206,6 @@ def main():
     print("  • HuggingFace: Multi-language, 54 voices, 8 quality options")
     print("  • GitHub v1.0: Multi-language, 54 voices, 4 quality options")
     print("  • GitHub v1.1-zh: 103 voices (English + Chinese), fp32 only")
-    print("    Note: Chinese G2P will be fixed in future update")
 
 
 if __name__ == "__main__":

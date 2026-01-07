@@ -10,6 +10,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 if TYPE_CHECKING:
     from .tokenizer import Tokenizer
 
@@ -292,6 +294,83 @@ def split_and_phonemize_text(
         segments.extend(chunk_segments)
 
     return segments
+
+
+def populate_segment_pauses(
+    segments: list[PhonemeSegment],
+    pause_short: float,
+    pause_medium: float,
+    pause_long: float,
+    pause_variance: float,
+    rng: np.random.Generator,
+) -> list[PhonemeSegment]:
+    """Populate pause_after for each PhonemeSegment based on text boundaries.
+
+    Assigns natural pause durations between segments based on the type of boundary:
+    - Paragraph boundary (different paragraph): pause_long
+    - Sentence boundary (same paragraph, different sentence): pause_medium
+    - Clause boundary (same sentence): pause_short
+    - Last segment: 0.0 (no pause after)
+
+    Gaussian variance is applied to pause durations for naturalness using
+    apply_pause_variance(). The function modifies segments in-place.
+
+    Note: When sentence is None, it is treated as a distinct value for comparison,
+    so segments with sentence=None in the same paragraph will be considered as
+    having a sentence boundary between them if one has sentence=None and the other
+    has sentence=0 (or any other integer value).
+
+    Args:
+        segments: List of PhonemeSegment instances to populate with pauses
+        pause_short: Base pause duration for clause boundaries (seconds)
+        pause_medium: Base pause duration for sentence boundaries (seconds)
+        pause_long: Base pause duration for paragraph boundaries (seconds)
+        pause_variance: Standard deviation for Gaussian variance (seconds)
+        rng: NumPy random generator for reproducible variance
+
+    Returns:
+        The same list of segments with pause_after field populated (modified in-place)
+    """
+    for i, segment in enumerate(segments):
+        if i < len(segments) - 1:  # Not the last segment
+            next_segment = segments[i + 1]
+
+            # Determine pause type based on boundary
+            if next_segment.paragraph != segment.paragraph:
+                # Paragraph boundary
+                base_pause = pause_long
+            elif next_segment.sentence != segment.sentence:
+                # Sentence boundary (within same paragraph)
+                base_pause = pause_medium
+            else:
+                # Clause boundary (within same sentence)
+                base_pause = pause_short
+
+            # Apply variance
+            segment.pause_after = apply_pause_variance(base_pause, pause_variance, rng)
+    return segments
+
+
+def apply_pause_variance(
+    pause_duration: float,
+    variance_std: float,
+    rng: np.random.Generator,
+) -> float:
+    """Apply Gaussian variance to pause duration.
+
+    Args:
+        pause_duration: Base pause duration in seconds
+        variance_std: Standard deviation for Gaussian distribution
+        rng: NumPy random generator for reproducibility
+
+    Returns:
+        Pause duration with variance applied (never negative)
+    """
+    if variance_std <= 0:
+        return pause_duration
+
+    variance = rng.normal(0, variance_std)
+    return max(0.0, pause_duration + variance)
 
 
 def phonemize_text_list(

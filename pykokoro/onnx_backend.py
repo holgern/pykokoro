@@ -83,6 +83,13 @@ HF_MODEL_SUBFOLDER = "onnx"
 HF_VOICES_SUBFOLDER = "voices"
 HF_CONFIG_FILENAME = "config.json"
 
+# HuggingFace repositories for different model variants
+HF_REPO_V1_0 = "hexgrad/Kokoro-82M"  # English/multilingual v1.0
+HF_REPO_V1_1_ZH = "hexgrad/Kokoro-82M-v1.1-zh"  # Chinese v1.1-zh
+
+# Config filenames with variant suffix (for local storage)
+HF_CONFIG_FILENAME_V1_1_ZH = "config-v1.1-zh.json"  # Variant suffix format
+
 # URLs for model files (GitHub)
 GITHUB_REPO = "thewh1teagle/kokoro-onnx"
 
@@ -244,9 +251,20 @@ def get_voices_dir() -> Path:
     return get_user_cache_path("voices")
 
 
-def get_config_path() -> Path:
-    """Get the path to the cached config.json."""
-    return get_user_cache_path() / "config.json"
+def get_config_path(variant: ModelVariant | None = None) -> Path:
+    """Get the path to the cached config.json for a specific variant.
+
+    Args:
+        variant: Model variant ("v1.0", "v1.1-zh", or None for default)
+
+    Returns:
+        Path to config file in variant-specific subdirectory
+    """
+    if variant == "v1.1-zh":
+        return get_user_cache_path() / "v1.1-zh" / HF_CONFIG_FILENAME
+    else:
+        # v1.0 or None (default)
+        return get_user_cache_path() / "v1.0" / HF_CONFIG_FILENAME
 
 
 def get_voices_bin_path() -> Path:
@@ -275,9 +293,16 @@ def get_voice_path(voice_name: str) -> Path:
 # =============================================================================
 
 
-def is_config_downloaded() -> bool:
-    """Check if config.json is downloaded."""
-    config_path = get_config_path()
+def is_config_downloaded(variant: ModelVariant | None = None) -> bool:
+    """Check if config.json is downloaded for a specific variant.
+
+    Args:
+        variant: Model variant ("v1.0", "v1.1-zh", or None for default)
+
+    Returns:
+        True if config exists and has content, False otherwise
+    """
+    config_path = get_config_path(variant)
     return config_path.exists() and config_path.stat().st_size > 0
 
 
@@ -346,23 +371,91 @@ def _download_from_hf(
 
 
 def download_config(
+    variant: ModelVariant | None = None,
     force: bool = False,
 ) -> Path:
-    """
-    Download config.json from Hugging Face.
+    """Download config.json from Hugging Face for a specific variant.
 
     Args:
+        variant: Model variant ("v1.0", "v1.1-zh", or None for default v1.0)
         force: Force re-download even if file exists
 
     Returns:
         Path to the downloaded config file
     """
+    # Determine repo and local directory based on variant
+    if variant == "v1.1-zh":
+        repo_id = HF_REPO_V1_1_ZH
+        local_dir = get_user_cache_path() / "v1.1-zh"
+    else:  # v1.0 or None (default)
+        repo_id = HF_REPO_V1_0
+        local_dir = get_user_cache_path() / "v1.0"
+
+    # Create the directory if it doesn't exist
+    local_dir.mkdir(parents=True, exist_ok=True)
+
     return _download_from_hf(
-        repo_id="hexgrad/Kokoro-82M",
-        filename=HF_CONFIG_FILENAME,
-        local_dir=get_user_cache_path(),
+        repo_id=repo_id,
+        filename=HF_CONFIG_FILENAME,  # Always "config.json" in the repo
+        local_dir=local_dir,
         force=force,
     )
+
+
+def load_vocab_from_config(variant: ModelVariant | None = None) -> dict[str, int]:
+    """Load vocabulary from variant-specific config.json.
+
+    Args:
+        variant: Model variant ("v1.0", "v1.1-zh", or None for default)
+
+    Returns:
+        Dictionary mapping phoneme characters to token indices
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist after download
+        ValueError: If config doesn't contain vocab
+    """
+    import json
+
+    from kokorog2p import get_kokoro_vocab
+
+    config_path = get_config_path(variant)
+
+    # Download if not exists
+    if not config_path.exists():
+        logger.info(f"Downloading config for variant '{variant}'...")
+        try:
+            download_config(variant=variant)
+        except Exception as e:
+            raise FileNotFoundError(
+                f"Failed to download config for variant '{variant}': {e}"
+            ) from e
+
+    # Load config
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    except Exception as e:
+        logger.error(
+            f"Failed to load config from {config_path}: {e}. "
+            f"Falling back to default vocabulary."
+        )
+        return get_kokoro_vocab()
+
+    # Extract vocabulary
+    if "vocab" not in config:
+        raise ValueError(
+            f"Config at {config_path} does not contain 'vocab' key. "
+            f"Cannot load variant-specific vocabulary."
+        )
+
+    vocab = config["vocab"]
+    logger.info(
+        f"Loaded vocabulary with {len(vocab)} tokens "
+        f"for variant '{variant}' from {config_path.name}"
+    )
+
+    return vocab
 
 
 def download_model(
@@ -779,7 +872,11 @@ class Kokoro:
         self._provider: ProviderType | None = provider
         self._session_options = session_options
         self._model_source = model_source
+
+        # Store initial variant (before auto-detection)
+        self._initial_model_variant = model_variant
         self._model_variant = model_variant
+        self._auto_switched_variant = False  # Track if we auto-switched
 
         # Load config for defaults
         from .utils import load_config
@@ -854,29 +951,107 @@ class Kokoro:
 
         # Tokenizer for phoneme-based generation
         self._tokenizer: Tokenizer | None = None
-        self._vocab_version = vocab_version
+        # Use model variant as vocab version for proper filtering
+        self._vocab_version = self._model_variant
         self._espeak_config = espeak_config
         self._tokenizer_config = tokenizer_config
 
+    def _get_vocabulary(self) -> dict[str, int]:
+        """Get vocabulary for the current model variant.
+
+        Returns:
+            Dictionary mapping phoneme characters to token indices
+        """
+        from kokorog2p import get_kokoro_vocab
+
+        # For GitHub models, load variant-specific vocab from config
+        if self._model_source == "github":
+            return load_vocab_from_config(self._model_variant)
+
+        # For HuggingFace or default, use standard vocab
+        return get_kokoro_vocab()
+
+    def _resolve_model_variant(self, lang: str) -> ModelVariant:
+        """Resolve the appropriate model variant based on language.
+
+        Automatically switches to v1.1-zh for Chinese languages unless
+        user explicitly specified a variant.
+
+        Args:
+            lang: Language code for the text being synthesized
+
+        Returns:
+            Resolved model variant to use
+        """
+        # If user explicitly specified variant, don't auto-switch
+        # (Check if variant differs from default)
+        if self._initial_model_variant != DEFAULT_MODEL_VARIANT:
+            return self._model_variant
+
+        # Auto-detect: Switch to v1.1-zh for Chinese
+        if is_chinese_language(lang) and self._model_source == "github":
+            if not self._auto_switched_variant:
+                logger.info(
+                    f"Detected Chinese language '{lang}'. "
+                    f"Automatically switching to model variant 'v1.1-zh'."
+                )
+                self._auto_switched_variant = True
+            return "v1.1-zh"
+
+        # Otherwise use configured variant
+        return self._model_variant
+
     @property
     def tokenizer(self) -> Tokenizer:
-        """Get the tokenizer instance (lazily initialized)."""
+        """Get the tokenizer instance (lazily initialized).
+
+        Uses variant-specific vocabulary for proper phoneme filtering.
+        """
         if self._tokenizer is None:
+            # Get variant-specific vocabulary
+            vocab = self._get_vocabulary()
+
+            logger.debug(
+                f"Initializing tokenizer with {len(vocab)} tokens "
+                f"for variant '{self._model_variant}'"
+            )
+
             self._tokenizer = Tokenizer(
                 config=self._tokenizer_config,
                 espeak_config=self._espeak_config,
                 vocab_version=self._vocab_version,
+                vocab=vocab,  # Pass variant-specific vocabulary
             )
         return self._tokenizer
 
     def _ensure_models(self) -> None:
-        """Ensure model and voice files are downloaded."""
+        """Ensure model, voice, and config files are downloaded for current variant."""
+        # Download model if needed
         if not self._model_path.exists():
-            download_model(self._model_quality)
+            if self._model_source == "github":
+                download_model_github(
+                    variant=self._model_variant, quality=self._model_quality
+                )
+            else:  # huggingface
+                download_model(self._model_quality)
+
+        # Download voices if needed
         if not self._voices_path.exists():
-            download_all_voices()
-        if not is_config_downloaded():
-            download_config()
+            if self._model_source == "github":
+                download_voices_github(variant=self._model_variant)
+            else:  # huggingface
+                download_all_voices()
+
+        # Download variant-specific config if needed
+        if self._model_source == "github":
+            if not is_config_downloaded(variant=self._model_variant):
+                logger.info(
+                    f"Downloading config for variant '{self._model_variant}'..."
+                )
+                download_config(variant=self._model_variant)
+        else:  # huggingface - default v1.0
+            if not is_config_downloaded():
+                download_config()
 
     def _get_default_provider_options(self, provider: str) -> dict[str, str]:
         """
@@ -1288,7 +1463,10 @@ class Kokoro:
         return voices
 
     def _create_audio_internal(
-        self, phonemes: str, voice: np.ndarray, speed: float, new_format: bool = True
+        self,
+        phonemes: str,
+        voice: np.ndarray,
+        speed: float,
     ) -> tuple[np.ndarray, int]:
         """
         Core ONNX inference for a single phoneme batch.
@@ -1329,14 +1507,6 @@ class Kokoro:
                     "style": np.array(voice_style, dtype=np.float32),
                     "speed": np.array([speed_int], dtype=np.int32),
                 }
-            elif not new_format:
-                # HuggingFace newer format: input_ids, expects int32 speed
-                speed_int = max(1, int(round(speed)))
-                inputs = {
-                    "input_ids": np.array(tokens_padded, dtype=np.int64),
-                    "style": np.array(voice_style, dtype=np.float32),
-                    "speed": np.array([speed_int], dtype=np.int32),
-                }
             else:
                 # HuggingFace original format: input_ids, float32 speed
                 inputs = {
@@ -1353,10 +1523,7 @@ class Kokoro:
             }
 
         result = self._session.run(None, inputs)[0]
-        if new_format:
-            audio = np.asarray(result).T
-        else:
-            audio = np.asarray(result)
+        audio = np.asarray(result).T
         # Ensure audio is 1D for compatibility with trim and other operations
         audio = np.squeeze(audio)
         return audio, SAMPLE_RATE
@@ -1430,28 +1597,6 @@ class Kokoro:
             batches.append(current.strip())
 
         return batches if batches else [phonemes]
-
-    def _apply_pause_variance(
-        self,
-        pause_duration: float,
-        variance_std: float,
-        rng: np.random.Generator,
-    ) -> float:
-        """Apply Gaussian variance to pause duration.
-
-        Args:
-            pause_duration: Base pause duration in seconds
-            variance_std: Standard deviation for Gaussian distribution
-            rng: NumPy random generator for reproducibility
-
-        Returns:
-            Pause duration with variance applied (never negative)
-        """
-        if variance_std <= 0:
-            return pause_duration
-
-        variance = rng.normal(0, variance_std)
-        return max(0.0, pause_duration + variance)
 
     def get_voices(self) -> list[str]:
         """Get list of available voice names."""
@@ -1586,7 +1731,7 @@ class Kokoro:
                     "python -m spacy download en_core_web_sm"
                 ) from err
 
-        from .phonemes import split_and_phonemize_text
+        from .phonemes import split_and_phonemize_text, populate_segment_pauses
 
         # Split text directly into segments
         # split_and_phonemize_text() uses cascading split modes to ensure
@@ -1600,25 +1745,9 @@ class Kokoro:
 
         # Populate pause_after field based on segment boundaries
         if trim_silence:
-            for i, segment in enumerate(segments):
-                if i < len(segments) - 1:  # Not the last segment
-                    next_segment = segments[i + 1]
-
-                    # Determine pause type based on boundary
-                    if next_segment.paragraph != segment.paragraph:
-                        # Paragraph boundary
-                        base_pause = pause_long
-                    elif next_segment.sentence != segment.sentence:
-                        # Sentence boundary (within same paragraph)
-                        base_pause = pause_medium
-                    else:
-                        # Clause boundary (within same sentence)
-                        base_pause = pause_short
-
-                    # Apply variance
-                    segment.pause_after = self._apply_pause_variance(
-                        base_pause, pause_variance, rng
-                    )
+            segment = populate_segment_pauses(
+                segments, pause_short, pause_medium, pause_long, pause_variance, rng
+            )
 
         # Generate audio for each segment
         from .utils import generate_silence
@@ -1626,10 +1755,11 @@ class Kokoro:
         segment_parts = []
         for segment in segments:
             # segment.phonemes is guaranteed to be <= 510 by cascading logic
-            audio, _ = self._create_audio_internal(segment.phonemes, voice_style, speed)
-            if trim_silence:
-                audio, _ = trim_audio(audio)
-            segment_parts.append(audio)
+            if segment.phonemes.strip() != "":
+                audio, _ = self._create_audio_internal(segment.phonemes, voice_style, speed)
+                if trim_silence:
+                    audio, _ = trim_audio(audio)
+                segment_parts.append(audio)
 
             # Add pause after segment if specified
             if segment.pause_after > 0:
@@ -1757,6 +1887,60 @@ class Kokoro:
             Tuple of (audio samples as numpy array, sample rate)
         """
         self._init_kokoro()
+
+        # Auto-detect and switch variant if needed (e.g., for Chinese)
+        resolved_variant = self._resolve_model_variant(lang)
+
+        # If variant changed, we need to reinitialize
+        if resolved_variant != self._model_variant:
+            old_variant = self._model_variant
+            self._model_variant = resolved_variant
+            self._vocab_version = (
+                resolved_variant  # Update vocab version to match variant
+            )
+
+            # Force re-initialization of resources for new variant
+            self._tokenizer = None  # Tokenizer will reload with new vocab
+            self._session = None  # Session will reload new model
+            self._voices_data = None  # Voices will reload
+
+            # Update paths for new variant
+            if self._model_source == "github":
+                # Update model path
+                model_dir = get_model_dir()
+                if resolved_variant != "v1.0":
+                    model_dir = model_dir / resolved_variant
+
+                if resolved_variant == "v1.0":
+                    quality_files = MODEL_QUALITY_FILES_GITHUB_V1_0
+                else:  # v1.1-zh
+                    quality_files = MODEL_QUALITY_FILES_GITHUB_V1_1_ZH
+
+                filename = quality_files[self._model_quality]
+                self._model_path = model_dir / filename
+
+                # Update voices path
+                voices_dir = get_voices_dir()
+                if resolved_variant != "v1.0":
+                    voices_dir = voices_dir / resolved_variant
+
+                if resolved_variant == "v1.0":
+                    voices_filename = GITHUB_VOICES_FILENAME_V1_0
+                else:  # v1.1-zh
+                    voices_filename = GITHUB_VOICES_FILENAME_V1_1_ZH
+
+                self._voices_path = voices_dir / voices_filename
+
+            # Ensure new variant files are downloaded
+            self._ensure_models()
+
+            # Re-initialize with new variant
+            self._init_kokoro()
+
+            logger.info(
+                f"Switched from variant '{old_variant}' to '{resolved_variant}' "
+                f"for language '{lang}'"
+            )
 
         # Initialize random generator for reproducible variance
         rng = np.random.default_rng(random_seed)
@@ -2349,6 +2533,19 @@ LANG_CODE_TO_ONNX = {
     "p": "pt",  # Portuguese
     "z": "zh",  # Chinese
 }
+
+
+def is_chinese_language(lang: str) -> bool:
+    """Check if language code is Chinese.
+
+    Args:
+        lang: Language code (e.g., 'zh', 'cmn', 'zh-cn')
+
+    Returns:
+        True if language is Chinese, False otherwise
+    """
+    lang_lower = lang.lower().strip()
+    return lang_lower in ["zh", "cmn", "zh-cn", "zh-tw", "zh-hans", "zh-hant"]
 
 
 def get_onnx_lang_code(ttsforge_lang: str) -> str:

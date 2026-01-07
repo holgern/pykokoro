@@ -51,12 +51,14 @@ def test_cuda_provider():
 def test_openvino_provider():
     """Test OpenVINO provider when available.
 
-    Note: OpenVINO is currently incompatible with Kokoro models due to
-    dynamic rank tensors, so we expect this to fail with a RuntimeError.
+    Note: OpenVINO may fail to initialize due to configuration issues
+    (e.g., precision specified twice), but it should fall back gracefully
+    rather than raising an error.
     """
     kokoro = Kokoro(provider="openvino")
-    with pytest.raises(RuntimeError, match="Failed to initialize ONNX session"):
-        kokoro._init_kokoro()
+    kokoro._init_kokoro()
+    # Provider may have fallen back to CPU if OpenVINO failed
+    assert kokoro._session is not None
     kokoro.close()
 
 

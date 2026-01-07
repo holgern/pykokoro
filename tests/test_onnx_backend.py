@@ -564,7 +564,20 @@ class TestCreateWithPauses:
             self._session = None
             self._voices_data = {}
 
-        def mock_process(self, text, voice_style, speed, lang, split_mode, trim):
+        def mock_process(
+            self,
+            text,
+            voice_style,
+            speed,
+            lang,
+            split_mode,
+            trim,
+            pause_short,
+            pause_medium,
+            pause_long,
+            pause_variance,
+            rng,
+        ):
             import numpy as np
 
             return np.array([0.0], dtype=np.float32)
@@ -606,7 +619,20 @@ class TestCreateWithPauses:
             self._session = None
             self._voices_data = {}
 
-        def mock_process(self, text, voice_style, speed, lang, split_mode, trim):
+        def mock_process(
+            self,
+            text,
+            voice_style,
+            speed,
+            lang,
+            split_mode,
+            trim,
+            pause_short,
+            pause_medium,
+            pause_long,
+            pause_variance,
+            rng,
+        ):
             import numpy as np
 
             return np.array([0.0], dtype=np.float32)
@@ -657,3 +683,41 @@ class TestCreateWithPauses:
         assert callable(kokoro._generate_from_phoneme_batches)
         assert callable(kokoro._process_with_split_mode)
         assert callable(kokoro._process_text_segment)
+
+
+class TestChineseLanguageDetection:
+    """Tests for Chinese language detection helper."""
+    
+    def test_is_chinese_language_zh(self):
+        """Test detection of 'zh' language code."""
+        from pykokoro.onnx_backend import is_chinese_language
+        
+        assert is_chinese_language("zh") is True
+        assert is_chinese_language("ZH") is True
+        assert is_chinese_language(" zh ") is True
+    
+    def test_is_chinese_language_cmn(self):
+        """Test detection of 'cmn' language code."""
+        from pykokoro.onnx_backend import is_chinese_language
+        
+        assert is_chinese_language("cmn") is True
+        assert is_chinese_language("CMN") is True
+    
+    def test_is_chinese_language_variants(self):
+        """Test detection of Chinese language variants."""
+        from pykokoro.onnx_backend import is_chinese_language
+        
+        assert is_chinese_language("zh-cn") is True
+        assert is_chinese_language("zh-tw") is True
+        assert is_chinese_language("zh-hans") is True
+        assert is_chinese_language("zh-hant") is True
+    
+    def test_is_chinese_language_non_chinese(self):
+        """Test non-Chinese languages return False."""
+        from pykokoro.onnx_backend import is_chinese_language
+        
+        assert is_chinese_language("en") is False
+        assert is_chinese_language("en-us") is False
+        assert is_chinese_language("ja") is False
+        assert is_chinese_language("ko") is False
+        assert is_chinese_language("de") is False

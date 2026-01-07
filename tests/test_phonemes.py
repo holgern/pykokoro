@@ -1,10 +1,12 @@
 """Tests for pykokoro.phonemes module."""
 
+import numpy as np
 import pytest
 
 from pykokoro.phonemes import (
     PhonemeSegment,
     phonemize_text_list,
+    populate_segment_pauses,
     split_and_phonemize_text,
 )
 from pykokoro.tokenizer import Tokenizer, create_tokenizer
@@ -449,3 +451,366 @@ class TestPhonemeSegmentPauseAfter:
         assert restored.paragraph == original.paragraph
         assert restored.sentence == original.sentence
         assert restored.pause_after == original.pause_after
+
+
+class TestPopulateSegmentPauses:
+    """Tests for populate_segment_pauses() function."""
+
+    def test_empty_segment_list(self):
+        """Test with empty segment list."""
+        rng = np.random.default_rng(seed=42)
+        segments = []
+        result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
+        assert result == []
+
+    def test_single_segment(self):
+        """Test that single segment gets zero pause."""
+        rng = np.random.default_rng(seed=42)
+        segments = [PhonemeSegment(text="Hello", phonemes="həˈloʊ", tokens=[1, 2, 3])]
+        result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
+
+        assert len(result) == 1
+        assert result[0].pause_after == 0.0
+
+    def test_paragraph_boundary_pause(self):
+        """Test that paragraph boundary gets pause_long."""
+        rng = np.random.default_rng(seed=42)
+        segments = [
+            PhonemeSegment(
+                text="First", phonemes="fɝst", tokens=[1, 2], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="Second", phonemes="sɛkənd", tokens=[3, 4], paragraph=1, sentence=0
+            ),
+        ]
+        result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
+
+        # First segment should have pause_long (0.5), last segment has 0.0
+        assert result[0].pause_after == 0.5
+        assert result[1].pause_after == 0.0
+
+    def test_sentence_boundary_pause(self):
+        """Test that sentence boundary gets pause_medium."""
+        rng = np.random.default_rng(seed=42)
+        segments = [
+            PhonemeSegment(
+                text="First", phonemes="fɝst", tokens=[1, 2], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="Second", phonemes="sɛkənd", tokens=[3, 4], paragraph=0, sentence=1
+            ),
+        ]
+        result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
+
+        # First segment should have pause_medium (0.3), last segment has 0.0
+        assert result[0].pause_after == 0.3
+        assert result[1].pause_after == 0.0
+
+    def test_clause_boundary_pause(self):
+        """Test that clause boundary (same sentence) gets pause_short."""
+        rng = np.random.default_rng(seed=42)
+        segments = [
+            PhonemeSegment(
+                text="First", phonemes="fɝst", tokens=[1, 2], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="Second", phonemes="sɛkənd", tokens=[3, 4], paragraph=0, sentence=0
+            ),
+        ]
+        result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
+
+        # First segment should have pause_short (0.1), last segment has 0.0
+        assert result[0].pause_after == 0.1
+        assert result[1].pause_after == 0.0
+
+    def test_last_segment_always_zero(self):
+        """Test that last segment always has zero pause."""
+        rng = np.random.default_rng(seed=42)
+        segments = [
+            PhonemeSegment(
+                text="A", phonemes="eɪ", tokens=[1], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="B", phonemes="biː", tokens=[2], paragraph=0, sentence=1
+            ),
+            PhonemeSegment(
+                text="C", phonemes="siː", tokens=[3], paragraph=1, sentence=0
+            ),
+        ]
+        result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
+
+        # Last segment always has 0.0 pause
+        assert result[-1].pause_after == 0.0
+        # Others should have non-zero pauses
+        assert result[0].pause_after > 0.0
+        assert result[1].pause_after > 0.0
+
+    def test_zero_variance_exact_pauses(self):
+        """Test that variance=0 produces exact pause durations."""
+        rng = np.random.default_rng(seed=42)
+        segments = [
+            PhonemeSegment(
+                text="A", phonemes="eɪ", tokens=[1], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="B", phonemes="biː", tokens=[2], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="C", phonemes="siː", tokens=[3], paragraph=0, sentence=1
+            ),
+            PhonemeSegment(
+                text="D", phonemes="diː", tokens=[4], paragraph=1, sentence=0
+            ),
+            PhonemeSegment(
+                text="E", phonemes="iː", tokens=[5], paragraph=1, sentence=0
+            ),
+        ]
+
+        pause_short = 0.15
+        pause_medium = 0.35
+        pause_long = 0.55
+
+        result = populate_segment_pauses(
+            segments, pause_short, pause_medium, pause_long, 0.0, rng
+        )
+
+        # Check exact pause values (no variance)
+        assert result[0].pause_after == pause_short  # A->B: same sentence
+        assert result[1].pause_after == pause_medium  # B->C: sentence boundary
+        assert result[2].pause_after == pause_long  # C->D: paragraph boundary
+        assert result[3].pause_after == pause_short  # D->E: same sentence
+        assert result[4].pause_after == 0.0  # Last segment
+
+    def test_variance_applied(self):
+        """Test that variance produces different pause durations."""
+        rng = np.random.default_rng(seed=42)
+        segments = [
+            PhonemeSegment(
+                text="A", phonemes="eɪ", tokens=[1], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="B", phonemes="biː", tokens=[2], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="C", phonemes="siː", tokens=[3], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="D", phonemes="diː", tokens=[4], paragraph=0, sentence=0
+            ),
+        ]
+
+        pause_short = 0.1
+        variance = 0.05
+
+        result = populate_segment_pauses(segments, pause_short, 0.3, 0.5, variance, rng)
+
+        # All should be clause boundaries (pause_short + variance)
+        pauses = [seg.pause_after for seg in result[:-1]]  # Exclude last (always 0)
+
+        # Pauses should vary (not all exactly pause_short)
+        assert not all(p == pause_short for p in pauses)
+
+        # But they should be close to pause_short (within reasonable range)
+        for pause in pauses:
+            # With variance=0.05, expect pauses roughly in range [0.0, 0.2]
+            # (pause_short ± 3*variance, clamped to non-negative)
+            assert pause >= 0.0
+            assert pause <= pause_short + 3 * variance
+
+    def test_variance_reproducibility(self):
+        """Test that same seed produces same pauses."""
+        segments_1 = [
+            PhonemeSegment(
+                text="A", phonemes="eɪ", tokens=[1], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="B", phonemes="biː", tokens=[2], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="C", phonemes="siː", tokens=[3], paragraph=0, sentence=1
+            ),
+        ]
+        segments_2 = [
+            PhonemeSegment(
+                text="A", phonemes="eɪ", tokens=[1], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="B", phonemes="biː", tokens=[2], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="C", phonemes="siː", tokens=[3], paragraph=0, sentence=1
+            ),
+        ]
+
+        rng1 = np.random.default_rng(seed=123)
+        rng2 = np.random.default_rng(seed=123)
+
+        result_1 = populate_segment_pauses(segments_1, 0.1, 0.3, 0.5, 0.05, rng1)
+        result_2 = populate_segment_pauses(segments_2, 0.1, 0.3, 0.5, 0.05, rng2)
+
+        # Same seed should produce identical pauses
+        for seg1, seg2 in zip(result_1, result_2):
+            assert seg1.pause_after == seg2.pause_after
+
+    def test_variance_non_negative(self):
+        """Test that variance never produces negative pauses."""
+        rng = np.random.default_rng(seed=42)
+        segments = [
+            PhonemeSegment(
+                text=f"Seg{i}", phonemes="test", tokens=[i], paragraph=0, sentence=0
+            )
+            for i in range(100)  # Many segments to test variance
+        ]
+
+        # Use very small pause and large variance to try to get negative values
+        pause_short = 0.01
+        variance = 1.0  # Large variance
+
+        result = populate_segment_pauses(segments, pause_short, 0.3, 0.5, variance, rng)
+
+        # All pauses should be non-negative
+        for seg in result:
+            assert seg.pause_after >= 0.0
+
+    def test_none_sentence_values(self):
+        """Test handling of None sentence values."""
+        rng = np.random.default_rng(seed=42)
+        segments = [
+            PhonemeSegment(
+                text="A", phonemes="eɪ", tokens=[1], paragraph=0, sentence=None
+            ),
+            PhonemeSegment(
+                text="B", phonemes="biː", tokens=[2], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="C", phonemes="siː", tokens=[3], paragraph=0, sentence=None
+            ),
+        ]
+
+        result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
+
+        # A->B: None != 0, so sentence boundary -> pause_medium
+        assert result[0].pause_after == 0.3
+        # B->C: 0 != None, so sentence boundary -> pause_medium
+        assert result[1].pause_after == 0.3
+        # C is last
+        assert result[2].pause_after == 0.0
+
+    def test_none_to_none_sentence(self):
+        """Test that None to None is treated as same sentence (clause boundary)."""
+        rng = np.random.default_rng(seed=42)
+        segments = [
+            PhonemeSegment(
+                text="A", phonemes="eɪ", tokens=[1], paragraph=0, sentence=None
+            ),
+            PhonemeSegment(
+                text="B", phonemes="biː", tokens=[2], paragraph=0, sentence=None
+            ),
+        ]
+
+        result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
+
+        # None == None, same paragraph -> clause boundary -> pause_short
+        assert result[0].pause_after == 0.1
+
+    def test_complex_multi_paragraph_scenario(self):
+        """Test complex scenario with multiple paragraphs and sentences."""
+        rng = np.random.default_rng(seed=42)
+        segments = [
+            # Paragraph 0, sentence 0
+            PhonemeSegment(
+                text="A", phonemes="eɪ", tokens=[1], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="B", phonemes="biː", tokens=[2], paragraph=0, sentence=0
+            ),
+            # Paragraph 0, sentence 1
+            PhonemeSegment(
+                text="C", phonemes="siː", tokens=[3], paragraph=0, sentence=1
+            ),
+            # Paragraph 1, sentence 0
+            PhonemeSegment(
+                text="D", phonemes="diː", tokens=[4], paragraph=1, sentence=0
+            ),
+            PhonemeSegment(
+                text="E", phonemes="iː", tokens=[5], paragraph=1, sentence=0
+            ),
+            # Paragraph 1, sentence 1
+            PhonemeSegment(
+                text="F", phonemes="ɛf", tokens=[6], paragraph=1, sentence=1
+            ),
+            # Paragraph 2, sentence 0
+            PhonemeSegment(
+                text="G", phonemes="dʒiː", tokens=[7], paragraph=2, sentence=0
+            ),
+        ]
+
+        result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
+
+        # A->B: clause boundary (same sentence)
+        assert result[0].pause_after == 0.1
+        # B->C: sentence boundary (same paragraph)
+        assert result[1].pause_after == 0.3
+        # C->D: paragraph boundary
+        assert result[2].pause_after == 0.5
+        # D->E: clause boundary (same sentence)
+        assert result[3].pause_after == 0.1
+        # E->F: sentence boundary (same paragraph)
+        assert result[4].pause_after == 0.3
+        # F->G: paragraph boundary
+        assert result[5].pause_after == 0.5
+        # G is last
+        assert result[6].pause_after == 0.0
+
+    def test_in_place_modification(self):
+        """Test that function modifies segments in-place."""
+        rng = np.random.default_rng(seed=42)
+        segments = [
+            PhonemeSegment(
+                text="A", phonemes="eɪ", tokens=[1], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="B", phonemes="biː", tokens=[2], paragraph=0, sentence=1
+            ),
+        ]
+
+        # Store references
+        original_segment_0 = segments[0]
+        original_segment_1 = segments[1]
+
+        result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
+
+        # Result should be same list object
+        assert result is segments
+        # Original segment objects should be modified
+        assert original_segment_0 is result[0]
+        assert original_segment_1 is result[1]
+        # Pauses should be set
+        assert original_segment_0.pause_after == 0.3
+        assert original_segment_1.pause_after == 0.0
+
+    def test_all_same_paragraph_and_sentence(self):
+        """Test segments all in same paragraph and sentence get pause_short."""
+        rng = np.random.default_rng(seed=42)
+        segments = [
+            PhonemeSegment(
+                text="A", phonemes="eɪ", tokens=[1], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="B", phonemes="biː", tokens=[2], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="C", phonemes="siː", tokens=[3], paragraph=0, sentence=0
+            ),
+            PhonemeSegment(
+                text="D", phonemes="diː", tokens=[4], paragraph=0, sentence=0
+            ),
+        ]
+
+        result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
+
+        # All boundaries are clause boundaries (except last)
+        assert result[0].pause_after == 0.1
+        assert result[1].pause_after == 0.1
+        assert result[2].pause_after == 0.1
+        assert result[3].pause_after == 0.0  # Last segment

@@ -16,6 +16,8 @@ from .onnx_backend import (
     download_voice,
     get_model_path,
     get_voice_path,
+    is_chinese_language,
+    load_vocab_from_config,
 )
 from .phonemes import (
     PhonemeSegment,
@@ -86,4 +88,6 @@ __all__ = [
     "create_tokenizer",
     "phonemize_text_list",
     "split_and_phonemize_text",
+    "is_chinese_language",
+    "load_vocab_from_config",
 ]

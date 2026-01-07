@@ -54,7 +54,7 @@ SUPPORTED_LANGUAGES = {
     "ru": "ru",
     "ko": "ko",
     "ja": "ja",
-    "zh": "cmn",  # Mandarin Chinese
+    "zh": "zh",  # Mandarin Chinese
     "cmn": "cmn",  # Accept both zh and cmn
 }
 
@@ -174,12 +174,23 @@ class Tokenizer:
 
         Args:
             espeak_config: Deprecated, kept for backward compatibility
-            vocab_version: Ignored (uses kokorog2p's embedded vocabulary)
+            vocab_version: Model variant/version (e.g., 'v1.0', 'v1.1-zh') for filtering
             vocab: Optional custom vocabulary (overrides default)
             config: Optional TokenizerConfig for phonemization settings
         """
         self.vocab_version = vocab_version
-        self.vocab = vocab if vocab is not None else get_kokoro_vocab()
+        # Determine kokorog2p model parameter from vocab_version
+        # Map variant names to kokorog2p model names
+        if vocab_version == "v1.1-zh":
+            self._kokorog2p_model = "1.1"
+        else:
+            self._kokorog2p_model = "1.0"
+
+        self.vocab = (
+            vocab
+            if vocab is not None
+            else get_kokoro_vocab(model=self._kokorog2p_model)
+        )
         self._reverse_vocab: dict[int, str] | None = None
         self.config = config or TokenizerConfig()
 
@@ -333,6 +344,7 @@ class Tokenizer:
                         enable_detection=True,
                         use_espeak_fallback=self.config.use_espeak_fallback,
                         use_spacy=self.config.use_spacy,
+                        version=self._kokorog2p_model,
                     )
                     logger.info(
                         f"Created MixedLanguageG2P: primary={kokorog2p_primary}, "
@@ -365,6 +377,7 @@ class Tokenizer:
                 language=kokorog2p_lang,
                 use_espeak_fallback=self.config.use_espeak_fallback,
                 use_spacy=self.config.use_spacy,
+                version=self._kokorog2p_model,
             )
 
         return self._g2p_cache[lang]
@@ -429,6 +442,23 @@ class Tokenizer:
 
         logger.info(f"Loaded {len(phoneme_dict)} custom phoneme entries from {path}")
         return phoneme_dict
+
+    def filter_phonemes(self, text: str, replacement: str = "") -> str:
+        """Filter text to only include characters in the tokenizer's vocabulary.
+
+        This method uses the instance's vocabulary (which may be variant-specific)
+        instead of the global kokorog2p vocabulary. This is important for models
+        like v1.1-zh which have extended vocabularies with Bopomofo characters.
+
+        Args:
+            text: Input text/phonemes to filter
+            replacement: Character to use for filtered characters (default: remove)
+
+        Returns:
+            Filtered text with only vocabulary characters
+        """
+        # Use instance vocabulary for filtering
+        return "".join(c if c in self.vocab else replacement for c in text)
 
     def _apply_phoneme_dictionary(self, text: str) -> str:
         """Apply custom phoneme dictionary to text.
@@ -540,8 +570,8 @@ class Tokenizer:
             g2p = self._get_g2p(lang)
             phonemes = g2p.phonemize(text)
 
-        # Filter to only characters in vocabulary
-        phonemes = filter_for_kokoro(phonemes)
+        # Filter to only characters in vocabulary using variant-specific model
+        phonemes = filter_for_kokoro(phonemes, model=self._kokorog2p_model)
 
         return phonemes.strip()
 
@@ -588,7 +618,7 @@ class Tokenizer:
                 phoneme_parts.append(" ")
 
         phonemes = "".join(phoneme_parts)
-        phonemes = filter_for_kokoro(phonemes)
+        phonemes = filter_for_kokoro(phonemes, model=self._kokorog2p_model)
 
         return PhonemeResult(
             phonemes=phonemes.strip(),
@@ -614,7 +644,7 @@ class Tokenizer:
                 f"Maximum is {MAX_PHONEME_LENGTH} phonemes."
             )
 
-        return phonemes_to_ids(phonemes)
+        return phonemes_to_ids(phonemes, model=self._kokorog2p_model)
 
     def detokenize(self, tokens: list[int]) -> str:
         """Convert token IDs back to phonemes.
@@ -625,7 +655,7 @@ class Tokenizer:
         Returns:
             Phoneme string
         """
-        return ids_to_phonemes(tokens)
+        return ids_to_phonemes(tokens, model=self._kokorog2p_model)
 
     def text_to_tokens(
         self,
@@ -671,7 +701,9 @@ class Tokenizer:
         for token in tokens:
             if token.phonemes and token.text.strip():
                 # Filter phonemes for Kokoro vocabulary
-                filtered_phonemes = filter_for_kokoro(token.phonemes)
+                filtered_phonemes = filter_for_kokoro(
+                    token.phonemes, model=self._kokorog2p_model
+                )
                 result.append((token.text, filtered_phonemes))
 
         return result
