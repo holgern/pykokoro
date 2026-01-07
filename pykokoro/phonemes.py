@@ -628,7 +628,8 @@ def text_to_phoneme_segments(
         ...     "Hello (.) World (...) End",
         ...     tokenizer=tokenizer
         ... )
-        >>> # Automatically detects markers, returns segments with pause_after: [0.3, 1.0, 0.0]
+        >>> # Automatically detects markers
+        >>> # Returns segments with pause_after: [0.3, 1.0, 0.0]
 
         Automatic pauses with sentence splitting:
 

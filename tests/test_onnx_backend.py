@@ -560,19 +560,17 @@ class TestCreateWithPauses:
         def mock_init(self):
             self._session = None
             self._voices_data = {}
+            # Create mock audio generator
+            from unittest.mock import Mock
 
-        def mock_generate_from_segments(
-            self, segments, voice_style, speed, trim_silence
-        ):
-            import numpy as np
-
-            return np.array([0.0], dtype=np.float32)
+            self._audio_generator = Mock()
+            self._audio_generator.generate_from_segments = (
+                lambda segments, voice_style, speed, trim_silence: __import__(
+                    "numpy"
+                ).array([0.0], dtype=__import__("numpy").float32)
+            )
 
         monkeypatch.setattr("pykokoro.onnx_backend.Kokoro._init_kokoro", mock_init)
-        monkeypatch.setattr(
-            "pykokoro.onnx_backend.Kokoro._generate_from_segments",
-            mock_generate_from_segments,
-        )
         monkeypatch.setattr(
             "pykokoro.onnx_backend.Kokoro.get_voice_style",
             lambda self, name: __import__("numpy").zeros(10),
@@ -603,19 +601,17 @@ class TestCreateWithPauses:
         def mock_init(self):
             self._session = None
             self._voices_data = {}
+            # Create mock audio generator
+            from unittest.mock import Mock
 
-        def mock_generate_from_segments(
-            self, segments, voice_style, speed, trim_silence
-        ):
-            import numpy as np
-
-            return np.array([0.0], dtype=np.float32)
+            self._audio_generator = Mock()
+            self._audio_generator.generate_from_segments = (
+                lambda segments, voice_style, speed, trim_silence: __import__(
+                    "numpy"
+                ).array([0.0], dtype=__import__("numpy").float32)
+            )
 
         monkeypatch.setattr("pykokoro.onnx_backend.Kokoro._init_kokoro", mock_init)
-        monkeypatch.setattr(
-            "pykokoro.onnx_backend.Kokoro._generate_from_segments",
-            mock_generate_from_segments,
-        )
         monkeypatch.setattr(
             "pykokoro.onnx_backend.Kokoro.get_voice_style",
             lambda self, name: __import__("numpy").zeros(10),

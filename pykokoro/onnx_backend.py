@@ -8,7 +8,6 @@ import re
 import sqlite3
 import urllib.request
 from collections.abc import AsyncGenerator, Callable, Generator
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Optional
 
@@ -16,10 +15,13 @@ import numpy as np
 import onnxruntime as rt
 from huggingface_hub import hf_hub_download
 
+from .audio_generator import AudioGenerator
+from .onnx_session import OnnxSessionManager
 from .phonemes import PhonemeSegment
 from .tokenizer import EspeakConfig, Tokenizer, TokenizerConfig
 from .trim import trim as trim_audio
 from .utils import get_user_cache_path
+from .voice_manager import VoiceBlend, VoiceManager
 
 # Logger for debugging
 logger = logging.getLogger(__name__)
@@ -197,41 +199,6 @@ VOICE_NAMES_BY_VARIANT = {
     "github-v1.0": VOICE_NAMES,  # Same as HuggingFace (multi-language)
     "github-v1.1-zh": VOICE_NAMES_ZH,  # Chinese-specific voices
 }
-
-
-@dataclass
-class VoiceBlend:
-    """Represents a blend of multiple voices."""
-
-    voices: list[tuple[str, float]]  # List of (voice_name, weight) tuples
-
-    @classmethod
-    def parse(cls, blend_str: str) -> "VoiceBlend":
-        """
-        Parse a voice blend string.
-
-        Format: "voice1:weight1,voice2:weight2" or "voice1:50,voice2:50"
-        Weights should sum to 100 (percentages).
-
-        Example: "af_nicole:50,am_michael:50"
-        """
-        voices = []
-        for part in blend_str.split(","):
-            part = part.strip()
-            if ":" in part:
-                voice_name, weight_str = part.split(":", 1)
-                weight = float(weight_str) / 100.0  # Convert percentage to fraction
-            else:
-                voice_name = part
-                weight = 1.0
-            voices.append((voice_name.strip(), weight))
-
-        # Normalize weights if they don't sum to 1
-        total_weight = sum(w for _, w in voices)
-        if total_weight > 0 and abs(total_weight - 1.0) > 0.01:
-            voices = [(v, w / total_weight) for v, w in voices]
-
-        return cls(voices=voices)
 
 
 # =============================================================================
@@ -1213,144 +1180,6 @@ class Kokoro:
                 setattr(sess_opt, attr_name, value)
                 logger.debug(f"Set SessionOptions.{attr_name} = {value}")
 
-    def _create_session_options(self) -> rt.SessionOptions:
-        """
-        Create SessionOptions with user configuration and sensible defaults.
-
-        Priority:
-        1. User-provided SessionOptions object (self._session_options)
-        2. User-provided provider_options dict (self._provider_options)
-        3. Sensible defaults
-
-        Returns:
-            Configured SessionOptions instance
-        """
-        # If user provided a SessionOptions object, use it directly
-        if self._session_options is not None:
-            logger.info("Using user-provided SessionOptions")
-            return self._session_options
-
-        # Create new SessionOptions with defaults
-        sess_opt = rt.SessionOptions()
-
-        # Sensible defaults - let ONNX Runtime decide thread count
-        # Only set these if user doesn't override
-        sess_opt.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_ALL
-        sess_opt.execution_mode = rt.ExecutionMode.ORT_SEQUENTIAL
-
-        # Apply user provider_options if provided
-        if self._provider_options:
-            logger.info(f"Applying provider options: {self._provider_options}")
-            self._apply_provider_options(sess_opt, self._provider_options)
-
-        return sess_opt
-
-    def _select_providers(
-        self,
-        provider: ProviderType | None,
-        use_gpu: bool,
-    ) -> list[str | tuple[str, dict[str, str]]]:
-        """
-        Select ONNX Runtime execution providers based on preference.
-
-        Args:
-            provider: Explicit provider ('auto', 'cpu', 'cuda', 'openvino', etc.)
-            use_gpu: Legacy GPU flag (for backward compatibility)
-
-        Returns:
-            List of providers in priority order. Can be simple strings or
-            tuples of (provider_name, options_dict) for provider-specific options.
-
-        Raises:
-            RuntimeError: If requested provider is not available
-            ValueError: If provider name is invalid
-        """
-        available = rt.get_available_providers()
-
-        # Helper function to create provider list with options
-        def _make_provider_list(prov: str) -> list[str | tuple[str, dict[str, str]]]:
-            """Create provider list, adding options if needed."""
-            # Get default options for this provider
-            default_opts = self._get_default_provider_options(prov)
-
-            # Get user-provided provider-specific options
-            provider_opts = {}
-            if self._provider_options:
-                provider_opts = self._get_provider_specific_options(
-                    prov, self._provider_options
-                )
-
-            # Merge defaults with user options (user options take precedence)
-            merged_opts = {**default_opts, **provider_opts}
-
-            if merged_opts:
-                logger.info(f"Using {prov} with options: {merged_opts}")
-                return [(prov, merged_opts), "CPUExecutionProvider"]
-            else:
-                return [prov, "CPUExecutionProvider"]
-
-        # Environment variable override (highest priority)
-        env_provider = os.getenv("ONNX_PROVIDER")
-        if env_provider:
-            logger.info(f"Using provider from ONNX_PROVIDER env: {env_provider}")
-            return _make_provider_list(env_provider)
-
-        # Auto-selection logic
-        if provider == "auto" or (provider is None and use_gpu):
-            # Priority: CUDA > OpenVINO > CoreML > DirectML
-            for prov in [
-                "CUDAExecutionProvider",
-                "OpenVINOExecutionProvider",
-                "CoreMLExecutionProvider",
-                "DmlExecutionProvider",
-            ]:
-                if prov in available:
-                    logger.info(f"Auto-selected provider: {prov}")
-                    return _make_provider_list(prov)
-            logger.info("Auto-selection: No accelerators found, using CPU")
-            return ["CPUExecutionProvider"]
-
-        # Default to CPU if no provider specified and use_gpu=False
-        if provider is None:
-            logger.info("Using CPU provider")
-            return ["CPUExecutionProvider"]
-
-        # Explicit provider selection
-        provider_map = {
-            "cpu": "CPUExecutionProvider",
-            "cuda": "CUDAExecutionProvider",
-            "openvino": "OpenVINOExecutionProvider",
-            "directml": "DmlExecutionProvider",
-            "coreml": "CoreMLExecutionProvider",
-        }
-
-        selected = provider_map.get(provider.lower())
-        if not selected:
-            raise ValueError(
-                f"Unknown provider: {provider}. "
-                f"Valid options: {list(provider_map.keys())}"
-            )
-
-        if selected not in available:
-            # Provide helpful installation message
-            install_hints = {
-                "CUDAExecutionProvider": "pip install pykokoro[gpu]",
-                "OpenVINOExecutionProvider": "pip install pykokoro[openvino]",
-                "DmlExecutionProvider": "pip install pykokoro[directml]",
-                "CoreMLExecutionProvider": "pip install pykokoro[coreml]",
-            }
-            hint = install_hints.get(
-                selected, f"install the required package for {selected}"
-            )
-            raise RuntimeError(
-                f"{provider.upper()} provider requested but not available.\n"
-                f"Install with: {hint}\n"
-                f"Available providers: {available}"
-            )
-
-        logger.info(f"Using explicitly selected provider: {selected}")
-        return _make_provider_list(selected)
-
     def _init_kokoro(self) -> None:
         """Initialize the ONNX session and load voices."""
         if self._session is not None:
@@ -1358,243 +1187,28 @@ class Kokoro:
 
         self._ensure_models()
 
-        # Create session options
-        sess_options = self._create_session_options()
+        # Use OnnxSessionManager to create session
+        session_manager = OnnxSessionManager(
+            provider=self._provider,
+            use_gpu=self._use_gpu,
+            session_options=self._session_options,
+            provider_options=self._provider_options,
+        )
+        self._session = session_manager.create_session(model_path=self._model_path)
 
-        # Select execution providers
-        providers = self._select_providers(self._provider, self._use_gpu)
+        # Use VoiceManager to load voices
+        voice_manager = VoiceManager(
+            model_source=self._model_source,
+        )
+        voice_manager.load_voices(voices_path=self._voices_path)
+        self._voices_data = voice_manager._voices_data
 
-        # Try to load ONNX model with automatic fallback
-        # If the primary provider fails and we're in auto mode, try CPU
-        session_loaded = False
-        last_error = None
-
-        for attempt, provider_list in enumerate([providers, ["CPUExecutionProvider"]]):
-            # Skip second attempt if we already tried CPU or
-            # if explicit provider was requested
-            if attempt == 1:
-                if providers == ["CPUExecutionProvider"]:
-                    break  # Already tried CPU
-                if self._provider and self._provider != "auto":
-                    break  # User explicitly requested a provider, don't fallback
-                # Check if primary provider was already CPU (handle both str and tuple)
-                primary_provider = providers[0]
-                if isinstance(primary_provider, tuple):
-                    primary_provider = primary_provider[0]
-                if primary_provider == "CPUExecutionProvider":
-                    break  # Primary was already CPU
-
-            try:
-                self._session = rt.InferenceSession(
-                    str(self._model_path),
-                    sess_options=sess_options,
-                    providers=provider_list,
-                )
-                session_loaded = True
-
-                # Log what was actually loaded
-                actual_providers = self._session.get_providers()
-                logger.info(f"Loaded ONNX session with providers: {actual_providers}")
-
-                # Warn if we had to fallback
-                if attempt == 1:
-                    failed_provider = providers[0]
-                    if isinstance(failed_provider, tuple):
-                        failed_provider = failed_provider[0]
-                    logger.warning(
-                        f"Failed to load model with {failed_provider}, "
-                        f"fell back to CPU. Error: {last_error}"
-                    )
-
-                break
-
-            except Exception as e:
-                last_error = str(e)
-                if attempt == 0:
-                    # First attempt failed, will try fallback
-                    provider_name = provider_list[0]
-                    if isinstance(provider_name, tuple):
-                        provider_name = provider_name[0]
-                    logger.debug(f"Provider {provider_name} failed: {e}")
-                    continue
-                else:
-                    # Fallback also failed, re-raise
-                    raise
-
-        if not session_loaded:
-            raise RuntimeError(
-                f"Failed to initialize ONNX session with providers {providers}. "
-                f"Last error: {last_error}"
-            )
-
-        # Load voices (numpy archive with voice style vectors or raw binary)
-        if self._model_source == "github":
-            # GitHub voices.bin format: raw binary file with voice data
-            # We need to parse it to extract individual voices
-            self._voices_data = self._load_voices_bin_github(self._voices_path)
-        else:
-            # HuggingFace format: .npz archive with named voice arrays
-            self._voices_data = dict(np.load(str(self._voices_path), allow_pickle=True))
-
-    def _load_voices_bin_github(self, voices_path: Path) -> dict[str, np.ndarray]:
-        """
-        Load voices from GitHub format .bin file.
-
-        The GitHub voices.bin format is a NumPy archive file (.npz format)
-        containing voice arrays with voice names as keys.
-
-        Args:
-            voices_path: Path to the voices.bin file
-
-        Returns:
-            Dictionary mapping voice names to numpy arrays
-        """
-        # Load the NumPy file - it's actually .npz format despite .bin extension
-        voices_npz = np.load(str(voices_path), allow_pickle=True)
-
-        # Convert NpzFile to dictionary
-        voices: dict[str, np.ndarray] = dict(voices_npz)
-
-        logger.info(f"Successfully loaded {len(voices)} voices from {voices_path}")
-        logger.debug(f"Available voices: {', '.join(sorted(voices.keys()))}")
-
-        return voices
-
-    def _create_audio_internal(
-        self,
-        phonemes: str,
-        voice: np.ndarray,
-        speed: float,
-    ) -> tuple[np.ndarray, int]:
-        """
-        Core ONNX inference for a single phoneme batch.
-
-        Args:
-            phonemes: Phoneme string (will be truncated if > MAX_PHONEME_LENGTH)
-            voice: Voice style vector
-            speed: Speech speed multiplier
-
-        Returns:
-            Tuple of (audio samples, sample rate)
-        """
-        assert self._session is not None
-
-        # Truncate phonemes if too long
-        phonemes = phonemes[:MAX_PHONEME_LENGTH]
-        tokens = self.tokenizer.tokenize(phonemes)
-
-        # Get voice style for this token length (clamp to valid range)
-        style_idx = min(len(tokens), MAX_PHONEME_LENGTH - 1)
-        voice_style = voice[style_idx]
-
-        # Pad tokens with start/end tokens
-        tokens_padded = [[0, *tokens, 0]]
-
-        # Check input names to determine model version
-        input_names = [i.name for i in self._session.get_inputs()]
-
-        # GitHub models (v1.0 and v1.1-zh) use "input_ids" and int32 speed
-        # HuggingFace newer models also use "input_ids" but with float32 speed
-        if "input_ids" in input_names:
-            # Check if this is a GitHub model by checking model source
-            if self._model_source == "github":
-                # GitHub models: input_ids, style (float32), speed (int32)
-                speed_int = max(1, int(round(speed)))
-                inputs = {
-                    "input_ids": np.array(tokens_padded, dtype=np.int64),
-                    "style": np.array(voice_style, dtype=np.float32),
-                    "speed": np.array([speed_int], dtype=np.int32),
-                }
-            else:
-                # HuggingFace original format: input_ids, float32 speed
-                inputs = {
-                    "input_ids": tokens_padded,
-                    "style": voice_style,
-                    "speed": np.ones(1, dtype=np.float32) * speed,
-                }
-        else:
-            # Original model format (uses "tokens" input, float speed)
-            inputs = {
-                "tokens": tokens_padded,
-                "style": voice_style,
-                "speed": np.ones(1, dtype=np.float32) * speed,
-            }
-
-        result = self._session.run(None, inputs)[0]
-        audio = np.asarray(result).T
-        # Ensure audio is 1D for compatibility with trim and other operations
-        audio = np.squeeze(audio)
-        return audio, SAMPLE_RATE
-
-    def _split_phonemes(self, phonemes: str) -> list[str]:
-        """
-        Split phonemes into batches at sentence-ending punctuation marks.
-
-        Args:
-            phonemes: Full phoneme string
-
-        Returns:
-            List of phoneme batches, each <= MAX_PHONEME_LENGTH
-        """
-        # Split on sentence-ending punctuation (., !, ?) while keeping them
-        # Use lookbehind to split AFTER the punctuation
-        sentences = re.split(r"(?<=[.!?])\s*", phonemes)
-
-        batches = []
-        current = ""
-
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence:
-                continue
-
-            # If adding sentence would exceed limit, save current batch, start new
-            if current and len(current) + len(sentence) + 1 > MAX_PHONEME_LENGTH:
-                batches.append(current.strip())
-                current = sentence
-            # If the sentence itself is too long, we need to split it further
-            elif len(sentence) > MAX_PHONEME_LENGTH:
-                # Save current batch if any
-                if current:
-                    batches.append(current.strip())
-                    current = ""
-                # Split long sentence on any punctuation or spaces
-                words = re.split(r"([.,;:!?\s])", sentence)
-                # If there's no punctuation or spaces, force chunk by character count
-                if len(words) == 1 and len(words[0]) > MAX_PHONEME_LENGTH:
-                    # Chunk the string at MAX_PHONEME_LENGTH boundaries
-                    chunk = words[0]
-                    while len(chunk) > MAX_PHONEME_LENGTH:
-                        batches.append(chunk[:MAX_PHONEME_LENGTH])
-                        chunk = chunk[MAX_PHONEME_LENGTH:]
-                    if chunk:
-                        current = chunk
-                else:
-                    for word in words:
-                        if not word or word.isspace():
-                            if current:
-                                current += " "
-                            continue
-                        if len(current) + len(word) + 1 > MAX_PHONEME_LENGTH:
-                            if current:
-                                batches.append(current.strip())
-                            current = word
-                        else:
-                            if current and not current.endswith(
-                                (".", "!", "?", ",", ";", ":")
-                            ):
-                                current += " "
-                            current += word
-            else:
-                # Add sentence to current batch
-                if current:
-                    current += " "
-                current += sentence
-
-        if current:
-            batches.append(current.strip())
-
-        return batches if batches else [phonemes]
+        # Create AudioGenerator
+        self._audio_generator = AudioGenerator(
+            session=self._session,
+            tokenizer=self.tokenizer,
+            model_source=self._model_source,
+        )
 
     def get_voices(self) -> list[str]:
         """Get list of available voice names."""
@@ -1645,97 +1259,6 @@ class Kokoro:
         # This should never be None if blend.voices is not empty
         assert blended is not None, "No voices in blend"
         return blended
-
-    def _generate_from_phoneme_batches(
-        self,
-        batches: list[str],
-        voice_style: np.ndarray,
-        speed: float,
-        trim_silence: bool,
-    ) -> np.ndarray:
-        """Generate and concatenate audio from phoneme batches.
-
-        Args:
-            batches: List of phoneme strings (each <= MAX_PHONEME_LENGTH)
-            voice_style: Voice style vector
-            speed: Speech speed
-            trim_silence: Whether to trim silence from each batch
-
-        Returns:
-            Concatenated audio array
-        """
-        audio_parts = []
-
-        for batch in batches:
-            audio, _ = self._create_audio_internal(batch, voice_style, speed)
-            if trim_silence:
-                audio, _ = trim_audio(audio)
-            audio_parts.append(audio)
-
-        return (
-            np.concatenate(audio_parts)
-            if audio_parts
-            else np.array([], dtype=np.float32)
-        )
-
-    def _generate_from_segments(
-        self,
-        segments: list[PhonemeSegment],
-        voice_style: np.ndarray,
-        speed: float,
-        trim_silence: bool,
-    ) -> np.ndarray:
-        """Generate audio from list of PhonemeSegment instances.
-
-        Unified audio generation method that handles:
-        - Segments with phonemes (generate speech)
-        - Empty segments (skip, only use pause_after)
-        - Pause insertion based on pause_after field
-        - Optional silence trimming
-
-        Args:
-            segments: List of PhonemeSegment instances
-            voice_style: Voice style vector
-            speed: Speech speed multiplier
-            trim_silence: Whether to trim silence from segment boundaries
-
-        Returns:
-            Concatenated audio array
-        """
-        from .utils import generate_silence
-
-        audio_parts = []
-
-        for segment in segments:
-            # Generate speech if phonemes present
-            if segment.phonemes.strip():
-                # Handle long phonemes by splitting
-                if len(segment.phonemes) > MAX_PHONEME_LENGTH:
-                    batches = self._split_phonemes(segment.phonemes)
-                    for batch in batches:
-                        audio, _ = self._create_audio_internal(
-                            batch, voice_style, speed
-                        )
-                        if trim_silence:
-                            audio, _ = trim_audio(audio)
-                        audio_parts.append(audio)
-                else:
-                    audio, _ = self._create_audio_internal(
-                        segment.phonemes, voice_style, speed
-                    )
-                    if trim_silence:
-                        audio, _ = trim_audio(audio)
-                    audio_parts.append(audio)
-
-            # Add pause after segment (works for both empty and non-empty phonemes)
-            if segment.pause_after > 0:
-                audio_parts.append(generate_silence(segment.pause_after, SAMPLE_RATE))
-
-        return (
-            np.concatenate(audio_parts)
-            if audio_parts
-            else np.array([], dtype=np.float32)
-        )
 
     def create(
         self,
@@ -1978,7 +1501,9 @@ class Kokoro:
         audio_parts = []
 
         for batch in batches:
-            audio_part, _ = self._create_audio_internal(batch, voice_style, speed)
+            audio_part, _ = self._audio_generator.generate_from_phonemes(
+                batch, voice_style, speed
+            )
             # Trim silence from each part
             audio_part, _ = trim_audio(audio_part)
             audio_parts.append(audio_part)
@@ -2140,7 +1665,9 @@ class Kokoro:
             audio_parts = []
 
             for batch in batches:
-                audio_part, _ = self._create_audio_internal(batch, voice_style, speed)
+                audio_part, _ = self._audio_generator.generate_from_phonemes(
+                    batch, voice_style, speed
+                )
                 audio_part, _ = trim_audio(audio_part)
                 audio_parts.append(audio_part)
 
@@ -2344,7 +1871,11 @@ class Kokoro:
             for phoneme_batch in batched_phonemes:
                 # Execute blocking ONNX inference in a thread executor
                 audio_part, sample_rate = await loop.run_in_executor(
-                    None, self._create_audio_internal, phoneme_batch, voice_style, speed
+                    None,
+                    self._audio_generator.generate_from_phonemes,
+                    phoneme_batch,
+                    voice_style,
+                    speed,
                 )
                 # Trim silence
                 audio_part, _ = trim_audio(audio_part)
@@ -2400,12 +1931,44 @@ class Kokoro:
         batched_phonemes = self._split_phonemes(phonemes)
 
         for phoneme_batch in batched_phonemes:
-            audio_part, sample_rate = self._create_audio_internal(
+            audio_part, sample_rate = self._audio_generator.generate_from_phonemes(
                 phoneme_batch, voice_style, speed
             )
             # Trim silence
             audio_part, _ = trim_audio(audio_part)
             yield audio_part, sample_rate, phoneme_batch
+
+    # Delegate methods for backward compatibility with tests
+    def _split_phonemes(self, phonemes: str) -> list[str]:
+        """Delegate to AudioGenerator.split_phonemes (backward compatibility)."""
+        self._init_kokoro()
+        return self._audio_generator.split_phonemes(phonemes)
+
+    def _generate_from_phoneme_batches(
+        self,
+        batches: list[str],
+        voice_style: np.ndarray,
+        speed: float,
+        trim_silence: bool,
+    ) -> np.ndarray:
+        """Delegate to AudioGenerator (backward compatibility)."""
+        self._init_kokoro()
+        return self._audio_generator.generate_from_phoneme_batches(
+            batches, voice_style, speed, trim_silence
+        )
+
+    def _generate_from_segments(
+        self,
+        segments: list["PhonemeSegment"],
+        voice_style: np.ndarray,
+        speed: float,
+        trim_silence: bool,
+    ) -> np.ndarray:
+        """Delegate to AudioGenerator (backward compatibility)."""
+        self._init_kokoro()
+        return self._audio_generator.generate_from_segments(
+            segments, voice_style, speed, trim_silence
+        )
 
     def close(self) -> None:
         """Clean up resources."""

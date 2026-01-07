@@ -6,9 +6,7 @@ kokorog2p (dictionary + espeak fallback) as the phonemizer backend.
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,7 +23,9 @@ from kokorog2p import (
     validate_for_kokoro,
 )
 from kokorog2p.base import G2PBase
-from kokorog2p.mixed_language_g2p import MixedLanguageG2P
+
+from .mixed_language_handler import MixedLanguageHandler
+from .phoneme_dictionary import PhonemeDictionary
 
 if TYPE_CHECKING:
     pass
@@ -197,6 +197,33 @@ class Tokenizer:
         # G2P instances cache (lazy loaded per language)
         self._g2p_cache: dict[str, G2PBase] = {}
 
+        # Mixed-language handler for automatic language detection
+        self._mixed_language_handler = MixedLanguageHandler(
+            config=self.config, kokorog2p_model=self._kokorog2p_model
+        )
+
+        # Phoneme dictionary for custom word->phoneme mappings
+        self._phoneme_dictionary_obj: PhonemeDictionary | None = None
+        if self.config.phoneme_dictionary_path:
+            try:
+                self._phoneme_dictionary_obj = PhonemeDictionary(
+                    dictionary_path=self.config.phoneme_dictionary_path,
+                    case_sensitive=self.config.phoneme_dict_case_sensitive,
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to load phoneme dictionary from "
+                    f"'{self.config.phoneme_dictionary_path}': {e}. "
+                    f"Continuing without custom phoneme dictionary."
+                )
+
+        # Legacy attribute for backward compatibility
+        self._phoneme_dictionary: dict[str, str] | None = (
+            self._phoneme_dictionary_obj._dictionary
+            if self._phoneme_dictionary_obj
+            else None
+        )
+
         # Phoneme dictionary cache (lazy loaded)
         self._phoneme_dictionary: dict[str, str] | None = None
 
@@ -222,85 +249,16 @@ class Tokenizer:
                 )
 
     def _validate_mixed_language_config(self) -> None:
-        """Validate mixed-language configuration.
-
-        Raises:
-            ValueError: If mixed-language is enabled but configuration is invalid
-        """
-        if not self.config.use_mixed_language:
-            return
-
-        # Require allowed_languages to be explicitly set
-        if not self.config.mixed_language_allowed:
-            raise ValueError(
-                "use_mixed_language is enabled but mixed_language_allowed is not set. "
-                "You must explicitly specify which languages to detect, e.g., "
-                "mixed_language_allowed=['de', 'en-us', 'fr']"
-            )
-
-        # Validate all allowed languages are supported
-        for lang in self.config.mixed_language_allowed:
-            # Map to kokorog2p format for validation
-            kokorog2p_lang = SUPPORTED_LANGUAGES.get(lang, lang)
-            if kokorog2p_lang not in SUPPORTED_LANGUAGES.values():
-                supported = sorted(set(SUPPORTED_LANGUAGES.keys()))
-                raise ValueError(
-                    f"Language '{lang}' in mixed_language_allowed is not supported. "
-                    f"Supported languages: {supported}"
-                )
-
-        # Validate primary language if set
-        if self.config.mixed_language_primary:
-            primary = self.config.mixed_language_primary
-            kokorog2p_primary = SUPPORTED_LANGUAGES.get(primary, primary)
-            if kokorog2p_primary not in SUPPORTED_LANGUAGES.values():
-                supported = sorted(set(SUPPORTED_LANGUAGES.keys()))
-                raise ValueError(
-                    f"Primary language '{primary}' is not supported. "
-                    f"Supported languages: {supported}"
-                )
-
-            # Primary MUST be in allowed languages
-            if primary not in self.config.mixed_language_allowed:
-                raise ValueError(
-                    f"Primary language '{primary}' must be in allowed_languages. "
-                    f"Got primary='{primary}' but "
-                    f"allowed={self.config.mixed_language_allowed}"
-                )
-
-        # Validate confidence threshold
-        if not 0.0 <= self.config.mixed_language_confidence <= 1.0:
-            raise ValueError(
-                f"mixed_language_confidence must be between 0.0 and 1.0, "
-                f"got {self.config.mixed_language_confidence}"
-            )
+        """Delegate to MixedLanguageHandler.validate_config (backward compatibility)."""
+        self._mixed_language_handler.validate_config()
 
     def _get_mixed_language_cache_key(self) -> str:
-        """Generate cache key for mixed-language G2P instance.
-
-        Returns:
-            String key representing the current mixed-language configuration
-        """
-        if not self.config.use_mixed_language:
-            return ""
-
-        # Include all relevant config parameters in the key
-        allowed = tuple(sorted(self.config.mixed_language_allowed or []))
-        primary = self.config.mixed_language_primary or ""
-        confidence = self.config.mixed_language_confidence
-
-        return f"mixed:{primary}:{allowed}:{confidence}"
+        """Delegate to MixedLanguageHandler.get_cache_key (backward compatibility)."""
+        return self._mixed_language_handler.get_cache_key()
 
     def invalidate_mixed_language_cache(self) -> None:
-        """Invalidate cached mixed-language G2P instance.
-
-        Call this after changing mixed-language configuration to force
-        recreation of the MixedLanguageG2P instance with new settings.
-        """
-        cache_key = self._get_mixed_language_cache_key()
-        if cache_key and cache_key in self._g2p_cache:
-            del self._g2p_cache[cache_key]
-            logger.debug(f"Invalidated mixed-language G2P cache: {cache_key}")
+        """Delegate to MixedLanguageHandler.invalidate_cache."""
+        self._mixed_language_handler.invalidate_cache()
 
     def _get_g2p(self, lang: str) -> G2PBase:
         """Get or create a G2P instance for the given language.
@@ -317,58 +275,27 @@ class Tokenizer:
         Raises:
             ValueError: If mixed-language config is invalid
         """
-        # Validate mixed-language configuration if enabled
-        self._validate_mixed_language_config()
+        # Try to get mixed-language G2P if enabled
+        mixed_g2p = self._mixed_language_handler.get_or_create_g2p(
+            lang=lang,
+            use_espeak_fallback=self.config.use_espeak_fallback,
+            use_spacy=self.config.use_spacy,
+        )
 
-        # If mixed-language mode is enabled, use MixedLanguageG2P
-        if self.config.use_mixed_language and self.config.mixed_language_allowed:
-            cache_key = self._get_mixed_language_cache_key()
-
-            if cache_key not in self._g2p_cache:
-                # Map primary language to kokorog2p format
-                primary_lang = self.config.mixed_language_primary or lang
-                kokorog2p_primary = SUPPORTED_LANGUAGES.get(primary_lang, primary_lang)
-
-                # Map all allowed languages to kokorog2p format
-                allowed_langs = [
-                    SUPPORTED_LANGUAGES.get(lang_code, lang_code)
-                    for lang_code in self.config.mixed_language_allowed
-                ]
-
-                try:
-                    # Create MixedLanguageG2P instance
-                    self._g2p_cache[cache_key] = MixedLanguageG2P(
-                        primary_language=kokorog2p_primary,
-                        allowed_languages=allowed_langs,
-                        confidence_threshold=self.config.mixed_language_confidence,
-                        enable_detection=True,
-                        use_espeak_fallback=self.config.use_espeak_fallback,
-                        use_spacy=self.config.use_spacy,
-                        version=self._kokorog2p_model,
-                    )
-                    logger.info(
-                        f"Created MixedLanguageG2P: primary={kokorog2p_primary}, "
-                        f"allowed={allowed_langs}, "
-                        f"confidence={self.config.mixed_language_confidence}"
-                    )
-                except ImportError as e:
-                    # lingua-language-detector not available,
-                    # fall back to single-language
-                    logger.warning(
-                        f"Mixed-language mode requested but "
-                        f"lingua-language-detector is not available: {e}. "
-                        f"Falling back to single-language mode."
-                    )
-                    # Disable mixed-language mode for this session
-                    self.config.use_mixed_language = False
-                    # Fall through to single-language G2P creation below
-
-            if cache_key in self._g2p_cache:
-                return self._g2p_cache[cache_key]
+        # If mixed-language G2P was created, cache it and return it
+        if mixed_g2p is not None:
+            cache_key = self._mixed_language_handler.get_cache_key()
+            if cache_key:
+                # Share the cache with the handler
+                self._g2p_cache[cache_key] = mixed_g2p
+                self._mixed_language_handler._g2p_cache = self._g2p_cache
+            return mixed_g2p
 
         # Standard single-language G2P
         if lang not in self._g2p_cache:
             # Map language to kokorog2p format
+            from .mixed_language_handler import SUPPORTED_LANGUAGES
+
             kokorog2p_lang = SUPPORTED_LANGUAGES.get(lang, lang)
 
             # All languages are now fully supported by kokorog2p
@@ -383,120 +310,15 @@ class Tokenizer:
         return self._g2p_cache[lang]
 
     def _load_phoneme_dictionary(self, path: str | Path) -> dict[str, str]:
-        """Load custom phoneme dictionary from JSON file.
-
-        Args:
-            path: Path to JSON file containing phoneme mappings
-
-        Returns:
-            Dictionary mapping words to phoneme strings
-
-        Raises:
-            FileNotFoundError: If file doesn't exist
-            ValueError: If JSON format is invalid
-        """
-        file_path = Path(path)
-        if not file_path.exists():
-            raise FileNotFoundError(f"Phoneme dictionary not found: {path}")
-
-        with open(file_path, encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Support both simple format and metadata format
-        if isinstance(data, dict):
-            # Check if it's metadata format with "entries" key
-            if "entries" in data and isinstance(data["entries"], dict):
-                entries = data["entries"]
-                # Support both simple string format and dict format with "phoneme" key
-                phoneme_dict = {}
-                for word, value in entries.items():
-                    if isinstance(value, str):
-                        phoneme_dict[word] = value
-                    elif isinstance(value, dict) and "phoneme" in value:
-                        phoneme_dict[word] = value["phoneme"]
-                    else:
-                        raise ValueError(
-                            f"Invalid entry format for '{word}': {value}. "
-                            f"Expected string or dict with 'phoneme' key."
-                        )
-            else:
-                # Simple format: {word: phoneme}
-                phoneme_dict = data
-        else:
-            raise ValueError(
-                f"Phoneme dictionary must be a JSON object, got {type(data)}"
-            )
-
-        # Validate all phoneme values
-        for word, phoneme in phoneme_dict.items():
-            if not isinstance(phoneme, str):
-                raise ValueError(
-                    f"Phoneme for '{word}' must be a string, got {type(phoneme)}"
-                )
-            # Phonemes should be in /.../ format for markdown
-            if not phoneme.startswith("/") or not phoneme.endswith("/"):
-                raise ValueError(
-                    f"Invalid phoneme format for '{word}': '{phoneme}'. "
-                    f"Expected format: '/phoneme/' (e.g., '/mɪsˈɑki/')"
-                )
-
-        logger.info(f"Loaded {len(phoneme_dict)} custom phoneme entries from {path}")
-        return phoneme_dict
-
-    def filter_phonemes(self, text: str, replacement: str = "") -> str:
-        """Filter text to only include characters in the tokenizer's vocabulary.
-
-        This method uses the instance's vocabulary (which may be variant-specific)
-        instead of the global kokorog2p vocabulary. This is important for models
-        like v1.1-zh which have extended vocabularies with Bopomofo characters.
-
-        Args:
-            text: Input text/phonemes to filter
-            replacement: Character to use for filtered characters (default: remove)
-
-        Returns:
-            Filtered text with only vocabulary characters
-        """
-        # Use instance vocabulary for filtering
-        return "".join(c if c in self.vocab else replacement for c in text)
+        """Delegate to PhonemeDictionary.load (backward compatibility)."""
+        phoneme_dict = PhonemeDictionary()
+        return phoneme_dict.load(path)
 
     def _apply_phoneme_dictionary(self, text: str) -> str:
-        """Apply custom phoneme dictionary to text.
-
-        Replaces words with markdown phoneme notation: [word](/phoneme/)
-
-        Args:
-            text: Input text
-
-        Returns:
-            Text with phoneme dictionary applied
-        """
-        if not self._phoneme_dictionary:
-            return text
-
-        result = text
-        flags = 0 if self.config.phoneme_dict_case_sensitive else re.IGNORECASE
-
-        # Sort by length (longest first) to handle multi-word entries correctly
-        sorted_words = sorted(
-            self._phoneme_dictionary.items(), key=lambda x: len(x[0]), reverse=True
-        )
-
-        for word, phoneme in sorted_words:
-            # Create regex pattern with word boundaries
-            # Use re.escape to handle special characters in the word
-            pattern = r"\b" + re.escape(word) + r"\b"
-
-            # Replace with markdown format: [word](/phoneme/)
-            # Keep the slashes - kokorog2p requires them to recognize custom phonemes
-            # Use a replacement function to preserve the original case
-            def replace_func(match: re.Match, p=phoneme) -> str:
-                matched_word = match.group(0)
-                return f"[{matched_word}]({p})"
-
-            result = re.sub(pattern, replace_func, result, flags=flags)
-
-        return result
+        """Delegate to PhonemeDictionary.apply (backward compatibility)."""
+        if self._phoneme_dictionary_obj:
+            return self._phoneme_dictionary_obj.apply(text)
+        return text
 
     @property
     def reverse_vocab(self) -> dict[int, str]:
