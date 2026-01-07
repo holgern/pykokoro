@@ -1,3 +1,8 @@
+[![PyPI - Version](https://img.shields.io/pypi/v/kokorog2p)](https://pypi.org/project/pykokoro/)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pykokoro)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/pykokoro)
+[![codecov](https://codecov.io/gh/holgern/pykokoro/graph/badge.svg?token=iCHXwbjAXG)](https://codecov.io/gh/holgern/pykokoro)
+
 # PyKokoro
 
 A Python library for Kokoro TTS (Text-to-Speech) using ONNX runtime.

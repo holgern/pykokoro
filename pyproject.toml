@@ -18,7 +18,7 @@ authors = [
 keywords = ["tts", "text-to-speech", "kokoro", "phonemizer", "espeak"]
 urls = { Homepage = "https://github.com/holgern/pykokoro" }
 dependencies = [
-    "kokorog2p>=0.2.5",
+    "kokorog2p>=0.2.6",
     "phrasplit",
     "numpy",
     "onnxruntime>=1.17.0",
