@@ -347,10 +347,9 @@ def get_config_path(variant: ModelVariant | None = None) -> Path:
     Returns:
         Path to config file in variant-specific subdirectory
     """
-    if variant == "v1.1-zh":
+    # Both v1.1-zh and v1.1-zh-hf use the same config (v1.1)
+    if variant == "v1.1-zh" or variant == "v1.1-zh-hf":
         return get_user_cache_path() / "v1.1-zh" / HF_CONFIG_FILENAME
-    elif variant == "v1.1-zh-hf":
-        return get_user_cache_path() / "v1.1-zh-hf" / HF_CONFIG_FILENAME
     else:
         # v1.0 or None (default)
         return get_user_cache_path() / "v1.0" / HF_CONFIG_FILENAME
@@ -473,12 +472,11 @@ def download_config(
         Path to the downloaded config file
     """
     # Determine repo and local directory based on variant
-    if variant == "v1.1-zh":
-        repo_id = HF_REPO_V1_1_ZH
+    # Both v1.1-zh (GitHub) and v1.1-zh-hf (HuggingFace) use same config location
+    if variant == "v1.1-zh" or variant == "v1.1-zh-hf":
+        # Use HF repo for v1.1-zh-hf, GitHub repo for v1.1-zh
+        repo_id = HF_REPO_V1_1_ZH_HF if variant == "v1.1-zh-hf" else HF_REPO_V1_1_ZH
         local_dir = get_user_cache_path() / "v1.1-zh"
-    elif variant == "v1.1-zh-hf":
-        repo_id = HF_REPO_V1_1_ZH_HF
-        local_dir = get_user_cache_path() / "v1.1-zh-hf"
     else:  # v1.0 or None (default)
         repo_id = HF_REPO_V1_0
         local_dir = get_user_cache_path() / "v1.0"
