@@ -1,0 +1,29 @@
+name: CodeCov
+on: push
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      OS: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - name: Setup Python
+      uses: actions/setup-python@master
+    - name: 'generate report'
+      run: |
+        pip install coverage click pytest pytest-cov
+        pip install -r requirements-test.txt
+        pip install spacy
+        python -m spacy download en_core_web_sm
+        pip install -e .
+        pytest --cov --junitxml=junit.xml 
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }} # required
+    - name: Upload test results to Codecov
+      if: ${{ !cancelled() }}
+      uses: codecov/test-results-action@v1
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+ 
