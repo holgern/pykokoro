@@ -179,7 +179,7 @@ The ``Kokoro`` class is the main entry point for text-to-speech generation.
    async def stream_speech():
        with Kokoro() as kokoro:
            text = "Async streaming allows concurrent operations."
-           
+
            async for audio_chunk, sr, segment in kokoro.create_stream(
                text,
                voice="bf_emma",
@@ -213,10 +213,10 @@ The ``Kokoro`` class is the main entry point for text-to-speech generation.
    with Kokoro() as kokoro:
        # Split text into chunks
        chunks = kokoro.split_text("Long text here...", max_length=100)
-       
+
        # Check if model is downloaded
        is_ready = kokoro.is_model_ready()
-       
+
        # Get model info
        info = kokoro.get_model_info()
        print(f"Model: {info['variant']}, Quality: {info['quality']}")
@@ -233,7 +233,7 @@ The ``Kokoro`` class is the main entry point for text-to-speech generation.
            PhonemeSegment(phonemes="həˈloʊ", lang="en-us", pause_after=0.3),
            PhonemeSegment(phonemes="wɜːld", lang="en-us", pause_after=0.0),
        ]
-       
+
        # Generate from segments
        audio, sr = kokoro.create_from_segments(segments, voice="af_bella")
 
@@ -294,7 +294,7 @@ The ``VoiceBlend`` class allows you to create custom voices by blending multiple
        voices = ["af_bella", "af_sarah", "am_adam"]
        weights = [0.5, 0.3, 0.2]
        blend = VoiceBlend(voices=voices, weights=weights)
-       
+
        audio, sr = kokoro.create("Programmatic blend", voice=blend)
 
        # Dynamic weight calculation
@@ -311,7 +311,7 @@ The ``VoiceBlend`` class allows you to create custom voices by blending multiple
    from pykokoro import VoiceBlend
 
    blend = VoiceBlend.parse("af_bella*60% + af_sarah*40%")
-   
+
    print(blend.voices)   # ['af_bella', 'af_sarah']
    print(blend.weights)  # [0.6, 0.4]
    print(str(blend))     # 'af_bella*0.6 + af_sarah*0.4'
@@ -459,19 +459,19 @@ The ``Tokenizer`` class handles text-to-phoneme conversion and tokenization.
 
    # English (US)
    phonemes_us = tokenizer.phonemize("Hello", lang="en-us")
-   
+
    # English (GB)
    phonemes_gb = tokenizer.phonemize("Hello", lang="en-gb")
-   
+
    # Spanish
    phonemes_es = tokenizer.phonemize("Hola", lang="es")
-   
+
    # French
    phonemes_fr = tokenizer.phonemize("Bonjour", lang="fr")
-   
+
    # German
    phonemes_de = tokenizer.phonemize("Hallo", lang="de")
-   
+
    # Japanese
    phonemes_ja = tokenizer.phonemize("こんにちは", lang="ja")
 
@@ -489,7 +489,7 @@ The ``Tokenizer`` class handles text-to-phoneme conversion and tokenization.
        "Second sentence.",
        "Third sentence."
    ]
-   
+
    phoneme_list = [
        tokenizer.phonemize(text, lang="en-us")
        for text in texts
@@ -517,13 +517,13 @@ The ``Tokenizer`` class handles text-to-phoneme conversion and tokenization.
    from pykokoro import Tokenizer, Kokoro
 
    tokenizer = Tokenizer()
-   
+
    # Get phonemes
    phonemes = tokenizer.phonemize("Hello", lang="en-us")
-   
+
    # Convert to tokens
    tokens = tokenizer.encode(phonemes)
-   
+
    # Use tokens directly with Kokoro
    with Kokoro() as kokoro:
        audio, sr = kokoro.create_from_tokens(
@@ -575,7 +575,7 @@ Configuration Classes
        mixed_language_allowed=["en-us", "de", "fr", "es"]
    )
    tokenizer = Tokenizer(config=config)
-   
+
    # Now can handle mixed text
    phonemes = tokenizer.phonemize(
        "Hello, Bonjour, Hola, Guten Tag!",
@@ -631,10 +631,10 @@ Configuration Classes
    from pykokoro import Tokenizer
 
    tokenizer = Tokenizer()
-   
+
    # Get phoneme result with metadata
    result = tokenizer.phonemize_detailed("Hello", lang="en-us")
-   
+
    print(result.phonemes)      # The phoneme string
    print(result.language)      # Language used
    print(result.is_truncated)  # Whether text was truncated
@@ -710,7 +710,7 @@ Phoneme Classes
 
    # Save to JSON
    segments_json = json.dumps([s.to_dict() for s in segments], indent=2)
-   
+
    # Load from JSON
    loaded_dicts = json.loads(segments_json)
    restored_segments = [PhonemeSegment.from_dict(d) for d in loaded_dicts]
@@ -726,7 +726,7 @@ Phoneme Classes
    # Phonemize list of texts
    texts = ["Hello", "World", "Goodbye"]
    phoneme_list = phonemize_text_list(texts, lang="en-us")
-   
+
    for text, phonemes in zip(texts, phoneme_list):
        print(f"{text} -> {phonemes}")
    # Hello -> həˈloʊ
@@ -739,7 +739,7 @@ Phoneme Classes
        ("Bonjour", "fr"),
        ("Hola", "es"),
    ]
-   
+
    phonemes = []
    for text, lang in mixed_texts:
        result = phonemize_text_list([text], lang=lang)
@@ -777,7 +777,7 @@ Phoneme Classes
    # Paragraph splitting
    text = """
    First paragraph here.
-   
+
    Second paragraph here.
    """
    segments = split_and_phonemize_text(
@@ -894,7 +894,7 @@ Manages audio generation from phonemes and tokens.
    # Create audio generator (typically used internally)
    with Kokoro() as kokoro:
        generator = kokoro._audio_generator
-       
+
        # Access generation parameters
        print(f"Sample rate: {generator.sample_rate}")
        print(f"Max phoneme length: {generator.max_phoneme_length}")
@@ -976,7 +976,7 @@ Manages custom word-to-phoneme mappings for pronunciation control.
        phoneme_dictionary_path="custom_dict.json"
    )
    tokenizer = Tokenizer(config=config)
-   
+
    # Now "PyKokoro" will use custom pronunciation
    phonemes = tokenizer.phonemize("Welcome to PyKokoro!")
 
@@ -1283,7 +1283,7 @@ Configuration
    config['use_gpu'] = True
    config['model_source'] = 'huggingface'
    config['model_variant'] = 'v1.1-zh'
-   
+
    success = save_config(config)
    if success:
        print("Configuration saved successfully")
@@ -1339,7 +1339,7 @@ Configuration
        for filename in filenames:
            filepath = os.path.join(dirpath, filename)
            total_size += os.path.getsize(filepath)
-   
+
    print(f"Cache size: {total_size / (1024**3):.2f} GB")
 
    # Clear specific cache folder
@@ -1368,7 +1368,7 @@ Configuration
    if config_path.exists():
        print("Config file exists")
        print(f"Config size: {config_path.stat().st_size} bytes")
-   
+
    # Read config directly
    import json
    if config_path.exists():
@@ -1409,7 +1409,7 @@ Device Management
 
    # Use with Kokoro
    from pykokoro import Kokoro
-   
+
    device = get_device(use_gpu=True)
    if 'CUDA' in device:
        print("Using NVIDIA GPU")
@@ -1452,11 +1452,11 @@ Device Management
    # System diagnostics
    def check_system():
        gpu_msg, gpu_available = get_gpu_info(enabled=True)
-       
+
        print("System Information:")
        print(f"  GPU Status: {gpu_msg}")
        print(f"  GPU Available: {gpu_available}")
-       
+
        if gpu_available:
            print("  Recommendation: Use GPU for faster inference")
        else:
@@ -1479,13 +1479,13 @@ Audio Processing
    with Kokoro() as kokoro:
        # Generate audio
        audio, sr = kokoro.create("Hello, world!", voice="af_bella")
-       
+
        # Trim silence from audio
        trimmed_audio = trim(audio)
-       
+
        # Save trimmed audio
        sf.write("trimmed.wav", trimmed_audio, sr)
-       
+
        print(f"Original length: {len(audio)} samples")
        print(f"Trimmed length: {len(trimmed_audio)} samples")
 
@@ -1495,10 +1495,10 @@ Audio Processing
 
    with Kokoro() as kokoro:
        audio, sr = kokoro.create("Test audio", voice="af_sarah")
-       
+
        # More aggressive trimming (higher threshold)
        trimmed = trim(audio, threshold=0.01)
-       
+
        # Less aggressive trimming (lower threshold)
        gentle_trimmed = trim(audio, threshold=0.001)
 
@@ -1507,7 +1507,7 @@ Audio Processing
 
    with Kokoro() as kokoro:
        texts = ["First", "Second", "Third"]
-       
+
        for i, text in enumerate(texts):
            audio, sr = kokoro.create(text, voice="am_adam")
            trimmed = trim(audio)
@@ -1520,18 +1520,18 @@ Audio Processing
    with Kokoro() as kokoro:
        audio, sr = kokoro.create("Hello!", voice="bf_emma")
        trimmed = trim(audio)
-       
+
        # Plot comparison
        plt.figure(figsize=(12, 4))
-       
+
        plt.subplot(2, 1, 1)
        plt.plot(audio)
        plt.title(f"Original ({len(audio)} samples)")
-       
+
        plt.subplot(2, 1, 2)
        plt.plot(trimmed)
        plt.title(f"Trimmed ({len(trimmed)} samples)")
-       
+
        plt.tight_layout()
        plt.savefig("trim_comparison.png")
 
@@ -1650,7 +1650,7 @@ Streaming for Low Latency
            print(f"Generated: {segment}")
            chunks.append(audio_chunk)
            # Play chunk immediately for lowest latency
-           
+
        # Save combined result
        full_audio = np.concatenate(chunks)
        sf.write("streamed.wav", full_audio, sr)
@@ -1671,9 +1671,9 @@ Voice Blending and Customization
            ("am_adam*70% + af_bella*30%", "blend_masculine"),
            ("bf_emma*50% + af_bella*50%", "blend_transatlantic"),
        ]
-       
+
        text = "This is a custom blended voice."
-       
+
        for blend_str, name in blends:
            blend = VoiceBlend.parse(blend_str)
            audio, sr = kokoro.create(text, voice=blend)
@@ -1695,20 +1695,20 @@ Batch Processing with Progress
    with Kokoro() as kokoro:
        output_dir = Path("output")
        output_dir.mkdir(exist_ok=True)
-       
+
        for i, text in enumerate(texts, 1):
            print(f"Processing {i}/{len(texts)}: {text[:50]}...")
-           
+
            audio, sr = kokoro.create(
                text,
                voice="af_bella",
                split_mode="sentence",
                trim_silence=True
            )
-           
+
            output_path = output_dir / f"audio_{i:03d}.wav"
            sf.write(output_path, audio, sr)
-       
+
        print(f"Generated {len(texts)} audio files")
 
 Custom Phoneme Generation
@@ -1721,20 +1721,20 @@ Custom Phoneme Generation
 
    with Kokoro() as kokoro:
        tokenizer = Tokenizer()
-       
+
        # Get phonemes for custom pronunciation
        text = "PyKokoro is awesome!"
        phonemes = tokenizer.phonemize(text, lang="en-us")
-       
+
        # Modify phonemes for effect
        modified_phonemes = phonemes.replace("ɔː", "oʊ")
-       
+
        # Generate from modified phonemes
        audio, sr = kokoro.create_from_phonemes(
            modified_phonemes,
            voice="am_adam"
        )
-       
+
        sf.write("custom_pronunciation.wav", audio, sr)
 
 Natural Pauses and Prosody
@@ -1749,11 +1749,11 @@ Natural Pauses and Prosody
    In the year 2045, artificial intelligence had transformed society.
    Cities were clean, efficient, and sustainable. Transportation was
    seamless, powered by autonomous vehicles and advanced logistics.
-   
+
    But not everyone was happy. Some longed for the old ways, the chaos
    and unpredictability of human-driven systems. They formed communities
    on the outskirts, living as their ancestors had.
-   
+
    The future, it seemed, was not one-size-fits-all.
    """
 
@@ -1770,7 +1770,7 @@ Natural Pauses and Prosody
            speed=0.95,               # Slightly slower for narration
            random_seed=42            # Reproducible
        )
-       
+
        sf.write("narration.wav", audio, sr)
        print(f"Generated narration: {len(audio)/sr:.1f} seconds")
 
@@ -1788,14 +1788,14 @@ Download Management
 
    # Pre-download models and voices
    print("Downloading models...")
-   
+
    # Download specific model
    download_model(
        source="huggingface",
        variant="v1.0",
        quality="fp16"
    )
-   
+
    # Download all voices
    print("Downloading voices...")
    download_all_voices(
@@ -1803,9 +1803,9 @@ Download Management
        variant="v1.0",
        progress_callback=lambda v, c, t: print(f"  {v} ({c}/{t})")
    )
-   
+
    print("Downloads complete!")
-   
+
    # Now use offline
    with Kokoro(model_quality="fp16") as kokoro:
        audio, sr = kokoro.create(
