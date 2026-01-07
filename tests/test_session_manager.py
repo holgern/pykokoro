@@ -294,7 +294,7 @@ class TestSessionCreation:
         """Test that fallback is logged."""
         caplog.set_level(logging.WARNING)
 
-        with patch("onnxruntime.InferenceSession") as mock_session:
+        with patch("pykokoro.onnx_session.rt.InferenceSession") as mock_session:
             # First call fails, second succeeds
             mock_instance = MagicMock()
             mock_instance.get_providers.return_value = ["CPUExecutionProvider"]
