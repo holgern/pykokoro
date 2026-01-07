@@ -262,9 +262,9 @@ For the most natural-sounding speech, use automatic pause insertion:
            voice="af_sarah",
            split_mode="clause",      # Split on commas and sentences
            trim_silence=True,        # Enable automatic pauses
-           pause_short=0.25,         # Clause pauses
-           pause_medium=0.5,         # Sentence pauses
-           pause_long=1.0,           # Paragraph pauses
+           pause_clause=0.25,         # Clause pauses
+           pause_sentence=0.5,         # Sentence pauses
+           pause_paragraph=1.0,           # Paragraph pauses
            pause_variance=0.05,      # Natural variance
            random_seed=42            # For reproducibility
        )

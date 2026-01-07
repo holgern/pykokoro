@@ -59,11 +59,14 @@ def main():
         text,
         voice="af_sarah",
         lang="en-us",
-        enable_pauses=True,
         split_mode="sentence",  # Smart sentence splitting
         pause_short=0.3,
         pause_medium=0.6,
         pause_long=1.2,
+        pause_clause=0.3,
+        pause_sentence=0.6,
+        pause_paragraph=1.2,
+        trim_silence=True,
         pause_variance=0.05,  # Add natural variance (±100ms at 95% confidence)
         random_seed=42,  # For reproducible results
     )

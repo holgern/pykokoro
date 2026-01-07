@@ -339,7 +339,6 @@ def main():
             voice=VOICE,
             speed=1.0,
             lang=LANG,
-            enable_pauses=True,
             trim_silence=True,
             split_mode="paragraph",  # Split by paragraphs for better pacing
         )

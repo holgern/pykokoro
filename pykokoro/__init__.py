@@ -23,6 +23,8 @@ from .phonemes import (
     PhonemeSegment,
     phonemize_text_list,
     split_and_phonemize_text,
+    split_text_with_pauses,
+    text_to_phoneme_segments,
 )
 from .tokenizer import (
     EspeakConfig,
@@ -88,6 +90,8 @@ __all__ = [
     "create_tokenizer",
     "phonemize_text_list",
     "split_and_phonemize_text",
+    "split_text_with_pauses",
+    "text_to_phoneme_segments",
     "is_chinese_language",
     "load_vocab_from_config",
 ]

@@ -10,21 +10,19 @@ import urllib.request
 from collections.abc import AsyncGenerator, Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
 import onnxruntime as rt
 from huggingface_hub import hf_hub_download
 
+from .phonemes import PhonemeSegment
 from .tokenizer import EspeakConfig, Tokenizer, TokenizerConfig
 from .trim import trim as trim_audio
 from .utils import get_user_cache_path
 
 # Logger for debugging
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from .phonemes import PhonemeSegment
 
 # Maximum phoneme length for a single inference
 MAX_PHONEME_LENGTH = 510
@@ -433,7 +431,7 @@ def load_vocab_from_config(variant: ModelVariant | None = None) -> dict[str, int
 
     # Load config
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
+        with open(config_path, encoding="utf-8") as f:
             config = json.load(f)
     except Exception as e:
         logger.error(
@@ -1680,161 +1678,64 @@ class Kokoro:
             else np.array([], dtype=np.float32)
         )
 
-    def _process_with_split_mode(
+    def _generate_from_segments(
         self,
-        text: str,
+        segments: list[PhonemeSegment],
         voice_style: np.ndarray,
         speed: float,
-        lang: str,
-        split_mode: str,
         trim_silence: bool,
-        pause_short: float,
-        pause_medium: float,
-        pause_long: float,
-        pause_variance: float,
-        rng: np.random.Generator,
     ) -> np.ndarray:
-        """Process text using sentence/paragraph splitting for better prosody.
+        """Generate audio from list of PhonemeSegment instances.
 
-        When trim_silence is enabled, this method adds natural pauses between
-        segments based on their boundaries:
-        - After clause (within sentence): pause_short
-        - After sentence (within paragraph): pause_medium
-        - After paragraph: pause_long
-
-        Pauses include Gaussian variance for more natural speech rhythm.
+        Unified audio generation method that handles:
+        - Segments with phonemes (generate speech)
+        - Empty segments (skip, only use pause_after)
+        - Pause insertion based on pause_after field
+        - Optional silence trimming
 
         Args:
-            text: Input text
+            segments: List of PhonemeSegment instances
             voice_style: Voice style vector
-            speed: Speech speed
-            lang: Language code
-            split_mode: Split mode ('paragraph', 'sentence', 'clause')
-            trim_silence: Whether to trim silence from segments
-            pause_short: Duration for clause pauses in seconds
-            pause_medium: Duration for sentence pauses in seconds
-            pause_long: Duration for paragraph pauses in seconds
-            pause_variance: Standard deviation for Gaussian pause variance
-            rng: NumPy random generator for reproducibility
+            speed: Speech speed multiplier
+            trim_silence: Whether to trim silence from segment boundaries
 
         Returns:
-            Generated audio array
+            Concatenated audio array
         """
-        # Validate spaCy requirement
-        if split_mode in ["sentence", "clause"]:
-            try:
-                import spacy  # noqa: F401
-            except ImportError as err:
-                raise ImportError(
-                    f"spaCy is required for split_mode='{split_mode}'. "
-                    "Install with: pip install spacy && "
-                    "python -m spacy download en_core_web_sm"
-                ) from err
-
-        from .phonemes import split_and_phonemize_text, populate_segment_pauses
-
-        # Split text directly into segments
-        # split_and_phonemize_text() uses cascading split modes to ensure
-        # all segments stay within max_phoneme_length (510)
-        segments = split_and_phonemize_text(
-            text,
-            tokenizer=self.tokenizer,
-            lang=lang,
-            split_mode=split_mode,
-        )
-
-        # Populate pause_after field based on segment boundaries
-        if trim_silence:
-            segment = populate_segment_pauses(
-                segments, pause_short, pause_medium, pause_long, pause_variance, rng
-            )
-
-        # Generate audio for each segment
         from .utils import generate_silence
 
-        segment_parts = []
-        for segment in segments:
-            # segment.phonemes is guaranteed to be <= 510 by cascading logic
-            if segment.phonemes.strip() != "":
-                audio, _ = self._create_audio_internal(segment.phonemes, voice_style, speed)
-                if trim_silence:
-                    audio, _ = trim_audio(audio)
-                segment_parts.append(audio)
+        audio_parts = []
 
-            # Add pause after segment if specified
+        for segment in segments:
+            # Generate speech if phonemes present
+            if segment.phonemes.strip():
+                # Handle long phonemes by splitting
+                if len(segment.phonemes) > MAX_PHONEME_LENGTH:
+                    batches = self._split_phonemes(segment.phonemes)
+                    for batch in batches:
+                        audio, _ = self._create_audio_internal(
+                            batch, voice_style, speed
+                        )
+                        if trim_silence:
+                            audio, _ = trim_audio(audio)
+                        audio_parts.append(audio)
+                else:
+                    audio, _ = self._create_audio_internal(
+                        segment.phonemes, voice_style, speed
+                    )
+                    if trim_silence:
+                        audio, _ = trim_audio(audio)
+                    audio_parts.append(audio)
+
+            # Add pause after segment (works for both empty and non-empty phonemes)
             if segment.pause_after > 0:
-                segment_parts.append(generate_silence(segment.pause_after, SAMPLE_RATE))
+                audio_parts.append(generate_silence(segment.pause_after, SAMPLE_RATE))
 
         return (
-            np.concatenate(segment_parts)
-            if segment_parts
+            np.concatenate(audio_parts)
+            if audio_parts
             else np.array([], dtype=np.float32)
         )
-
-    def _process_text_segment(
-        self,
-        text: str,
-        voice_style: np.ndarray,
-        speed: float,
-        lang: str,
-        split_mode: str | None,
-        trim_silence: bool,
-        pause_short: float,
-        pause_medium: float,
-        pause_long: float,
-        pause_variance: float,
-        rng: np.random.Generator,
-    ) -> np.ndarray:
-        """Process a text segment into audio, handling splitting automatically.
-
-        Args:
-            text: Input text segment
-            voice_style: Voice style vector
-            speed: Speech speed
-            lang: Language code
-            split_mode: Optional split mode for better prosody
-            trim_silence: Whether to trim silence
-            pause_short: Duration for clause pauses in seconds
-            pause_medium: Duration for sentence pauses in seconds
-            pause_long: Duration for paragraph pauses in seconds
-            pause_variance: Standard deviation for Gaussian pause variance
-            rng: NumPy random generator for reproducibility
-
-        Returns:
-            Generated audio array
-        """
-        if split_mode is not None:
-            # Use text-level splitting for better prosody
-            return self._process_with_split_mode(
-                text,
-                voice_style,
-                speed,
-                lang,
-                split_mode,
-                trim_silence,
-                pause_short,
-                pause_medium,
-                pause_long,
-                pause_variance,
-                rng,
-            )
-        else:
-            # Simple approach: phonemize → check length → split if needed
-            phonemes = self.tokenizer.phonemize(text, lang=lang)
-
-            # Check if phonemes exceed limit
-            if len(phonemes) <= MAX_PHONEME_LENGTH:
-                # Single batch
-                audio, _ = self._create_audio_internal(phonemes, voice_style, speed)
-                if trim_silence:
-                    audio, _ = trim_audio(audio)
-                return audio
-            else:
-                # Need to split phonemes
-                batches = self._split_phonemes(phonemes)
-                return self._generate_from_phoneme_batches(
-                    batches, voice_style, speed, trim_silence
-                )
 
     def create(
         self,
@@ -1843,10 +1744,12 @@ class Kokoro:
         speed: float = 1.0,
         lang: str = "en-us",
         is_phonemes: bool = False,
-        enable_pauses: bool = False,
         pause_short: float = 0.3,
         pause_medium: float = 0.6,
         pause_long: float = 1.0,
+        pause_clause: float = 0.3,
+        pause_sentence: float = 0.6,
+        pause_paragraph: float = 1.0,
         split_mode: str | None = None,
         trim_silence: bool = False,
         pause_variance: float = 0.05,
@@ -1855,18 +1758,28 @@ class Kokoro:
         """
         Generate audio from text or phonemes.
 
+        Pause markers (.), (..), (...) in text are automatically detected and
+        processed as silence after the preceding segment.
+
         Args:
-            text: Text to synthesize (or phonemes if is_phonemes=True)
+            text: Text to synthesize (or phonemes if is_phonemes=True). Pause
+                markers (.), (..), (...) are automatically detected and converted
+                to silence.
             voice: Voice name, style vector, or VoiceBlend
             speed: Speech speed (1.0 = normal)
             lang: Language code (e.g., 'en-us', 'en-gb', 'es', 'fr')
             is_phonemes: If True, treat 'text' as phonemes instead of text
-            enable_pauses: If True, process pause markers (.), (..), (...)
             pause_short: Duration for (.) in seconds, or clause pauses when
                 trim_silence=True with split_mode
             pause_medium: Duration for (..) in seconds, or sentence pauses when
                 trim_silence=True with split_mode
             pause_long: Duration for (...) in seconds, or paragraph pauses when
+                trim_silence=True with split_mode
+            pause_clause: Duration for clause pauses in seconds when
+                trim_silence=True with split_mode
+            pause_sentence: Duration for sentence pauses in seconds when
+                trim_silence=True with split_mode
+            pause_paragraph: Duration for paragraph pauses in seconds when
                 trim_silence=True with split_mode
             split_mode: Optional text splitting mode. Options: None (default,
                 automatic phoneme-based), "paragraph" (double newlines),
@@ -1961,68 +1874,30 @@ class Kokoro:
                 batches, voice_style, speed, trim_silence
             ), SAMPLE_RATE
 
-        audio_parts = []
+        # Unified flow: text → segments → audio
 
-        # Process pauses if enabled
-        if enable_pauses:
-            from .utils import generate_silence
+        from .phonemes import text_to_phoneme_segments
 
-            initial_pause, segments_with_pauses = self.tokenizer.split_with_pauses(
-                text, pause_short, pause_medium, pause_long
-            )
+        segments = text_to_phoneme_segments(
+            text=text,
+            tokenizer=self.tokenizer,
+            lang=lang,
+            split_mode=split_mode,
+            pause_short=pause_short,
+            pause_medium=pause_medium,
+            pause_long=pause_long,
+            pause_clause=pause_clause,
+            pause_sentence=pause_sentence,
+            pause_paragraph=pause_paragraph,
+            pause_variance=pause_variance,
+            trim_silence=trim_silence,
+            rng=rng,
+        )
 
-            # Add initial silence
-            if initial_pause > 0:
-                audio_parts.append(generate_silence(initial_pause, SAMPLE_RATE))
+        # Generate audio from segments
+        audio = self._generate_from_segments(segments, voice_style, speed, trim_silence)
 
-            # Process each pause-delimited segment
-            for segment_text, pause_after in segments_with_pauses:
-                if not segment_text.strip():
-                    if pause_after > 0:
-                        audio_parts.append(generate_silence(pause_after, SAMPLE_RATE))
-                    continue
-
-                # Process segment (with optional split_mode)
-                segment_audio = self._process_text_segment(
-                    segment_text,
-                    voice_style,
-                    speed,
-                    lang,
-                    split_mode,
-                    trim_silence,
-                    pause_short,
-                    pause_medium,
-                    pause_long,
-                    pause_variance,
-                    rng,
-                )
-                audio_parts.append(segment_audio)
-
-                # Add pause after segment
-                if pause_after > 0:
-                    audio_parts.append(generate_silence(pause_after, SAMPLE_RATE))
-
-        else:
-            # No pause processing
-            segment_audio = self._process_text_segment(
-                text,
-                voice_style,
-                speed,
-                lang,
-                split_mode,
-                trim_silence,
-                pause_short,
-                pause_medium,
-                pause_long,
-                pause_variance,
-                rng,
-            )
-            audio_parts.append(segment_audio)
-
-        if not audio_parts:
-            return np.array([], dtype=np.float32), SAMPLE_RATE
-
-        return np.concatenate(audio_parts), SAMPLE_RATE
+        return audio, SAMPLE_RATE
 
     def create_from_phonemes(
         self,
@@ -2119,36 +1994,54 @@ class Kokoro:
         voice: str | np.ndarray | VoiceBlend,
         speed: float = 1.0,
         lang: str | None = None,
+        trim_silence: bool = False,
     ) -> tuple[np.ndarray, int]:
         """
         Generate audio from a PhonemeSegment.
+
+        Respects the pause_after field by appending silence to the generated audio.
 
         Args:
             segment: PhonemeSegment with phonemes and tokens
             voice: Voice name, style vector, or VoiceBlend
             speed: Speech speed (1.0 = normal)
             lang: Language code override (e.g., 'de', 'en-us')
+            trim_silence: Whether to trim silence from segment boundaries
 
         Returns:
             Tuple of (audio samples as numpy array, sample rate)
         """
+        from .utils import generate_silence
+
         # Debug logging for segment
         if os.getenv("TTSFORGE_DEBUG_PHONEMES"):
             logger.info(f"Segment text: {segment.text[:100]}...")
             logger.info(f"Segment phonemes: {segment.phonemes}")
             logger.info(f"Segment tokens: {segment.tokens}")
             logger.info(f"Segment lang: {segment.lang}")
+            logger.info(f"Segment pause_after: {segment.pause_after}")
 
+        # Generate audio for the segment
         # Use tokens if available, otherwise use phonemes
         if segment.tokens:
-            return self.create_from_tokens(segment.tokens, voice, speed)
+            audio, sample_rate = self.create_from_tokens(segment.tokens, voice, speed)
         elif segment.phonemes:
-            return self.create_from_phonemes(segment.phonemes, voice, speed)
+            audio, sample_rate = self.create_from_phonemes(
+                segment.phonemes, voice, speed
+            )
         else:
             # Fall back to text
             # Use lang override if provided, otherwise use segment's lang
             effective_lang = lang if lang is not None else segment.lang
-            return self.create(segment.text, voice, speed, effective_lang)
+            audio, sample_rate = self.create(segment.text, voice, speed, effective_lang)
+        if trim_silence:
+            audio, _ = trim_audio(audio)
+        # Add pause after segment if specified
+        if segment.pause_after > 0:
+            pause_audio = generate_silence(segment.pause_after, sample_rate)
+            audio = np.concatenate([audio, pause_audio])
+
+        return audio, sample_rate
 
     def phonemize(self, text: str, lang: str = "en-us") -> str:
         """

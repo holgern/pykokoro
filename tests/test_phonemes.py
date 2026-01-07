@@ -473,7 +473,7 @@ class TestPopulateSegmentPauses:
         assert result[0].pause_after == 0.0
 
     def test_paragraph_boundary_pause(self):
-        """Test that paragraph boundary gets pause_long."""
+        """Test that paragraph boundary gets pause_paragraph."""
         rng = np.random.default_rng(seed=42)
         segments = [
             PhonemeSegment(
@@ -485,12 +485,12 @@ class TestPopulateSegmentPauses:
         ]
         result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
 
-        # First segment should have pause_long (0.5), last segment has 0.0
+        # First segment should have pause_paragraph (0.5), last segment has 0.0
         assert result[0].pause_after == 0.5
         assert result[1].pause_after == 0.0
 
     def test_sentence_boundary_pause(self):
-        """Test that sentence boundary gets pause_medium."""
+        """Test that sentence boundary gets pause_sentence."""
         rng = np.random.default_rng(seed=42)
         segments = [
             PhonemeSegment(
@@ -502,12 +502,12 @@ class TestPopulateSegmentPauses:
         ]
         result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
 
-        # First segment should have pause_medium (0.3), last segment has 0.0
+        # First segment should have pause_sentence (0.3), last segment has 0.0
         assert result[0].pause_after == 0.3
         assert result[1].pause_after == 0.0
 
     def test_clause_boundary_pause(self):
-        """Test that clause boundary (same sentence) gets pause_short."""
+        """Test that clause boundary (same sentence) gets pause_clause."""
         rng = np.random.default_rng(seed=42)
         segments = [
             PhonemeSegment(
@@ -519,7 +519,7 @@ class TestPopulateSegmentPauses:
         ]
         result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
 
-        # First segment should have pause_short (0.1), last segment has 0.0
+        # First segment should have pause_clause (0.1), last segment has 0.0
         assert result[0].pause_after == 0.1
         assert result[1].pause_after == 0.0
 
@@ -566,19 +566,19 @@ class TestPopulateSegmentPauses:
             ),
         ]
 
-        pause_short = 0.15
-        pause_medium = 0.35
-        pause_long = 0.55
+        pause_clause = 0.15
+        pause_sentence = 0.35
+        pause_paragraph = 0.55
 
         result = populate_segment_pauses(
-            segments, pause_short, pause_medium, pause_long, 0.0, rng
+            segments, pause_clause, pause_sentence, pause_paragraph, 0.0, rng
         )
 
         # Check exact pause values (no variance)
-        assert result[0].pause_after == pause_short  # A->B: same sentence
-        assert result[1].pause_after == pause_medium  # B->C: sentence boundary
-        assert result[2].pause_after == pause_long  # C->D: paragraph boundary
-        assert result[3].pause_after == pause_short  # D->E: same sentence
+        assert result[0].pause_after == pause_clause  # A->B: same sentence
+        assert result[1].pause_after == pause_sentence  # B->C: sentence boundary
+        assert result[2].pause_after == pause_paragraph  # C->D: paragraph boundary
+        assert result[3].pause_after == pause_clause  # D->E: same sentence
         assert result[4].pause_after == 0.0  # Last segment
 
     def test_variance_applied(self):
@@ -599,23 +599,25 @@ class TestPopulateSegmentPauses:
             ),
         ]
 
-        pause_short = 0.1
+        pause_clause = 0.1
         variance = 0.05
 
-        result = populate_segment_pauses(segments, pause_short, 0.3, 0.5, variance, rng)
+        result = populate_segment_pauses(
+            segments, pause_clause, 0.3, 0.5, variance, rng
+        )
 
-        # All should be clause boundaries (pause_short + variance)
+        # All should be clause boundaries (pause_clause + variance)
         pauses = [seg.pause_after for seg in result[:-1]]  # Exclude last (always 0)
 
-        # Pauses should vary (not all exactly pause_short)
-        assert not all(p == pause_short for p in pauses)
+        # Pauses should vary (not all exactly pause_clause)
+        assert not all(p == pause_clause for p in pauses)
 
-        # But they should be close to pause_short (within reasonable range)
+        # But they should be close to pause_clause (within reasonable range)
         for pause in pauses:
             # With variance=0.05, expect pauses roughly in range [0.0, 0.2]
-            # (pause_short ± 3*variance, clamped to non-negative)
+            # (pause_clause ± 3*variance, clamped to non-negative)
             assert pause >= 0.0
-            assert pause <= pause_short + 3 * variance
+            assert pause <= pause_clause + 3 * variance
 
     def test_variance_reproducibility(self):
         """Test that same seed produces same pauses."""
@@ -649,7 +651,7 @@ class TestPopulateSegmentPauses:
         result_2 = populate_segment_pauses(segments_2, 0.1, 0.3, 0.5, 0.05, rng2)
 
         # Same seed should produce identical pauses
-        for seg1, seg2 in zip(result_1, result_2):
+        for seg1, seg2 in zip(result_1, result_2, strict=False):
             assert seg1.pause_after == seg2.pause_after
 
     def test_variance_non_negative(self):

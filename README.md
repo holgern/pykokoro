@@ -237,9 +237,9 @@ audio, sr = tts.create(
     voice="af_sarah",
     split_mode="clause",     # Split on commas and sentences
     trim_silence=True,       # Enable automatic pause insertion
-    pause_short=0.25,        # Pause after clauses (commas)
-    pause_medium=0.5,        # Pause after sentences
-    pause_long=1.0,          # Pause after paragraphs
+    pause_clause=0.25,        # Pause after clauses (commas)
+    pause_sentence=0.5,        # Pause after sentences
+    pause_paragraph=1.0,          # Pause after paragraphs
     pause_variance=0.05,     # Add natural variance (default)
     random_seed=42           # For reproducible results (optional)
 )

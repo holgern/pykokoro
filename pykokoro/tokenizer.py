@@ -734,6 +734,11 @@ class Tokenizer:
     ) -> tuple[float, list[tuple[str, float]]]:
         """Split text at pause markers and return segments with pause durations.
 
+        .. deprecated::
+            This method is deprecated. Use the standalone function
+            :func:`pykokoro.phonemes.split_text_with_pauses` instead.
+            This method will be removed in a future version.
+
         Detects and splits on pause markers: (.), (..), (...)
         Removes the markers from the text segments.
         Consecutive pause markers have their durations added together.
@@ -758,64 +763,25 @@ class Tokenizer:
             >>> split_with_pauses("(...) Hello")
             (1.0, [("Hello", 0.0)])  # Leading pause
         """
-        import re
+        import warnings
 
-        # Pattern to match pause markers: (.), (..), (...)
-        # Use lookbehind and lookahead to split while preserving markers
-        pattern = r"\(\.\.\.\)|\(\.\.\)|\(\.\)"
+        warnings.warn(
+            "Tokenizer.split_with_pauses() is deprecated. "
+            "Use pykokoro.phonemes.split_text_with_pauses() instead. "
+            "This method will be removed in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
-        # Split text and capture markers
-        parts = re.split(f"({pattern})", text)
+        # Delegate to standalone function in phonemes module
+        from .phonemes import split_text_with_pauses
 
-        # Process parts into segments with pauses
-        segments = []
-        current_text = ""
-        accumulated_pause = 0.0
-        initial_pause = 0.0
-        found_first_text = False
-
-        for part in parts:
-            if not part:
-                continue
-
-            # Check if this is a pause marker
-            if re.match(pattern, part):
-                # Determine pause duration
-                if part == "(...)":
-                    pause_duration = pause_long
-                elif part == "(..)":
-                    pause_duration = pause_medium
-                else:  # '(.)'
-                    pause_duration = pause_short
-
-                # If we haven't found any text yet, this is initial pause
-                if not found_first_text and not current_text.strip():
-                    initial_pause += pause_duration
-                else:
-                    # Accumulate pause for current segment
-                    accumulated_pause += pause_duration
-            else:
-                # This is text
-                stripped = part.strip()
-                if stripped:
-                    found_first_text = True
-
-                    # If we have accumulated text, save it as a segment
-                    if current_text.strip():
-                        segments.append((current_text.strip(), accumulated_pause))
-                        accumulated_pause = 0.0
-                        current_text = ""
-
-                    current_text = stripped
-                elif current_text.strip():
-                    # Whitespace part after we have text, keep accumulating
-                    current_text += part
-
-        # Add final segment if any
-        if current_text.strip():
-            segments.append((current_text.strip(), accumulated_pause))
-
-        return initial_pause, segments
+        return split_text_with_pauses(
+            text=text,
+            pause_short=pause_short,
+            pause_medium=pause_medium,
+            pause_long=pause_long,
+        )
 
     def get_vocab_info(self) -> dict:
         """Get information about the current vocabulary.

@@ -68,9 +68,9 @@ def main():
         lang="en-us",
         split_mode="clause",  # Split on commas and sentences
         trim_silence=True,  # Enable automatic pause insertion
-        pause_short=0.25,  # Clause pauses (commas)
-        pause_medium=0.5,  # Sentence pauses
-        pause_long=1.0,  # Paragraph pauses
+        pause_clause=0.25,  # Clause pauses (commas)
+        pause_sentence=0.5,  # Sentence pauses
+        pause_paragraph=1.0,  # Paragraph pauses
         pause_variance=0.05,  # Natural variance (±100ms at 95%)
         random_seed=None,  # Different pauses each time for natural variation
     )
@@ -97,10 +97,10 @@ def main():
     print("   kokoro.create(text, voice='af_sarah')")
     print("   → Fast, continuous speech without breaks")
     print()
-    print("2. Manual pause markers:")
+    print("2. Manual pause markers (automatically detected):")
     print("   text = 'Hello (.) world (..) How are you?'")
-    print("   kokoro.create(text, voice='af_sarah', enable_pauses=True)")
-    print("   → Full control but requires marking every pause")
+    print("   kokoro.create(text, voice='af_sarah')")
+    print("   → Pause markers automatically detected and processed")
     print()
     print("3. Automatic pauses (this example):")
     print("   kokoro.create(text, voice='af_sarah',")
@@ -108,7 +108,7 @@ def main():
     print("   → Natural pauses automatically added at linguistic boundaries")
     print()
     print("4. Combined approach:")
-    print("   Use both enable_pauses=True AND split_mode + trim_silence")
+    print("   Use pause markers AND split_mode + trim_silence together")
     print("   → Manual markers for special emphasis + automatic natural pauses")
     print()
 

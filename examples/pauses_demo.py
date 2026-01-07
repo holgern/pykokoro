@@ -3,7 +3,8 @@
 Demonstrate inter-word pause control using pykokoro.
 
 This example shows how to use pause markers (.), (..), (...)
-to control timing in speech synthesis.
+to control timing in speech synthesis. Pause markers are automatically
+detected and processed.
 
 Usage:
     python examples/pauses_demo.py
@@ -38,7 +39,6 @@ def main():
         text1,
         voice="am_michael",
         lang="en-us",
-        enable_pauses=True,
     )
 
     output1 = "example1_basic_pauses.wav"
@@ -60,7 +60,6 @@ def main():
     samples, sample_rate = kokoro.create(
         text2,
         voice="af_sarah",
-        enable_pauses=True,
         pause_short=0.2,
         pause_medium=0.5,
         pause_long=1.5,
@@ -85,7 +84,6 @@ def main():
     samples, sample_rate = kokoro.create(
         text3,
         voice="am_adam",
-        enable_pauses=True,
     )
 
     output3 = "example3_leading_pause.wav"
@@ -107,7 +105,6 @@ def main():
     samples, sample_rate = kokoro.create(
         text4,
         voice="af_bella",
-        enable_pauses=True,
     )
 
     output4 = "example4_consecutive_pauses.wav"
@@ -116,35 +113,13 @@ def main():
     print(f"✓ Generated: {output4}")
     print(f"  Duration: {duration4:.2f}s")
 
-    # Example 5: Disabling pause processing
-    print("\n" + "=" * 60)
-    print("Example 5: Pauses Disabled (markers treated as text)")
-    print("=" * 60)
-
-    text5 = "Text with (.) pause markers that are not processed."
-
-    print(f"Text: {text5}")
-    print("Note: enable_pauses=False treats markers as regular text")
-
-    samples, sample_rate = kokoro.create(
-        text5,
-        voice="am_michael",
-        enable_pauses=False,  # Markers treated as text
-    )
-
-    output5 = "example5_pauses_disabled.wav"
-    sf.write(output5, samples, sample_rate)
-    duration5 = len(samples) / sample_rate
-    print(f"✓ Generated: {output5}")
-    print(f"  Duration: {duration5:.2f}s")
-
     kokoro.close()
 
     print("\n" + "=" * 60)
     print("All examples generated successfully!")
     print("=" * 60)
-    print("\nTotal files created: 5")
-    total_duration = duration1 + duration2 + duration3 + duration4 + duration5
+    print("\nTotal files created: 4")
+    total_duration = duration1 + duration2 + duration3 + duration4
     print(f"Total duration: {total_duration:.2f}s")
 
 
