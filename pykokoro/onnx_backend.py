@@ -572,7 +572,6 @@ def download_config(
         filename=HF_CONFIG_FILENAME,
         cache_dir=None,
         local_dir=config_path.parent,
-        local_dir_use_symlinks=False,
     )
 
     return Path(downloaded_path)
@@ -690,7 +689,6 @@ def download_model(
         filename=remote_path,
         cache_dir=None,
         local_dir=model_dir,
-        local_dir_use_symlinks=False,
     )
 
     return Path(downloaded_path)
@@ -739,7 +737,6 @@ def download_voice(
         filename=remote_path,
         cache_dir=None,
         local_dir=voices_dir,
-        local_dir_use_symlinks=False,
     )
 
     return Path(downloaded_path)

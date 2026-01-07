@@ -226,11 +226,12 @@ class TestDetectEncoding:
         ) as f:
             f.write("Hello, World! \u00e4\u00f6\u00fc")
             f.flush()
-            try:
-                encoding = detect_encoding(f.name)
-                assert encoding in ("utf-8", "ascii")
-            finally:
-                os.unlink(f.name)
+            filename = f.name
+        try:
+            encoding = detect_encoding(filename)
+            assert encoding in ("utf-8", "ascii")
+        finally:
+            os.unlink(filename)
 
     def test_detect_ascii(self):
         """Should detect ASCII encoding."""
@@ -239,22 +240,24 @@ class TestDetectEncoding:
         ) as f:
             f.write("Hello, World!")
             f.flush()
-            try:
-                encoding = detect_encoding(f.name)
-                assert encoding in ("utf-8", "ascii")  # ASCII is subset of UTF-8
-            finally:
-                os.unlink(f.name)
+            filename = f.name
+        try:
+            encoding = detect_encoding(filename)
+            assert encoding in ("utf-8", "ascii")  # ASCII is subset of UTF-8
+        finally:
+            os.unlink(filename)
 
     def test_returns_lowercase(self):
         """Encoding should be returned in lowercase."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write("test")
             f.flush()
-            try:
-                encoding = detect_encoding(f.name)
-                assert encoding == encoding.lower()
-            finally:
-                os.unlink(f.name)
+            filename = f.name
+        try:
+            encoding = detect_encoding(filename)
+            assert encoding == encoding.lower()
+        finally:
+            os.unlink(filename)
 
 
 class TestDefaultEncoding:
