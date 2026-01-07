@@ -295,7 +295,8 @@ class TestSessionCreation:
         caplog.set_level(logging.WARNING)
 
         with patch("pykokoro.onnx_session.rt.InferenceSession") as mock_session:
-            # First call fails, second succeeds
+            # First call (with non-CPU provider) fails,
+            # second call (CPU fallback) succeeds
             mock_instance = MagicMock()
             mock_instance.get_providers.return_value = ["CPUExecutionProvider"]
             mock_session.side_effect = [
@@ -304,14 +305,27 @@ class TestSessionCreation:
             ]
 
             manager = OnnxSessionManager(provider="auto")
-            model_path = tmp_path / "model.onnx"
-            model_path.touch()
 
-            session = manager.create_session(model_path, allow_fallback=True)
+            # Mock _select_providers to return a non-CPU provider first
+            # This ensures fallback happens even in CI where auto might be CPU-only
+            with patch.object(
+                manager,
+                "_select_providers",
+                return_value=[
+                    ("CUDAExecutionProvider", {}),
+                    "CPUExecutionProvider",
+                ],
+            ):
+                model_path = tmp_path / "model.onnx"
+                model_path.touch()
 
-            assert session is not None
-            # Should have warning about fallback
-            assert any("fell back to" in record.message for record in caplog.records)
+                session = manager.create_session(model_path, allow_fallback=True)
+
+                assert session is not None
+                # Should have warning about fallback
+                assert any(
+                    "fell back to" in record.message for record in caplog.records
+                )
 
 
 class TestProviderMergeLogic:
