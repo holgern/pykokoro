@@ -1,6 +1,29 @@
 Changelog
 =========
 
+Version 0.3.1 (TBD)
+-------------------
+
+**New Features:**
+
+* Added support for HuggingFace Kokoro v1.1-zh model (``onnx-community/Kokoro-82M-v1.1-zh-ONNX``)
+* New model variant ``v1.1-zh-hf`` with 103 voices and full quantization support
+* Added ``download_model_hf_v11zh()`` for downloading v1.1-zh models with quantization
+* Added ``download_voices_hf_v11zh()`` for downloading all 103 voices
+* Added ``download_all_models_hf_v11zh()`` for complete v1.1-zh setup
+
+**Improvements:**
+
+* All quantization levels supported for v1.1-zh: fp32, fp16, q8, q8f16, q4, q4f16, uint8, uint8f16
+* Voice files automatically combined into efficient .npz format
+* Progress callbacks for voice downloads
+
+**Documentation:**
+
+* Added examples and documentation for HuggingFace v1.1-zh usage
+* Updated advanced features guide with v1.1-zh-hf variant
+* Added ``examples/hf_v11zh_demo.py`` demonstration script
+
 Version 0.3.0 (2026-01-07)
 --------------------------
 

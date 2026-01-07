@@ -45,8 +45,8 @@ ProviderType = Literal["auto", "cpu", "cuda", "openvino", "directml", "coreml"]
 ModelSource = Literal["huggingface", "github"]
 DEFAULT_MODEL_SOURCE: ModelSource = "huggingface"
 
-# Model variant type (for GitHub source)
-ModelVariant = Literal["v1.0", "v1.1-zh"]
+# Model variant type (for GitHub and HuggingFace sources)
+ModelVariant = Literal["v1.0", "v1.1-zh", "v1.1-zh-hf"]
 DEFAULT_MODEL_VARIANT: ModelVariant = "v1.0"
 
 # Quality to filename mapping (Hugging Face)
@@ -74,6 +74,18 @@ MODEL_QUALITY_FILES_GITHUB_V1_1_ZH: dict[str, str] = {
     "fp32": "kokoro-v1.1-zh.onnx",
 }
 
+# Quality to filename mapping (HuggingFace v1.1-zh - Chinese)
+MODEL_QUALITY_FILES_HF_V1_1_ZH: dict[str, str] = {
+    "fp32": "model.onnx",
+    "fp16": "model_fp16.onnx",
+    "q8": "model_quantized.onnx",
+    "q8f16": "model_q8f16.onnx",
+    "q4": "model_q4.onnx",
+    "q4f16": "model_q4f16.onnx",
+    "uint8": "model_uint8.onnx",
+    "uint8f16": "model_uint8f16.onnx",
+}
+
 # Backward compatibility
 MODEL_QUALITY_FILES = MODEL_QUALITY_FILES_HF
 
@@ -85,7 +97,10 @@ HF_CONFIG_FILENAME = "config.json"
 
 # HuggingFace repositories for different model variants
 HF_REPO_V1_0 = "hexgrad/Kokoro-82M"  # English/multilingual v1.0
-HF_REPO_V1_1_ZH = "hexgrad/Kokoro-82M-v1.1-zh"  # Chinese v1.1-zh
+HF_REPO_V1_1_ZH = "hexgrad/Kokoro-82M-v1.1-zh"  # Chinese v1.1-zh (GitHub source)
+HF_REPO_V1_1_ZH_HF = (
+    "onnx-community/Kokoro-82M-v1.1-zh-ONNX"  # Chinese v1.1-zh (HuggingFace source)
+)
 
 # Config filenames with variant suffix (for local storage)
 HF_CONFIG_FILENAME_V1_1_ZH = "config-v1.1-zh.json"  # Variant suffix format
@@ -191,6 +206,113 @@ VOICE_NAMES_ZH = [
     # Use kokoro.get_voices() to retrieve the complete list at runtime
 ]
 
+# Complete voice list for HuggingFace v1.1-zh (103 voices)
+VOICE_NAMES_HF_V1_1_ZH = [
+    "af_maple",
+    "af_sol",
+    "bf_vale",
+    "zf_001",
+    "zf_002",
+    "zf_003",
+    "zf_004",
+    "zf_005",
+    "zf_006",
+    "zf_007",
+    "zf_008",
+    "zf_017",
+    "zf_018",
+    "zf_019",
+    "zf_021",
+    "zf_022",
+    "zf_023",
+    "zf_024",
+    "zf_026",
+    "zf_027",
+    "zf_028",
+    "zf_032",
+    "zf_036",
+    "zf_038",
+    "zf_039",
+    "zf_040",
+    "zf_042",
+    "zf_043",
+    "zf_044",
+    "zf_046",
+    "zf_047",
+    "zf_048",
+    "zf_049",
+    "zf_051",
+    "zf_059",
+    "zf_060",
+    "zf_067",
+    "zf_070",
+    "zf_071",
+    "zf_072",
+    "zf_073",
+    "zf_074",
+    "zf_075",
+    "zf_076",
+    "zf_077",
+    "zf_078",
+    "zf_079",
+    "zf_083",
+    "zf_084",
+    "zf_085",
+    "zf_086",
+    "zf_087",
+    "zf_088",
+    "zf_090",
+    "zf_092",
+    "zf_093",
+    "zf_094",
+    "zf_099",
+    "zm_009",
+    "zm_010",
+    "zm_011",
+    "zm_012",
+    "zm_013",
+    "zm_014",
+    "zm_015",
+    "zm_016",
+    "zm_020",
+    "zm_025",
+    "zm_029",
+    "zm_030",
+    "zm_031",
+    "zm_033",
+    "zm_034",
+    "zm_035",
+    "zm_037",
+    "zm_041",
+    "zm_045",
+    "zm_050",
+    "zm_052",
+    "zm_053",
+    "zm_054",
+    "zm_055",
+    "zm_056",
+    "zm_057",
+    "zm_058",
+    "zm_061",
+    "zm_062",
+    "zm_063",
+    "zm_064",
+    "zm_065",
+    "zm_066",
+    "zm_068",
+    "zm_069",
+    "zm_080",
+    "zm_081",
+    "zm_082",
+    "zm_089",
+    "zm_091",
+    "zm_095",
+    "zm_096",
+    "zm_097",
+    "zm_098",
+    "zm_100",
+]
+
 # Voice name documentation by language/variant
 # These voices are dynamically loaded from the model's voices.bin file
 # The actual available voices may vary depending on the model source and variant
@@ -220,13 +342,15 @@ def get_config_path(variant: ModelVariant | None = None) -> Path:
     """Get the path to the cached config.json for a specific variant.
 
     Args:
-        variant: Model variant ("v1.0", "v1.1-zh", or None for default)
+        variant: Model variant ("v1.0", "v1.1-zh", "v1.1-zh-hf", or None for default)
 
     Returns:
         Path to config file in variant-specific subdirectory
     """
     if variant == "v1.1-zh":
         return get_user_cache_path() / "v1.1-zh" / HF_CONFIG_FILENAME
+    elif variant == "v1.1-zh-hf":
+        return get_user_cache_path() / "v1.1-zh-hf" / HF_CONFIG_FILENAME
     else:
         # v1.0 or None (default)
         return get_user_cache_path() / "v1.0" / HF_CONFIG_FILENAME
@@ -342,7 +466,7 @@ def download_config(
     """Download config.json from Hugging Face for a specific variant.
 
     Args:
-        variant: Model variant ("v1.0", "v1.1-zh", or None for default v1.0)
+        variant: Model variant ("v1.0", "v1.1-zh", "v1.1-zh-hf", or None for v1.0)
         force: Force re-download even if file exists
 
     Returns:
@@ -352,6 +476,9 @@ def download_config(
     if variant == "v1.1-zh":
         repo_id = HF_REPO_V1_1_ZH
         local_dir = get_user_cache_path() / "v1.1-zh"
+    elif variant == "v1.1-zh-hf":
+        repo_id = HF_REPO_V1_1_ZH_HF
+        local_dir = get_user_cache_path() / "v1.1-zh-hf"
     else:  # v1.0 or None (default)
         repo_id = HF_REPO_V1_0
         local_dir = get_user_cache_path() / "v1.0"
@@ -555,6 +682,147 @@ def download_all_models(
 
     # Download all voices and combine into voices.bin.npz
     paths["voices.bin.npz"] = download_all_voices(progress_callback, force)
+
+    return paths
+
+
+# ============================================================================
+# HuggingFace v1.1-zh Download Functions
+# ============================================================================
+
+
+def download_model_hf_v11zh(
+    quality: ModelQuality = DEFAULT_MODEL_QUALITY,
+    force: bool = False,
+) -> Path:
+    """
+    Download a model file from HuggingFace v1.1-zh repository.
+
+    Args:
+        quality: Model quality/quantization level
+        force: Force re-download even if file exists
+
+    Returns:
+        Path to the downloaded model file
+
+    Raises:
+        ValueError: If quality is not available for v1.1-zh
+    """
+    if quality not in MODEL_QUALITY_FILES_HF_V1_1_ZH:
+        available = ", ".join(MODEL_QUALITY_FILES_HF_V1_1_ZH.keys())
+        raise ValueError(
+            f"Quality '{quality}' not available for v1.1-zh-hf. Available: {available}"
+        )
+
+    filename = MODEL_QUALITY_FILES_HF_V1_1_ZH[quality]
+    model_dir = get_model_dir() / "v1.1-zh-hf"
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    return _download_from_hf(
+        repo_id=HF_REPO_V1_1_ZH_HF,
+        filename=filename,
+        subfolder="onnx",
+        local_dir=model_dir,
+        force=force,
+    )
+
+
+def download_voices_hf_v11zh(
+    progress_callback: Callable[[str, int, int], None] | None = None,
+    force: bool = False,
+) -> Path:
+    """
+    Download all voice files from HuggingFace v1.1-zh repository and combine them.
+
+    Downloads all 103 individual voice .bin files from HuggingFace,
+    loads them, and saves them as a combined numpy archive (.npz) for
+    efficient loading.
+
+    Args:
+        progress_callback: Optional callback (voice_name, current_index, total_count)
+        force: Force re-download even if file exists
+
+    Returns:
+        Path to the combined voices file
+    """
+    voices_dir = get_voices_dir() / "v1.1-zh-hf"
+    voices_dir.mkdir(parents=True, exist_ok=True)
+
+    # Combined voices file path
+    voices_combined_path = voices_dir / "voices.bin.npz"
+
+    # If combined file already exists and not forcing, skip download
+    if voices_combined_path.exists() and not force:
+        return voices_combined_path
+
+    total = len(VOICE_NAMES_HF_V1_1_ZH)
+    voices: dict[str, np.ndarray] = {}
+
+    for idx, voice_name in enumerate(VOICE_NAMES_HF_V1_1_ZH):
+        if progress_callback:
+            progress_callback(voice_name, idx + 1, total)
+
+        # Download individual voice file
+        voice_filename = f"{voice_name}.bin"
+        voice_path = _download_from_hf(
+            repo_id=HF_REPO_V1_1_ZH_HF,
+            filename=voice_filename,
+            subfolder="voices",
+            local_dir=voices_dir,
+            force=force,
+        )
+
+        # Load the voice data from .bin file
+        voice_data = np.fromfile(voice_path, dtype=np.float32).reshape(-1, 1, 256)
+        voices[voice_name] = voice_data
+
+    # Save all voices to a single .npz file using np.savez
+    np.savez(str(voices_combined_path), **voices)  # type: ignore[arg-type]
+
+    logger.info(
+        f"Successfully downloaded and combined {len(voices)} voices "
+        f"to {voices_combined_path}"
+    )
+
+    return voices_combined_path
+
+
+def download_all_models_hf_v11zh(
+    quality: ModelQuality = DEFAULT_MODEL_QUALITY,
+    progress_callback: Callable[[str], None] | None = None,
+    force: bool = False,
+) -> dict[str, Path]:
+    """
+    Download config, model, and all 103 voices for HuggingFace v1.1-zh.
+
+    Args:
+        quality: Model quality/quantization level
+        progress_callback: Optional callback for progress messages
+        force: Force re-download even if files exist
+
+    Returns:
+        Dict mapping filename to path
+    """
+    paths: dict[str, Path] = {}
+
+    # Download config
+    if progress_callback:
+        progress_callback("Downloading config.json for v1.1-zh-hf...")
+    paths["config.json"] = download_config(variant="v1.1-zh-hf", force=force)
+
+    # Download model
+    if progress_callback:
+        progress_callback(f"Downloading model ({quality}) for v1.1-zh-hf...")
+    paths["model.onnx"] = download_model_hf_v11zh(quality, force=force)
+
+    # Download all voices (103 voices)
+    def voice_progress(voice_name: str, current: int, total: int):
+        if progress_callback:
+            progress_callback(f"Downloading voice {current}/{total}: {voice_name}")
+
+    paths["voices.bin.npz"] = download_voices_hf_v11zh(
+        progress_callback=voice_progress, force=force
+    )
 
     return paths
 
@@ -819,7 +1087,8 @@ class Kokoro:
                 (for mixed-language support)
             model_quality: Model quality/quantization level (default from config)
             model_source: Model source ("huggingface" or "github")
-            model_variant: Model variant for GitHub source ("v1.0" or "v1.1-zh")
+            model_variant: Model variant ("v1.0", "v1.1-zh" for GitHub,
+                "v1.1-zh-hf" for HuggingFace v1.1-zh)
         """
         self._session: rt.InferenceSession | None = None
         self._voices_data: dict[str, np.ndarray] | None = None
@@ -881,12 +1150,23 @@ class Kokoro:
                     f"GitHub {model_variant}. Available qualities: {available}"
                 )
         elif model_source == "huggingface":
-            if resolved_quality not in MODEL_QUALITY_FILES_HF:
-                available = ", ".join(MODEL_QUALITY_FILES_HF.keys())
-                raise ValueError(
-                    f"Quality '{resolved_quality}' not available for HuggingFace. "
-                    f"Available qualities: {available}"
-                )
+            # Check if v1.1-zh-hf variant
+            if model_variant == "v1.1-zh-hf":
+                available_qualities = MODEL_QUALITY_FILES_HF_V1_1_ZH
+                if resolved_quality not in available_qualities:
+                    available = ", ".join(available_qualities.keys())
+                    raise ValueError(
+                        f"Quality '{resolved_quality}' not available for "
+                        f"HuggingFace v1.1-zh. Available qualities: {available}"
+                    )
+            else:
+                # Standard HuggingFace v1.0
+                if resolved_quality not in MODEL_QUALITY_FILES_HF:
+                    available = ", ".join(MODEL_QUALITY_FILES_HF.keys())
+                    raise ValueError(
+                        f"Quality '{resolved_quality}' not available for "
+                        f"HuggingFace. Available qualities: {available}"
+                    )
 
         self._model_quality: ModelQuality = resolved_quality
 
@@ -897,15 +1177,21 @@ class Kokoro:
                 model_path = download_model_github(
                     model_variant, self._model_quality, force=False
                 )
+            elif model_variant == "v1.1-zh-hf":
+                # Download from HuggingFace v1.1-zh repository
+                model_path = download_model_hf_v11zh(self._model_quality, force=False)
             else:
-                # Download from HuggingFace (default)
+                # Download from HuggingFace v1.0 (default)
                 model_path = get_model_path(self._model_quality)
         if voices_path is None:
             if model_source == "github":
                 # Download from GitHub if not exists
                 voices_path = download_voices_github(model_variant, force=False)
+            elif model_variant == "v1.1-zh-hf":
+                # Download from HuggingFace v1.1-zh repository
+                voices_path = download_voices_hf_v11zh(force=False)
             else:
-                # Download from HuggingFace (default)
+                # Download from HuggingFace v1.0 (default)
                 voices_path = get_voices_bin_path()
 
         self._model_path = model_path
@@ -929,11 +1215,11 @@ class Kokoro:
         """
         from kokorog2p import get_kokoro_vocab
 
-        # For GitHub models, load variant-specific vocab from config
-        if self._model_source == "github":
+        # For GitHub models or v1.1-zh-hf, load variant-specific vocab from config
+        if self._model_source == "github" or self._model_variant == "v1.1-zh-hf":
             return load_vocab_from_config(self._model_variant)
 
-        # For HuggingFace or default, use standard vocab
+        # For HuggingFace v1.0 or default, use standard vocab
         return get_kokoro_vocab()
 
     def _resolve_model_variant(self, lang: str) -> ModelVariant:

@@ -90,7 +90,9 @@ class VoiceManager:
         Args:
             voices_path: Path to the voices file (.npz or .bin)
         """
-        if self._model_source == "github":
+        # Check if it's a GitHub .bin file (which is actually .npz format)
+        # or a standard .npz file (for HuggingFace)
+        if voices_path.suffix == ".bin" or self._model_source == "github":
             self._voices_data = self._load_voices_bin_github(voices_path)
         else:
             # HuggingFace format: .npz archive with named voice arrays

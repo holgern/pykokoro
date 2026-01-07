@@ -427,6 +427,25 @@ PyKokoro supports multiple model sources:
        lang="en-us"
    )
 
+**HuggingFace v1.1-zh (103 voices, Multiple Quantizations):**
+
+.. code-block:: python
+
+   # HuggingFace v1.1-zh with English + Chinese voices
+   # Supports all quantization levels
+   kokoro = Kokoro(
+       model_source="huggingface",
+       model_variant="v1.1-zh-hf",
+       model_quality="q8"  # All qualities available: fp32, fp16, q8, q4, etc.
+   )
+
+   # Use English voices
+   audio, sr = kokoro.create(
+       "Hello world!",
+       voice="af_maple",  # v1.1-zh English voice
+       lang="en-us"
+   )
+
 **Note:** Chinese text generation is currently in development. Use English voices from
 v1.1-zh with English text for now.
 
@@ -483,9 +502,35 @@ Download Models Manually
        progress_callback=lambda msg: print(msg)
    )
 
+**HuggingFace v1.1-zh Models:**
+
+.. code-block:: python
+
+   from pykokoro import (
+       download_model_hf_v11zh,
+       download_voices_hf_v11zh,
+       download_all_models_hf_v11zh
+   )
+
+   # Download HuggingFace v1.1-zh model (with quantization)
+   download_model_hf_v11zh(quality="q8")
+
+   # Download all 103 voices for v1.1-zh
+   def progress(voice_name, current, total):
+       print(f"Downloading {current}/{total}: {voice_name}")
+   
+   download_voices_hf_v11zh(progress_callback=progress)
+
+   # Download everything (model + config + all voices)
+   download_all_models_hf_v11zh(
+       quality="q8",
+       progress_callback=lambda msg: print(msg)
+   )
+
 **Available Quality Options by Source:**
 
-* **HuggingFace**: fp32, fp16, q8, q8f16, q4, q4f16, uint8, uint8f16
+* **HuggingFace v1.0**: fp32, fp16, q8, q8f16, q4, q4f16, uint8, uint8f16
+* **HuggingFace v1.1-zh**: fp32, fp16, q8, q8f16, q4, q4f16, uint8, uint8f16
 * **GitHub v1.0**: fp32, fp16, fp16-gpu, q8
 * **GitHub v1.1-zh**: fp32 only
 
