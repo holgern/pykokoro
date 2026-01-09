@@ -464,6 +464,69 @@ config = TokenizerConfig(
 tokenizer = Tokenizer(config=config)
 ```
 
+### Backend Configuration
+
+Control which phonemization backend and dictionaries to use:
+
+```python
+from pykokoro import TokenizerConfig
+
+# Default: Full dictionaries with espeak fallback (best quality)
+config = TokenizerConfig(
+    backend="espeak",
+    load_gold=True,
+    load_silver=True,
+    use_espeak_fallback=True
+)
+
+# Memory-optimized: Gold dictionary only
+config = TokenizerConfig(
+    backend="espeak",
+    load_gold=True,
+    load_silver=False,  # Saves ~22-31 MB
+    use_espeak_fallback=True
+)
+
+# Fastest initialization: Pure espeak
+config = TokenizerConfig(
+    backend="espeak",
+    load_gold=False,
+    load_silver=False,
+    use_espeak_fallback=True
+)
+
+# Alternative backend (requires pygoruut)
+config = TokenizerConfig(
+    backend="goruut"
+)
+
+tokenizer = Tokenizer(config=config)
+```
+
+**Note**: `use_dictionary` parameter is deprecated. Use `load_gold` and `load_silver`
+instead for finer control.
+
+**External G2P Libraries**: You can also use external phonemization libraries like
+[Misaki](https://github.com/hexgrad/misaki):
+
+```python
+from misaki import en, espeak
+import pykokoro
+
+# Misaki G2P with espeak-ng fallback
+fallback = espeak.EspeakFallback(british=False)
+g2p = en.G2P(trf=False, british=False, fallback=fallback)
+phonemes, _ = g2p("Hello, world!")
+
+# Generate audio from phonemes
+kokoro = pykokoro.Kokoro()
+samples, sample_rate = kokoro.create(
+    phonemes,
+    voice="af_bella",
+    is_phonemes=True
+)
+```
+
 ## License
 
 This library is licensed under the Apache License 2.0.

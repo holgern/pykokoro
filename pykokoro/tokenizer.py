@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from kokorog2p import (
     N_TOKENS,
+    BackendType,
     GToken,
     filter_for_kokoro,
     get_g2p,
@@ -64,9 +65,13 @@ class TokenizerConfig:
     """Configuration for the tokenizer.
 
     Attributes:
-        use_espeak_fallback: Whether to use espeak for OOV words (default: True)
-        use_spacy: Whether to use spaCy for POS tagging (default: True)
-        use_dictionary: Whether to use dictionary lookup (default: True)
+        use_espeak_fallback: Whether to use espeak for OOV words (default: True).
+            Only applies when backend='espeak'.
+        use_goruut_fallback: Whether to use goruut for OOV words (default: False).
+            Requires pygoruut to be installed. Only applies when backend='goruut'
+        use_spacy: Whether to use spaCy for POS tagging (default: True).
+            Only applies to English.
+        use_dictionary: DEPRECATED. Use load_gold and load_silver instead.
         use_mixed_language: Enable automatic language detection for mixed-language
             text (default: False). Requires mixed_language_allowed to be set.
         mixed_language_primary: Primary language code for mixed-language mode
@@ -81,9 +86,16 @@ class TokenizerConfig:
             Format: {"word": "/phoneme/"} where phonemes are in IPA format.
         phoneme_dict_case_sensitive: Whether phoneme dictionary matching should
             be case-sensitive (default: False).
+        backend: Phonemization backend: "espeak" (default) or "goruut".
+            Requires pygoruut for goruut backend. Raises ImportError if unavailable.
+        load_gold: Load gold-tier dictionary (~170k common words). Only applies
+            to languages with dictionaries (English, French, German). Default: True.
+        load_silver: Load silver-tier dictionary (~100k extra entries). Only applies
+            to English. Saves ~22-31 MB memory if False. Default: True.
     """
 
     use_espeak_fallback: bool = True
+    use_goruut_fallback: bool = False
     use_spacy: bool = True
     use_dictionary: bool = True
     use_mixed_language: bool = False
@@ -92,6 +104,11 @@ class TokenizerConfig:
     mixed_language_confidence: float = 0.7
     phoneme_dictionary_path: str | None = None
     phoneme_dict_case_sensitive: bool = False
+
+    # Backend configuration
+    backend: BackendType = "espeak"
+    load_gold: bool = True
+    load_silver: bool = True
 
 
 # Backward compatibility alias
@@ -194,6 +211,20 @@ class Tokenizer:
         self._reverse_vocab: dict[int, str] | None = None
         self.config = config or TokenizerConfig()
 
+        # Check for deprecated use_dictionary
+        if not self.config.use_dictionary:
+            import warnings
+
+            warnings.warn(
+                "TokenizerConfig.use_dictionary is deprecated. "
+                "Use load_gold=False and load_silver=False instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            # Apply deprecation behavior: disable dictionary loading
+            self.config.load_gold = False
+            self.config.load_silver = False
+
         # G2P instances cache (lazy loaded per language)
         self._g2p_cache: dict[str, G2PBase] = {}
 
@@ -279,6 +310,7 @@ class Tokenizer:
         mixed_g2p = self._mixed_language_handler.get_or_create_g2p(
             lang=lang,
             use_espeak_fallback=self.config.use_espeak_fallback,
+            use_goruut_fallback=self.config.use_goruut_fallback,
             use_spacy=self.config.use_spacy,
         )
 
@@ -302,8 +334,12 @@ class Tokenizer:
             # kokorog2p uses dictionary + espeak fallback for all languages
             self._g2p_cache[lang] = get_g2p(
                 language=kokorog2p_lang,
+                use_goruut_fallback=self.config.use_goruut_fallback,
                 use_espeak_fallback=self.config.use_espeak_fallback,
                 use_spacy=self.config.use_spacy,
+                backend=self.config.backend,
+                load_gold=self.config.load_gold,
+                load_silver=self.config.load_silver,
                 version=self._kokorog2p_model,
             )
 
@@ -577,12 +613,14 @@ class Tokenizer:
 # Convenience function for simple usage
 def create_tokenizer(
     use_espeak_fallback: bool = True,
+    use_goruut_fallback: bool = False,
     use_spacy: bool = True,
 ) -> Tokenizer:
     """Create a tokenizer with the specified configuration.
 
     Args:
         use_espeak_fallback: Whether to use espeak for OOV words
+        use_goruut_fallback: Whether to use goruut for OOV words
         use_spacy: Whether to use spaCy for POS tagging
 
     Returns:
@@ -590,6 +628,7 @@ def create_tokenizer(
     """
     config = TokenizerConfig(
         use_espeak_fallback=use_espeak_fallback,
+        use_goruut_fallback=use_goruut_fallback,
         use_spacy=use_spacy,
     )
     return Tokenizer(config=config)

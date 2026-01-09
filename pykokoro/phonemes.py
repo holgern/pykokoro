@@ -762,17 +762,42 @@ def text_to_phoneme_segments(
 
         return segments
 
-    # Case 3: No pauses, no splitting - simple phonemization
+    # Case 3: No pauses, no splitting - automatic phoneme-based splitting
     else:
-        # Just phonemize the entire text as a single segment
+        # Phonemize the entire text
         phonemes = tokenizer.phonemize(text, lang=lang)
-        tokens = tokenizer.tokenize(phonemes)
-        return [
-            PhonemeSegment(
-                text=text,
-                phonemes=phonemes,
-                tokens=tokens,
-                lang=lang,
-                pause_after=0.0,
-            )
-        ]
+
+        # Check if phonemes exceed the limit and need splitting
+        from .tokenizer import MAX_PHONEME_LENGTH
+
+        if len(phonemes) > MAX_PHONEME_LENGTH:
+            # Need to split - use split_and_phonemize_text
+            # Try sentence mode first, fall back to word mode if spaCy unavailable
+            try:
+                segments = split_and_phonemize_text(
+                    text,
+                    tokenizer=tokenizer,
+                    lang=lang,
+                    split_mode="sentence",
+                )
+            except ImportError:
+                # spaCy not available, fall back to word-level splitting
+                segments = split_and_phonemize_text(
+                    text,
+                    tokenizer=tokenizer,
+                    lang=lang,
+                    split_mode="word",
+                )
+            return segments
+        else:
+            # Single segment is fine
+            tokens = tokenizer.tokenize(phonemes)
+            return [
+                PhonemeSegment(
+                    text=text,
+                    phonemes=phonemes,
+                    tokens=tokens,
+                    lang=lang,
+                    pause_after=0.0,
+                )
+            ]

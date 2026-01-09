@@ -138,13 +138,18 @@ class MixedLanguageHandler:
             logger.debug(f"Invalidated mixed-language G2P cache: {cache_key}")
 
     def get_or_create_g2p(
-        self, lang: str, use_espeak_fallback: bool, use_spacy: bool
+        self,
+        lang: str,
+        use_espeak_fallback: bool,
+        use_goruut_fallback: bool,
+        use_spacy: bool,
     ) -> G2PBase | None:
         """Get or create a MixedLanguageG2P instance if mixed-language mode is enabled.
 
         Args:
             lang: Default language code (e.g., 'en-us', 'en-gb', 'de', 'fr-fr')
             use_espeak_fallback: Whether to use espeak fallback
+            use_goruut_fallback: Whether to use goruut fallback
             use_spacy: Whether to use spaCy
 
         Returns:
@@ -182,7 +187,11 @@ class MixedLanguageHandler:
                     confidence_threshold=self.config.mixed_language_confidence,
                     enable_detection=True,
                     use_espeak_fallback=use_espeak_fallback,
+                    use_goruut_fallback=use_goruut_fallback,
                     use_spacy=use_spacy,
+                    backend=self.config.backend,
+                    load_gold=self.config.load_gold,
+                    load_silver=self.config.load_silver,
                     version=self._kokorog2p_model,
                 )
                 logger.info(

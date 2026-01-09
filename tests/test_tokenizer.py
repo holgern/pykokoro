@@ -44,10 +44,12 @@ class TestTokenizerConfig:
         """Test config with custom values."""
         config = TokenizerConfig(
             use_espeak_fallback=False,
+            use_goruut_fallback=True,
             use_spacy=False,
             use_dictionary=False,
         )
         assert config.use_espeak_fallback is False
+        assert config.use_goruut_fallback is True
         assert config.use_spacy is False
         assert config.use_dictionary is False
 
