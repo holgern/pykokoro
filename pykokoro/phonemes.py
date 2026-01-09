@@ -101,7 +101,8 @@ def batch_chunks_by_optimal_length(
     audio quality for very short segments. Uses a greedy conservative approach:
     - Merges chunks toward highest target in optimal_lengths
     - Stops when reaching any target AND adding next would significantly overshoot
-    - Respects max_phoneme_length limit (never exceeds 510)
+    - Respects max_phoneme_length limit (won't batch if it would exceed 510)
+    - Single chunks exceeding max are passed through (handled by cascade later)
 
     The sentence metadata for batched chunks uses range format: "0-2" indicates
     sentences 0, 1, and 2 were merged. Single sentences keep int format.
@@ -188,6 +189,16 @@ def batch_chunks_by_optimal_length(
         chunk_phonemes = tokenizer.phonemize(chunk_text, lang=lang)
         chunk_length = len(chunk_phonemes)
 
+        # If this single chunk already exceeds max, add it as-is
+        # (it will be handled by cascade logic later)
+        if chunk_length > max_phoneme_length:
+            # Flush any current batch first
+            if current_batch_texts:
+                flush_batch()
+            # Add oversized chunk alone
+            batched_chunks.append((chunk_text, para_idx, sent_idx))
+            continue
+
         # If this is the first chunk in batch, start accumulating
         if not current_batch_texts:
             current_batch_texts.append(chunk_text)
@@ -224,7 +235,8 @@ def batch_chunks_by_optimal_length(
                     next_higher_target = t
                     break
 
-            # If no higher target, we're already above highest - use highest as reference
+            # If no higher target, we're already above highest
+            # Use highest as reference
             if next_higher_target is None:
                 next_higher_target = highest_target
 

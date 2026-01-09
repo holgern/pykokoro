@@ -23,39 +23,39 @@ import pykokoro
 VARIATIONS = [
     (
         "space",
-        "The project was challenging the deadline was tight the team was small but we succeeded.",
+        "The project was challenging the deadline was tight the team was small but we succeeded.",  # noqa: E501
     ),
     (
         "comma",
-        "The project was challenging, the deadline was tight, the team was small, but we succeeded.",
+        "The project was challenging, the deadline was tight, the team was small, but we succeeded.",  # noqa: E501
     ),
     (
         "semicolon",
-        "The project was challenging; the deadline was tight; the team was small; but we succeeded.",
+        "The project was challenging; the deadline was tight; the team was small; but we succeeded.",  # noqa: E501
     ),
     (
         "question",
-        "The project was challenging? the deadline was tight? the team was small? but we succeeded.",
+        "The project was challenging? the deadline was tight? the team was small? but we succeeded.",  # noqa: E501
     ),
     (
         "exclamation",
-        "The project was challenging! the deadline was tight! the team was small! but we succeeded.",
+        "The project was challenging! the deadline was tight! the team was small! but we succeeded.",  # noqa: E501
     ),
     (
         "point",
-        "The project was challenging. the deadline was tight. the team was small. but we succeeded.",
+        "The project was challenging. the deadline was tight. the team was small. but we succeeded.",  # noqa: E501
     ),
     (
         "colon",
-        "The project was challenging: the deadline was tight: the team was small: but we succeeded.",
+        "The project was challenging: the deadline was tight: the team was small: but we succeeded.",  # noqa: E501
     ),
     (
         "dash",
-        "The project was challenging -- the deadline was tight -- the team was small -- but we succeeded.",
+        "The project was challenging -- the deadline was tight -- the team was small -- but we succeeded.",  # noqa: E501
     ),
     (
         "ellipsise",
-        "The project was challenging ... the deadline was tight ... the team was small ... but we succeeded.",
+        "The project was challenging ... the deadline was tight ... the team was small ... but we succeeded.",  # noqa: E501
     ),
 ]
 
