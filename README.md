@@ -297,6 +297,75 @@ audio, sr = tts.create(
 See `examples/pauses_demo.py`, `examples/pauses_with_splitting.py`, and
 `examples/automatic_pauses_demo.py` for complete examples.
 
+#### 3. Optimal Phoneme Length for Better Quality (NEW!)
+
+When using sentence splitting, very short sentences (like "Why?" or "Go!") can produce
+poor audio quality when processed individually (only 3-8 phonemes each). The
+`optimal_phoneme_length` parameter batches these short segments together to provide more
+context for natural prosody:
+
+```python
+# Dialogue with many short sentences
+dialogue = '"Why?" she asked. "Do it!" he said. "Go!" they shouted.'
+
+# Without batching: Each sentence separate (poor quality for short ones)
+audio1, sr = tts.create(
+    dialogue,
+    voice="af_bella",
+    split_mode="sentence"
+)
+
+# With batching: Short sentences merged for better quality
+audio2, sr = tts.create(
+    dialogue,
+    voice="af_bella",
+    split_mode="sentence",
+    optimal_phoneme_length=50  # Batch until ~50 phonemes
+)
+```
+
+**Usage Modes:**
+
+**Single Target:**
+
+```python
+# Batch segments until reaching ~50 phonemes
+optimal_phoneme_length=50
+```
+
+**Array Targets (Flexible):**
+
+```python
+# Try to reach 70 phonemes (ideal)
+# Fall back to 50 (good) or 30 (acceptable) if needed
+optimal_phoneme_length=[30, 50, 70]
+```
+
+**How It Works:**
+
+- Merges consecutive short segments (sentences/clauses/paragraphs)
+- Stops when reaching target length OR adding next would overshoot significantly (~30%
+  tolerance)
+- Never exceeds `max_phoneme_length` (510)
+- Preserves semantic boundaries when specified
+
+**When to Use:**
+
+- ✅ Dialogue-heavy text with short sentences: `optimal_phoneme_length=50`
+- ✅ Mixed content (short + long sentences): `optimal_phoneme_length=[30, 50]`
+- ✅ Script/screenplay with terse dialogue: `optimal_phoneme_length=[40, 60]`
+- ❌ Already long sentences (no batching needed)
+- ❌ When you need exact sentence-by-sentence control
+
+**Segment Metadata:**
+
+Batched segments use range format for `sentence` field:
+
+- Single sentence: `sentence=0` (int)
+- Batched sentences: `sentence="0-2"` (string indicating sentences 0, 1, 2 were merged)
+
+See `examples/optimal_phoneme_length_demo.py` for a complete comparison.
+
 ## Available Voices
 
 The library includes voices across different languages and accents. The number of

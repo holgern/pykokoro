@@ -26,7 +26,7 @@ class PhonemeSegment:
         tokens: Token IDs
         lang: Language code used for phonemization
         paragraph: Paragraph index (0-based) for pause calculation
-        sentence: Sentence index within paragraph (0-based, or None)
+        sentence: Sentence index (int), sentence range ("0-2"), or None
         pause_after: Duration of pause after this segment in seconds
     """
 
@@ -35,7 +35,7 @@ class PhonemeSegment:
     tokens: list[int]
     lang: str = "en-us"
     paragraph: int = 0
-    sentence: int | None = None
+    sentence: int | str | None = None
     pause_after: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
@@ -88,6 +88,173 @@ def _get_next_split_mode(current_mode: str) -> str | None:
     return cascade.get(current_mode)
 
 
+def batch_chunks_by_optimal_length(
+    chunks: list[tuple[str, int, int | None]],
+    tokenizer: Tokenizer,
+    lang: str,
+    optimal_lengths: list[int],
+    max_phoneme_length: int,
+) -> list[tuple[str, int, int | str | None]]:
+    """Batch small text chunks together to reach optimal phoneme length.
+
+    Combines consecutive chunks to achieve target phoneme lengths, improving
+    audio quality for very short segments. Uses a greedy conservative approach:
+    - Merges chunks toward highest target in optimal_lengths
+    - Stops when reaching any target AND adding next would significantly overshoot
+    - Respects max_phoneme_length limit (never exceeds 510)
+
+    The sentence metadata for batched chunks uses range format: "0-2" indicates
+    sentences 0, 1, and 2 were merged. Single sentences keep int format.
+
+    Args:
+        chunks: List of (text, paragraph_idx, sentence_idx) tuples from splitting
+        tokenizer: Tokenizer instance for phonemization
+        lang: Language code for phonemization
+        optimal_lengths: Sorted list of target lengths (e.g., [30, 50, 70])
+            Higher values are preferred targets
+        max_phoneme_length: Hard maximum limit (510 for Kokoro)
+
+    Returns:
+        List of batched chunks: (text, paragraph_idx, sentence_range)
+        where sentence_range is "start-end" string for batched segments or None
+
+    Example:
+        Input chunks (after sentence splitting):
+        [("Why?", 0, 0), ("Do?", 0, 1), ("Go!", 0, 2), ("I know.", 0, 3)]
+
+        With optimal_lengths=[50]:
+        Output: [("Why? Do? Go! I know.", 0, "0-3")]
+
+        All four short sentences batched together to reach ~50 phonemes
+    """
+    if not chunks or not optimal_lengths:
+        # Return with compatible type annotation
+        result: list[tuple[str, int, int | str | None]] = [
+            (text, para, sent) for text, para, sent in chunks
+        ]
+        return result
+
+    # Ensure optimal_lengths is sorted ascending
+    targets = sorted(optimal_lengths)
+    highest_target = targets[-1]
+    overshoot_tolerance = 0.3  # 30% tolerance for overshooting
+
+    batched_chunks = []
+    current_batch_texts = []
+    current_batch_phoneme_length = 0
+    first_chunk_paragraph = None
+    first_chunk_sentence = None
+    last_chunk_sentence = None
+
+    def flush_batch() -> None:
+        """Flush current batch to output."""
+        nonlocal current_batch_texts, current_batch_phoneme_length
+        nonlocal first_chunk_paragraph, first_chunk_sentence, last_chunk_sentence
+
+        if not current_batch_texts:
+            return
+
+        combined_text = " ".join(current_batch_texts)
+
+        # Determine sentence metadata
+        if first_chunk_sentence is None and last_chunk_sentence is None:
+            # Both None - preserve None
+            sentence_metadata: int | str | None = None
+        elif first_chunk_sentence is None or last_chunk_sentence is None:
+            # Mixed None and int - use None
+            sentence_metadata = None
+        elif first_chunk_sentence == last_chunk_sentence:
+            # Single sentence - preserve as int
+            sentence_metadata = first_chunk_sentence
+        else:
+            # Multiple sentences - use range format "start-end"
+            sentence_metadata = f"{first_chunk_sentence}-{last_chunk_sentence}"
+
+        batched_chunks.append((combined_text, first_chunk_paragraph, sentence_metadata))
+
+        # Reset batch
+        current_batch_texts = []
+        current_batch_phoneme_length = 0
+        first_chunk_paragraph = None
+        first_chunk_sentence = None
+        last_chunk_sentence = None
+
+    for chunk_text, para_idx, sent_idx in chunks:
+        chunk_text = chunk_text.strip()
+        if not chunk_text:
+            continue
+
+        # Calculate phonemes for this chunk
+        chunk_phonemes = tokenizer.phonemize(chunk_text, lang=lang)
+        chunk_length = len(chunk_phonemes)
+
+        # If this is the first chunk in batch, start accumulating
+        if not current_batch_texts:
+            current_batch_texts.append(chunk_text)
+            current_batch_phoneme_length = chunk_length
+            first_chunk_paragraph = para_idx
+            first_chunk_sentence = sent_idx
+            last_chunk_sentence = sent_idx
+            continue
+
+        # Calculate what length we'd have if we add this chunk
+        potential_length = current_batch_phoneme_length + chunk_length
+
+        # Check if adding would exceed max
+        if potential_length > max_phoneme_length:
+            # Flush current batch and start new one
+            flush_batch()
+            current_batch_texts.append(chunk_text)
+            current_batch_phoneme_length = chunk_length
+            first_chunk_paragraph = para_idx
+            first_chunk_sentence = sent_idx
+            last_chunk_sentence = sent_idx
+            continue
+
+        # Conservative stopping logic:
+        # If current batch is at any target AND adding next would overshoot
+        # the next higher target significantly, stop merging
+        current_at_target = any(current_batch_phoneme_length >= t for t in targets)
+
+        if current_at_target:
+            # Find next higher target
+            next_higher_target = None
+            for t in targets:
+                if t > current_batch_phoneme_length:
+                    next_higher_target = t
+                    break
+
+            # If no higher target, we're already above highest - use highest as reference
+            if next_higher_target is None:
+                next_higher_target = highest_target
+
+            # Check if adding would overshoot by more than tolerance
+            overshoot_amount = potential_length - next_higher_target
+            overshoot_ratio = (
+                overshoot_amount / next_higher_target if next_higher_target > 0 else 0
+            )
+
+            if overshoot_ratio > overshoot_tolerance:
+                # Stop merging - flush current and start new batch
+                flush_batch()
+                current_batch_texts.append(chunk_text)
+                current_batch_phoneme_length = chunk_length
+                first_chunk_paragraph = para_idx
+                first_chunk_sentence = sent_idx
+                last_chunk_sentence = sent_idx
+                continue
+
+        # Otherwise, add to current batch (greedy merging toward highest target)
+        current_batch_texts.append(chunk_text)
+        current_batch_phoneme_length = potential_length
+        last_chunk_sentence = sent_idx
+
+    # Flush final batch
+    flush_batch()
+
+    return batched_chunks
+
+
 def _split_text_with_mode(
     text: str,
     mode: str,
@@ -138,6 +305,7 @@ def split_and_phonemize_text(
     split_mode: str = "sentence",
     language_model: str = "en_core_web_sm",
     max_phoneme_length: int = 510,
+    optimal_phoneme_length: int | list[int] | None = None,
     warn_callback: Callable[[str], None] | None = None,
 ) -> list[PhonemeSegment]:
     """Split text and convert to phoneme segments.
@@ -162,6 +330,11 @@ def split_and_phonemize_text(
         language_model: spaCy model name for sentence/clause splitting
         max_phoneme_length: Maximum phoneme length (default 510, Kokoro limit).
             Segments exceeding this will be automatically re-split.
+        optimal_phoneme_length: Optional target phoneme length(s) for batching.
+            Merges short segments to reach optimal length for better audio quality.
+            - None (default): No batching
+            - int: Single target (e.g., 50)
+            - list[int]: Multiple targets (e.g., [30, 50, 70])
         warn_callback: Optional callback for warnings (receives warning message)
 
     Returns:
@@ -177,7 +350,7 @@ def split_and_phonemize_text(
         chunk_text: str,
         current_mode: str,
         paragraph_idx: int,
-        sentence_idx: int | None,
+        sentence_idx: int | str | None,
     ) -> list[PhonemeSegment]:
         """Process a text chunk, cascading to finer split modes if needed.
 
@@ -186,6 +359,12 @@ def split_and_phonemize_text(
         2. Checks if phonemes fit within max_phoneme_length
         3. If too long, cascades to next finer split mode
         4. If already at word level, truncates and warns
+
+        Args:
+            chunk_text: Text to process
+            current_mode: Current split mode
+            paragraph_idx: Paragraph index
+            sentence_idx: Sentence index (int), range string ("0-2"), or None
         """
         chunk_text = chunk_text.strip()
         if not chunk_text:
@@ -234,12 +413,18 @@ def split_and_phonemize_text(
 
         # Cascade to next finer split mode
         try:
+            # When cascading, pass sentence_idx only if it's an int
+            # For range strings, use None since we're re-splitting
+            cascade_sentence_idx = (
+                sentence_idx if isinstance(sentence_idx, int) else None
+            )
+
             sub_chunks = _split_text_with_mode(
                 chunk_text,
                 next_mode,
                 language_model,
                 paragraph_idx,
-                sentence_idx,
+                cascade_sentence_idx,
             )
         except ImportError:
             # spaCy not installed - can only do word splitting
@@ -248,12 +433,15 @@ def split_and_phonemize_text(
                     f"spaCy required for '{next_mode}' mode but not installed. "
                     f"Falling back to word-level splitting."
                 )
+                cascade_sentence_idx = (
+                    sentence_idx if isinstance(sentence_idx, int) else None
+                )
                 sub_chunks = _split_text_with_mode(
                     chunk_text,
                     "word",
                     language_model,
                     paragraph_idx,
-                    sentence_idx,
+                    cascade_sentence_idx,
                 )
             else:
                 raise
@@ -278,6 +466,23 @@ def split_and_phonemize_text(
             split_mode,
             language_model,
         )
+
+        # Apply optimal length batching if specified
+        if optimal_phoneme_length is not None:
+            # Normalize to list
+            if isinstance(optimal_phoneme_length, int):
+                optimal_lengths = [optimal_phoneme_length]
+            else:
+                optimal_lengths = optimal_phoneme_length
+
+            # Batch small chunks together
+            initial_chunks = batch_chunks_by_optimal_length(
+                initial_chunks,
+                tokenizer,
+                lang,
+                optimal_lengths,
+                max_phoneme_length,
+            )
     else:
         # Default: treat as single chunk with paragraph 0
         initial_chunks = [(text, 0, 0)] if text.strip() else []
@@ -585,6 +790,7 @@ def text_to_phoneme_segments(
     pause_paragraph: float = 1.0,
     pause_variance: float = 0.05,
     trim_silence: bool = False,
+    optimal_phoneme_length: int | list[int] | None = None,
     rng: np.random.Generator | None = None,
 ) -> list[PhonemeSegment]:
     """Convert text to list of PhonemeSegment with pauses populated.
@@ -611,6 +817,13 @@ def text_to_phoneme_segments(
         pause_paragraph: Duration for long pauses (paragraph boundaries)
         pause_variance: Standard deviation for Gaussian pause variance
         trim_silence: Whether automatic pauses should be added with split_mode
+        optimal_phoneme_length: Optional target length(s) for batching segments.
+            Only applies when split_mode is set. Merges short segments to reach
+            optimal length for better audio quality.
+            - None (default): No batching
+            - int: Single target (e.g., 50 merges until ~50 phonemes)
+            - list[int]: Multiple targets (e.g., [30, 50, 70] tries to reach 70,
+              falls back to 50 or 30 as needed)
         rng: NumPy random generator for reproducibility
 
     Returns:
@@ -701,6 +914,7 @@ def text_to_phoneme_segments(
                         tokenizer=tokenizer,
                         lang=lang,
                         split_mode=split_mode,
+                        optimal_phoneme_length=optimal_phoneme_length,
                     )
 
                     # Add automatic pauses between sub-segments if trim_silence
@@ -747,6 +961,7 @@ def text_to_phoneme_segments(
             tokenizer=tokenizer,
             lang=lang,
             split_mode=split_mode,
+            optimal_phoneme_length=optimal_phoneme_length,
         )
 
         # Add automatic pauses if trim_silence enabled

@@ -1598,6 +1598,7 @@ class Kokoro:
         pause_sentence: float = 0.6,
         pause_paragraph: float = 1.0,
         split_mode: str | None = None,
+        optimal_phoneme_length: int | list[int] | None = None,
         trim_silence: bool = False,
         pause_variance: float = 0.05,
         random_seed: int | None = None,
@@ -1633,6 +1634,18 @@ class Kokoro:
                 "sentence" (requires spaCy), "clause" (sentences + commas,
                 requires spaCy). When combined with trim_silence=True,
                 automatically adds natural pauses between segments.
+            optimal_phoneme_length: Optional target phoneme length(s) for batching
+                when using split_mode. Prevents very short segments (like "Why?")
+                from being processed individually, improving audio quality.
+                - None (default): No batching, split_mode produces individual segments
+                - int: Single target (e.g., 50 = merge until reaching ~50 phonemes)
+                - list[int]: Multiple targets in ascending order (e.g., [30, 50, 70]):
+                    * Tries to reach highest target (70)
+                    * Falls back to lower targets if needed (50, then 30)
+                    * Stops merging when reaching a target or when adding next
+                      segment would significantly overshoot (~30% tolerance)
+                Only applies when split_mode is set. Never exceeds max_phoneme_length
+                (510). Recommended: 50 or [30, 50] for dialogue-heavy text.
             trim_silence: Whether to trim silence from segment boundaries.
                 When used with split_mode, adds natural pauses between
                 segments (clause/sentence/paragraph boundaries).
@@ -1734,6 +1747,7 @@ class Kokoro:
             pause_paragraph=pause_paragraph,
             pause_variance=pause_variance,
             trim_silence=trim_silence,
+            optimal_phoneme_length=optimal_phoneme_length,
             rng=rng,
         )
 
