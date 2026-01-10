@@ -696,9 +696,9 @@ class TestPopulateSegmentPauses:
 
         result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
 
-        # A->B: None != 0, so sentence boundary -> pause_medium
+        # A->B: None != 0, so sentence boundary -> pause_sentence
         assert result[0].pause_after == 0.3
-        # B->C: 0 != None, so sentence boundary -> pause_medium
+        # B->C: 0 != None, so sentence boundary -> pause_sentence
         assert result[1].pause_after == 0.3
         # C is last
         assert result[2].pause_after == 0.0
@@ -717,7 +717,7 @@ class TestPopulateSegmentPauses:
 
         result = populate_segment_pauses(segments, 0.1, 0.3, 0.5, 0.0, rng)
 
-        # None == None, same paragraph -> clause boundary -> pause_short
+        # None == None, same paragraph -> clause boundary -> pause_clause
         assert result[0].pause_after == 0.1
 
     def test_complex_multi_paragraph_scenario(self):
@@ -797,7 +797,7 @@ class TestPopulateSegmentPauses:
         assert original_segment_1.pause_after == 0.0
 
     def test_all_same_paragraph_and_sentence(self):
-        """Test segments all in same paragraph and sentence get pause_short."""
+        """Test segments all in same paragraph and sentence get pause_clause."""
         rng = np.random.default_rng(seed=42)
         segments = [
             PhonemeSegment(

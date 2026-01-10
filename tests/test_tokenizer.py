@@ -373,9 +373,9 @@ class TestKokorog2pIntegration:
             if token.text.lower() in ["hello", "world"]:
                 rating = token.get("rating")
                 # Rating 3-4 = dictionary, 1 = espeak
-                assert (
-                    rating is None or rating >= 3
-                ), f"Expected {token.text} to use dictionary"
+                assert rating is None or rating >= 3, (
+                    f"Expected {token.text} to use dictionary"
+                )
 
     def test_unknown_word_handling(self, tokenizer):
         """Test that unknown words are handled via espeak fallback."""
@@ -632,204 +632,22 @@ class TestMixedLanguageSupport:
 
 
 class TestSplitWithPauses:
-    """Tests for split_text_with_pauses() function in phonemes module."""
+    """Tests for SSMD break parsing (old split_text_with_pauses removed).
 
-    def test_no_markers(self):
-        """Test text without pause markers."""
-        from pykokoro.phonemes import split_text_with_pauses
+    NOTE: The old split_text_with_pauses() function has been removed in favor
+    of SSMD break syntax. These tests should be removed or migrated to test_ssmd.py.
+    See test_ssmd.py for SSMD break parsing tests.
+    """
 
-        initial, segments = split_text_with_pauses("Hello world")
-        assert initial == 0.0
-        assert len(segments) == 1
-        assert segments[0] == ("Hello world", 0.0)
+    def test_removed_function_notice(self):
+        """Test that old pause marker function has been removed."""
+        import pykokoro.phonemes as phonemes_module
 
-    def test_single_short_pause(self):
-        """Test single short pause marker (.)."""
-        from pykokoro.phonemes import split_text_with_pauses
+        # split_text_with_pauses should not exist anymore
+        assert not hasattr(phonemes_module, "split_text_with_pauses")
 
-        initial, segments = split_text_with_pauses("A (.) B")
-        assert initial == 0.0
-        assert len(segments) == 2
-        assert segments[0] == ("A", 0.3)
-        assert segments[1] == ("B", 0.0)
-
-    def test_single_medium_pause(self):
-        """Test single medium pause marker (..)."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("A (..) B")
-        assert initial == 0.0
-        assert len(segments) == 2
-        assert segments[0] == ("A", 0.6)
-        assert segments[1] == ("B", 0.0)
-
-    def test_single_long_pause(self):
-        """Test single long pause marker (...)."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("A (...) B")
-        assert initial == 0.0
-        assert len(segments) == 2
-        assert segments[0] == ("A", 1.0)
-        assert segments[1] == ("B", 0.0)
-
-    def test_multiple_pauses(self):
-        """Test multiple different pause markers."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("A (.) B (..) C (...) D")
-        assert initial == 0.0
-        assert len(segments) == 4
-        assert segments[0] == ("A", 0.3)
-        assert segments[1] == ("B", 0.6)
-        assert segments[2] == ("C", 1.0)
-        assert segments[3] == ("D", 0.0)
-
-    def test_consecutive_pauses(self):
-        """Test consecutive pause markers add durations."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("A (...) (..) B")
-        assert initial == 0.0
-        assert len(segments) == 2
-        assert segments[0] == ("A", 1.6)  # 1.0 + 0.6
-        assert segments[1] == ("B", 0.0)
-
-    def test_consecutive_pauses_all_types(self):
-        """Test three consecutive pauses."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("Start (...) (..) (.) End")
-        assert initial == 0.0
-        assert len(segments) == 2
-        assert segments[0][0] == "Start"
-        assert segments[0][1] == pytest.approx(1.9)  # 1.0 + 0.6 + 0.3
-        assert segments[1] == ("End", 0.0)
-
-    def test_leading_pause(self):
-        """Test pause marker at the start."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("(...) Hello")
-        assert initial == 1.0
-        assert len(segments) == 1
-        assert segments[0] == ("Hello", 0.0)
-
-    def test_leading_multiple_pauses(self):
-        """Test multiple pause markers at the start."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("(...) (..) Hello")
-        assert initial == 1.6  # 1.0 + 0.6
-        assert len(segments) == 1
-        assert segments[0] == ("Hello", 0.0)
-
-    def test_trailing_pause(self):
-        """Test pause marker at the end."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("Bye (...)")
-        assert initial == 0.0
-        assert len(segments) == 1
-        assert segments[0] == ("Bye", 1.0)
+        # has_pause_markers should not exist anymore
+        assert not hasattr(phonemes_module, "has_pause_markers")
 
     def test_trailing_multiple_pauses(self):
         """Test multiple pause markers at the end."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("Bye (..) (...)")
-        assert initial == 0.0
-        assert len(segments) == 1
-        assert segments[0] == ("Bye", 1.6)  # 0.6 + 1.0
-
-    def test_only_pauses(self):
-        """Test text with only pause markers."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("(...) (..) (.)")
-        assert initial == pytest.approx(1.9)  # All pauses accumulate as initial
-        assert len(segments) == 0
-
-    def test_empty_text(self):
-        """Test empty text."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("")
-        assert initial == 0.0
-        assert len(segments) == 0
-
-    def test_whitespace_only(self):
-        """Test text with only whitespace."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("   \n\t   ")
-        assert initial == 0.0
-        assert len(segments) == 0
-
-    def test_custom_durations(self):
-        """Test custom pause durations."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses(
-            "A (.) B (..) C (...) D",
-            pause_short=0.5,
-            pause_medium=1.0,
-            pause_long=2.0,
-        )
-        assert initial == 0.0
-        assert segments[0] == ("A", 0.5)
-        assert segments[1] == ("B", 1.0)
-        assert segments[2] == ("C", 2.0)
-        assert segments[3] == ("D", 0.0)
-
-    def test_malformed_markers_not_detected(self):
-        """Test that malformed markers are not treated as pauses."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("Test (.. more text")
-        assert initial == 0.0
-        assert len(segments) == 1
-        assert segments[0] == ("Test (.. more text", 0.0)
-
-    def test_parentheses_in_text(self):
-        """Test that regular parentheses are preserved."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("Test (example) here")
-        assert initial == 0.0
-        assert len(segments) == 1
-        assert segments[0] == ("Test (example) here", 0.0)
-
-    def test_mixed_content(self):
-        """Test realistic text with pauses."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        text = "Chapter 5 (...) I'm Klaus. (.) Welcome to the show!"
-        initial, segments = split_text_with_pauses(text)
-        assert initial == 0.0
-        assert len(segments) == 3
-        assert segments[0] == ("Chapter 5", 1.0)
-        assert segments[1] == ("I'm Klaus.", 0.3)
-        assert segments[2] == ("Welcome to the show!", 0.0)
-
-    def test_whitespace_handling(self):
-        """Test that whitespace around markers is handled correctly."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        initial, segments = split_text_with_pauses("A   (.)   B")
-        assert initial == 0.0
-        assert len(segments) == 2
-        assert segments[0] == ("A", 0.3)
-        assert segments[1] == ("B", 0.0)
-
-    def test_newlines_with_pauses(self):
-        """Test text with newlines and pauses."""
-        from pykokoro.phonemes import split_text_with_pauses
-
-        text = "Line 1 (...)\nLine 2 (.) Line 3"
-        initial, segments = split_text_with_pauses(text)
-        assert initial == 0.0
-        assert len(segments) == 3
-        assert segments[0] == ("Line 1", 1.0)
-        assert segments[1] == ("Line 2", 0.3)
-        assert segments[2] == ("Line 3", 0.0)

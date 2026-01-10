@@ -2,6 +2,12 @@
 
 This module provides utilities for loading and applying custom phoneme dictionaries
 that override default G2P conversions with user-specified phoneme representations.
+
+The phoneme dictionary uses kokorog2p's markdown-style syntax: [word](/phoneme/)
+This format is recognized by kokorog2p during phonemization.
+
+Dictionary entries are applied to text BEFORE SSMD parsing and phonemization,
+so SSMD markup in the input text is preserved and processed normally.
 """
 
 from __future__ import annotations
@@ -18,15 +24,15 @@ class PhonemeDictionary:
     """Manages custom phoneme dictionary loading and application.
 
     A phoneme dictionary allows users to specify custom phoneme representations
-    for specific words, overriding the default G2P output. Entries are specified
-    in markdown format: [word](/phoneme/)
+    for specific words, overriding the default G2P output. Entries are applied
+    using kokorog2p's markdown format: [word](/phoneme/)
 
     Example dictionary JSON format:
     {
         "entries": {
-            "Misaki": "/mɪsˈɑki/",
+            "Misaki": "mɪsˈɑki",
             "complex_word": {
-                "phoneme": "/kəmˈplɛks wɜːrd/",
+                "phoneme": "kəmˈplɛks wɜːrd",
                 "description": "optional description"
             }
         }
@@ -34,9 +40,12 @@ class PhonemeDictionary:
 
     Or simple format:
     {
-        "Misaki": "/mɪsˈɑki/",
-        "complex_word": "/kəmˈplɛks wɜːrd/"
+        "Misaki": "mɪsˈɑki",
+        "complex_word": "kəmˈplɛks wɜːrd"
     }
+
+    Note: Phonemes in JSON should NOT include /slashes/. The slashes are
+    added automatically when applying to text in kokorog2p format.
     """
 
     def __init__(
@@ -59,11 +68,15 @@ class PhonemeDictionary:
     def load(self, path: str | Path) -> dict[str, str]:
         """Load custom phoneme dictionary from JSON file.
 
+        Phonemes can be specified with or without /slashes/. The slashes
+        are automatically stripped and the appropriate format is applied
+        during text processing based on use_ssmd_format setting.
+
         Args:
             path: Path to JSON file containing phoneme mappings
 
         Returns:
-            Dictionary mapping words to phoneme strings
+            Dictionary mapping words to phoneme strings (without slashes)
 
         Raises:
             FileNotFoundError: If file doesn't exist
@@ -101,22 +114,27 @@ class PhonemeDictionary:
                 f"Phoneme dictionary must be a JSON object, got {type(data)}"
             )
 
-        # Validate all phoneme values
+        # Validate and normalize all phoneme values (strip slashes if present)
+        normalized_dict = {}
         for word, phoneme in phoneme_dict.items():
             if not isinstance(phoneme, str):
                 raise ValueError(
                     f"Phoneme for '{word}' must be a string, got {type(phoneme)}"
                 )
-            # Phonemes should be in /.../ format for markdown
-            if not phoneme.startswith("/") or not phoneme.endswith("/"):
-                raise ValueError(
-                    f"Invalid phoneme format for '{word}': '{phoneme}'. "
-                    f"Expected format: '/phoneme/' (e.g., '/mɪsˈɑki/')"
-                )
 
-        logger.info(f"Loaded {len(phoneme_dict)} custom phoneme entries from {path}")
-        self._dictionary = phoneme_dict
-        return phoneme_dict
+            # Strip /slashes/ if present (support legacy format)
+            cleaned_phoneme = phoneme.strip()
+            if cleaned_phoneme.startswith("/") and cleaned_phoneme.endswith("/"):
+                cleaned_phoneme = cleaned_phoneme[1:-1]
+
+            if not cleaned_phoneme:
+                raise ValueError(f"Empty phoneme for '{word}' after cleaning")
+
+            normalized_dict[word] = cleaned_phoneme
+
+        logger.info(f"Loaded {len(normalized_dict)} custom phoneme entries from {path}")
+        self._dictionary = normalized_dict
+        return normalized_dict
 
     def apply(self, text: str) -> str:
         """Apply custom phoneme dictionary to text.
@@ -150,7 +168,7 @@ class PhonemeDictionary:
             # Use a replacement function to preserve the original case
             def replace_func(match: re.Match, p=phoneme) -> str:
                 matched_word = match.group(0)
-                return f"[{matched_word}]({p})"
+                return f"[{matched_word}](/{p}/)"
 
             result = re.sub(pattern, replace_func, result, flags=flags)
 

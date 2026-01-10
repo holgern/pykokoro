@@ -1591,9 +1591,6 @@ class Kokoro:
         speed: float = 1.0,
         lang: str = "en-us",
         is_phonemes: bool = False,
-        pause_short: float = 0.3,
-        pause_medium: float = 0.6,
-        pause_long: float = 1.0,
         pause_clause: float = 0.3,
         pause_sentence: float = 0.6,
         pause_paragraph: float = 1.0,
@@ -1604,31 +1601,38 @@ class Kokoro:
         random_seed: int | None = None,
     ) -> tuple[np.ndarray, int]:
         """
-        Generate audio from text or phonemes.
+        Generate audio from text or phonemes with SSMD markup support.
 
-        Pause markers (.), (..), (...) in text are automatically detected and
-        processed as silence after the preceding segment.
+        SSMD (Speech Synthesis Markdown) markup in text is automatically detected
+        and processed. Supported features include:
+        - Breaks: ...n, ...w, ...c, ...s, ...p, ...500ms, ...2s
+        - Emphasis: *text* (moderate), **text** (strong)
+        - Prosody: +loud+, >fast>, ^high^ (stored for future processing)
+        - Language: [Bonjour](fr) switches language for that segment
+        - Phonemes: [tomato](ph: təˈmeɪtoʊ) uses explicit phonemes
+        - Substitution: [H2O](sub: water) replaces text before phonemization
+        - Markers: @name (stored in metadata)
+
+        Note: Old pause markers (.), (..), (...) are NO LONGER SUPPORTED.
+        Use SSMD break syntax instead.
 
         Args:
-            text: Text to synthesize (or phonemes if is_phonemes=True). Pause
-                markers (.), (..), (...) are automatically detected and converted
-                to silence.
+            text: Text to synthesize (or phonemes if is_phonemes=True). SSMD
+                markup is automatically detected and processed.
             voice: Voice name, style vector, or VoiceBlend
             speed: Speech speed (1.0 = normal)
-            lang: Language code (e.g., 'en-us', 'en-gb', 'es', 'fr')
+            lang: Default language code (e.g., 'en-us', 'en-gb', 'es', 'fr').
+                Can be overridden per-segment with SSMD [text](lang) syntax.
             is_phonemes: If True, treat 'text' as phonemes instead of text
-            pause_short: Duration for (.) in seconds, or clause pauses when
-                trim_silence=True with split_mode
-            pause_medium: Duration for (..) in seconds, or sentence pauses when
-                trim_silence=True with split_mode
-            pause_long: Duration for (...) in seconds, or paragraph pauses when
-                trim_silence=True with split_mode
-            pause_clause: Duration for clause pauses in seconds when
-                trim_silence=True with split_mode
-            pause_sentence: Duration for sentence pauses in seconds when
-                trim_silence=True with split_mode
-            pause_paragraph: Duration for paragraph pauses in seconds when
-                trim_silence=True with split_mode
+            pause_clause: Duration for SSMD ...c (comma) breaks and automatic
+                clause boundary pauses when trim_silence=True with split_mode.
+                Default: 0.3s
+            pause_sentence: Duration for SSMD ...s (sentence) breaks and automatic
+                sentence boundary pauses when trim_silence=True with split_mode.
+                Default: 0.6s
+            pause_paragraph: Duration for SSMD ...p (paragraph) breaks and automatic
+                paragraph boundary pauses when trim_silence=True with split_mode.
+                Default: 1.0s
             split_mode: Optional text splitting mode. Options: None (default,
                 automatic phoneme-based), "paragraph" (double newlines),
                 "sentence" (requires spaCy), "clause" (sentences + commas,
@@ -1658,6 +1662,35 @@ class Kokoro:
 
         Returns:
             Tuple of (audio samples as numpy array, sample rate)
+
+        Example:
+            Basic SSMD usage:
+
+            >>> tts = Kokoro()
+            >>> # Use SSMD break syntax
+            >>> audio, sr = tts.create(
+            ...     "Hello ...c world ...s How are you?",
+            ...     voice="af_sarah"
+            ... )
+            >>>
+            >>> # Custom time breaks
+            >>> audio, sr = tts.create(
+            ...     "Wait ...500ms then continue.",
+            ...     voice="af_sarah"
+            ... )
+            >>>
+            >>> # Emphasis and language switching
+            >>> audio, sr = tts.create(
+            ...     "This is *important*! [Bonjour](fr) everyone!",
+            ...     voice="af_sarah"
+            ... )
+            >>>
+            >>> # Using Document API
+            >>> from pykokoro import Document
+            >>> doc = Document()
+            >>> doc.add_sentence("Hello and *welcome*!")
+            >>> doc.add_sentence("This is ...500ms a pause.")
+            >>> audio, sr = tts.create_from_document(doc, voice="af_sarah")
         """
         self._init_kokoro()
 
@@ -1739,9 +1772,6 @@ class Kokoro:
             tokenizer=self.tokenizer,
             lang=lang,
             split_mode=split_mode,
-            pause_short=pause_short,
-            pause_medium=pause_medium,
-            pause_long=pause_long,
             pause_clause=pause_clause,
             pause_sentence=pause_sentence,
             pause_paragraph=pause_paragraph,
@@ -1901,6 +1931,58 @@ class Kokoro:
             audio = np.concatenate([audio, pause_audio])
 
         return audio, sample_rate
+
+    def create_from_document(
+        self,
+        document: "Document",
+        voice: str | np.ndarray | VoiceBlend,
+        speed: float = 1.0,
+        lang: str = "en-us",
+        trim_silence: bool = False,
+    ) -> tuple[np.ndarray, int]:
+        """
+        Generate audio from an SSMD Document.
+
+        This method allows you to use the SSMD Document API for building
+        structured TTS content with rich markup features.
+
+        Args:
+            document: SSMD Document instance with markup
+            voice: Voice name, style vector, or VoiceBlend
+            speed: Speech speed (1.0 = normal)
+            lang: Default language code (can be overridden in SSMD markup)
+            trim_silence: Whether to trim silence from segment boundaries
+
+        Returns:
+            Tuple of (audio samples as numpy array, sample rate)
+
+        Example:
+            >>> from ssmd import Document
+            >>> from pykokoro import Kokoro
+            >>>
+            >>> # Create document with SSMD markup
+            >>> doc = Document()
+            >>> doc.add_sentence("Hello and *welcome*!")
+            >>> doc.add_sentence("This is ...500ms a pause.")
+            >>> doc.add_paragraph("[Bonjour](fr) everyone!")
+            >>>
+            >>> # Generate audio
+            >>> tts = Kokoro()
+            >>> audio, sr = tts.create_from_document(doc, voice="af_sarah")
+        """
+        from ssmd import Document
+
+        # Convert document to SSMD text
+        ssmd_text = document.to_ssmd()
+
+        # Use the standard create method which will auto-detect SSMD
+        return self.create(
+            text=ssmd_text,
+            voice=voice,
+            speed=speed,
+            lang=lang,
+            trim_silence=trim_silence,
+        )
 
     def phonemize(self, text: str, lang: str = "en-us") -> str:
         """

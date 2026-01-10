@@ -185,29 +185,34 @@ audio, sr = tts.create_from_phonemes(phonemes, voice="af_sarah")
 
 ### Pause Control
 
-PyKokoro offers two powerful ways to control pauses in generated speech:
+PyKokoro uses SSMD (Speech Synthesis Markdown) syntax for controlling pauses in generated speech:
 
-#### 1. Manual Pause Markers
+#### 1. SSMD Break Markers
 
-Add explicit pauses using simple markers in your text:
+Add explicit pauses using SSMD break syntax in your text:
 
 ```python
-# Use pause markers in your text
-text = "Chapter 5 (...) I'm Klaus. (.) Welcome to the show!"
+# Use SSMD break markers in your text
+text = "Chapter 5 ...p I'm Klaus. ...c Welcome to the show!"
 
-# Enable pause processing
+# Breaks are processed automatically
 audio, sr = tts.create(
     text,
-    voice="am_michael",
-    enable_pauses=True
+    voice="am_michael"
 )
 ```
 
-**Pause Markers:**
+**SSMD Break Markers:**
 
-- `(.)` - Short pause (300ms by default)
-- `(..)` - Medium pause (600ms by default)
-- `(...)` - Long pause (1000ms by default)
+- `...n` - No pause (0ms)
+- `...w` - Weak pause (150ms by default)
+- `...c` - Clause/comma pause (300ms by default)
+- `...s` - Sentence pause (600ms by default)
+- `...p` - Paragraph pause (1000ms by default)
+- `...500ms` - Custom pause (500 milliseconds)
+- `...2s` - Custom pause (2 seconds)
+
+**Note:** Bare `...` (ellipsis) is NOT treated as a pause and will be phonemized normally.
 
 **Custom Pause Durations:**
 
@@ -215,14 +220,13 @@ audio, sr = tts.create(
 audio, sr = tts.create(
     text,
     voice="am_michael",
-    enable_pauses=True,
-    pause_short=0.2,    # (.) = 200ms
-    pause_medium=0.5,   # (..) = 500ms
-    pause_long=1.5      # (...) = 1500ms
+    pause_clause=0.2,      # ...c = 200ms
+    pause_sentence=0.5,    # ...s = 500ms
+    pause_paragraph=1.5    # ...p = 1500ms
 )
 ```
 
-#### 2. Automatic Natural Pauses (NEW!)
+#### 2. Automatic Natural Pauses
 
 For more natural speech, enable automatic pause insertion at linguistic boundaries:
 
@@ -240,13 +244,13 @@ computer vision, natural language processing, and speech recognition.
 audio, sr = tts.create(
     text,
     voice="af_sarah",
-    split_mode="clause",     # Split on commas and sentences
-    trim_silence=True,       # Enable automatic pause insertion
+    split_mode="clause",      # Split on commas and sentences
+    trim_silence=True,        # Enable automatic pause insertion
     pause_clause=0.25,        # Pause after clauses (commas)
-    pause_sentence=0.5,        # Pause after sentences
-    pause_paragraph=1.0,          # Pause after paragraphs
-    pause_variance=0.05,     # Add natural variance (default)
-    random_seed=42           # For reproducible results (optional)
+    pause_sentence=0.5,       # Pause after sentences
+    pause_paragraph=1.0,      # Pause after paragraphs
+    pause_variance=0.05,      # Add natural variance (default)
+    random_seed=42            # For reproducible results (optional)
 )
 ```
 
@@ -255,7 +259,7 @@ audio, sr = tts.create(
 - **Natural boundaries**: Automatically detects clauses, sentences, and paragraphs
 - **Variance**: Gaussian variance prevents robotic timing (±100ms by default)
 - **Reproducible**: Use `random_seed` for consistent output
-- **Composable**: Works with manual pause markers (`enable_pauses=True`)
+- **Composable**: Works with SSMD break markers
 
 **Split Modes:**
 
@@ -279,15 +283,14 @@ python -m spacy download en_core_web_sm
 
 **Combining Both Approaches:**
 
-Use manual markers for special emphasis and automatic pauses for natural rhythm:
+Use SSMD markers for special emphasis and automatic pauses for natural rhythm:
 
 ```python
-text = "Welcome! (...) Let's discuss AI, machine learning, and deep learning."
+text = "Welcome! ...p Let's discuss AI, machine learning, and deep learning."
 
 audio, sr = tts.create(
     text,
     voice="af_sarah",
-    enable_pauses=True,      # Manual (...) marker
     split_mode="clause",     # Automatic pauses at commas
     trim_silence=True,
     pause_variance=0.05

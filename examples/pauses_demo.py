@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
 """
-Demonstrate inter-word pause control using pykokoro.
+Demonstrate inter-word pause control using pykokoro with SSMD break syntax.
 
-This example shows how to use pause markers (.), (..), (...)
-to control timing in speech synthesis. Pause markers are automatically
+This example shows how to use SSMD break markers (...c, ...s, ...p, ...500ms)
+to control timing in speech synthesis. Break markers are automatically
 detected and processed.
+
+SSMD Break Markers:
+- ...n - No pause (0ms)
+- ...w - Weak pause (150ms)
+- ...c - Clause/comma pause (300ms)
+- ...s - Sentence pause (600ms)
+- ...p - Paragraph pause (1000ms)
+- ...500ms - Custom pause (500 milliseconds)
+- ...2s - Custom pause (2 seconds)
+
+Note: Bare ... (ellipsis) is NOT treated as a pause.
 
 Usage:
     python examples/pauses_demo.py
@@ -25,15 +36,15 @@ def main():
     print("Initializing TTS engine...")
     kokoro = pykokoro.Kokoro()
 
-    # Example 1: Basic pause markers
+    # Example 1: Basic SSMD pause markers
     print("\n" + "=" * 60)
-    print("Example 1: Basic Pauses")
+    print("Example 1: Basic SSMD Pauses")
     print("=" * 60)
 
-    text1 = "Chapter 5 (...) I'm Klaus. (.) Welcome to the show!"
+    text1 = "Chapter 5 ...p I'm Klaus. ...c Welcome to the show!"
 
     print(f"Text: {text1}")
-    print("Pause markers: (.) = 0.3s, (..) = 0.6s, (...) = 1.0s")
+    print("Pause markers: ...c = 0.3s, ...s = 0.6s, ...p = 1.0s")
 
     samples, sample_rate = kokoro.create(
         text1,
@@ -52,17 +63,17 @@ def main():
     print("Example 2: Custom Pause Durations")
     print("=" * 60)
 
-    text2 = "Quick pause (.) Medium pause (..) Long pause (...) Done!"
+    text2 = "Quick pause ...c Medium pause ...s Long pause ...p Done!"
 
     print(f"Text: {text2}")
-    print("Custom durations: (.) = 0.2s, (..) = 0.5s, (...) = 1.5s")
+    print("Custom durations: ...c = 0.2s, ...s = 0.5s, ...p = 1.5s")
 
     samples, sample_rate = kokoro.create(
         text2,
         voice="af_sarah",
-        pause_short=0.2,
-        pause_medium=0.5,
-        pause_long=1.5,
+        pause_clause=0.2,
+        pause_sentence=0.5,
+        pause_paragraph=1.5,
     )
 
     output2 = "example2_custom_durations.wav"
@@ -76,7 +87,7 @@ def main():
     print("Example 3: Leading Pause")
     print("=" * 60)
 
-    text3 = "(...) After a long pause, we begin speaking."
+    text3 = "...p After a long pause, we begin speaking."
 
     print(f"Text: {text3}")
     print("Note: Pause marker at start creates silence before speech")
@@ -97,7 +108,7 @@ def main():
     print("Example 4: Consecutive Pauses (Additive)")
     print("=" * 60)
 
-    text4 = "First sentence. (...) (..) Second sentence after a very long pause."
+    text4 = "First sentence. ...p ...s Second sentence after a very long pause."
 
     print(f"Text: {text4}")
     print("Note: Consecutive pauses add together (1.0s + 0.6s = 1.6s)")
@@ -113,13 +124,34 @@ def main():
     print(f"✓ Generated: {output4}")
     print(f"  Duration: {duration4:.2f}s")
 
+    # Example 5: Custom time-based pauses
+    print("\n" + "=" * 60)
+    print("Example 5: Custom Time-Based Pauses")
+    print("=" * 60)
+
+    text5 = "Wait ...500ms please ...2s Thank you!"
+
+    print(f"Text: {text5}")
+    print("Note: Use ...500ms or ...2s for exact time pauses")
+
+    samples, sample_rate = kokoro.create(
+        text5,
+        voice="af_nicole",
+    )
+
+    output5 = "example5_custom_time_pauses.wav"
+    sf.write(output5, samples, sample_rate)
+    duration5 = len(samples) / sample_rate
+    print(f"✓ Generated: {output5}")
+    print(f"  Duration: {duration5:.2f}s")
+
     kokoro.close()
 
     print("\n" + "=" * 60)
     print("All examples generated successfully!")
     print("=" * 60)
-    print("\nTotal files created: 4")
-    total_duration = duration1 + duration2 + duration3 + duration4
+    print("\nTotal files created: 5")
+    total_duration = duration1 + duration2 + duration3 + duration4 + duration5
     print(f"Total duration: {total_duration:.2f}s")
 
 

@@ -7,7 +7,7 @@ phoneme segments for TTS generation.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -28,6 +28,7 @@ class PhonemeSegment:
         paragraph: Paragraph index (0-based) for pause calculation
         sentence: Sentence index (int), sentence range ("0-2"), or None
         pause_after: Duration of pause after this segment in seconds
+        ssmd_metadata: Optional SSMD metadata (emphasis, prosody, markers, etc.)
     """
 
     text: str
@@ -37,10 +38,11 @@ class PhonemeSegment:
     paragraph: int = 0
     sentence: int | str | None = None
     pause_after: float = 0.0
+    ssmd_metadata: dict[str, Any] | None = field(default=None, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        return {
+        result = {
             "text": self.text,
             "phonemes": self.phonemes,
             "tokens": self.tokens,
@@ -49,6 +51,9 @@ class PhonemeSegment:
             "sentence": self.sentence,
             "pause_after": self.pause_after,
         }
+        if self.ssmd_metadata is not None:
+            result["ssmd_metadata"] = self.ssmd_metadata
+        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PhonemeSegment:
@@ -61,6 +66,7 @@ class PhonemeSegment:
             paragraph=data.get("paragraph", 0),
             sentence=data.get("sentence"),
             pause_after=data.get("pause_after", 0.0),
+            ssmd_metadata=data.get("ssmd_metadata"),
         )
 
     def format_readable(self) -> str:
@@ -676,117 +682,14 @@ def convert_pause_segments_to_phoneme_segments(
     return segments
 
 
-def has_pause_markers(text: str) -> bool:
-    """Check if text contains pause markers: (.), (..), (...).
-
-    Args:
-        text: Input text to check
-
-    Returns:
-        True if text contains any pause markers, False otherwise
-
-    Example:
-        >>> has_pause_markers("Hello (.) World")
-        True
-        >>> has_pause_markers("Hello World")
-        False
-    """
-    import re
-
-    pattern = r"\(\.\.\.\)|\(\.\.\)|\(\.\)"
-    return bool(re.search(pattern, text))
-
-
-def split_text_with_pauses(
-    text: str,
-    pause_short: float = 0.3,
-    pause_medium: float = 0.6,
-    pause_long: float = 1.0,
-) -> tuple[float, list[tuple[str, float]]]:
-    """Split text at pause markers and return segments with pause durations.
-
-    Detects and splits on pause markers: (.), (..), (...)
-    Removes the markers from the text segments.
-    Consecutive pause markers have their durations added together.
-
-    Args:
-        text: Input text with optional pause markers
-        pause_short: Duration for (.) in seconds
-        pause_medium: Duration for (..) in seconds
-        pause_long: Duration for (...) in seconds
-
-    Returns:
-        Tuple of (initial_pause_duration, segments_list) where segments_list
-        is a list of (text_segment, pause_after_seconds) tuples
-
-    Example:
-        >>> split_text_with_pauses("Hello (.) World (...) Foo")
-        (0.0, [("Hello", 0.3), ("World", 1.0), ("Foo", 0.0)])
-
-        >>> split_text_with_pauses("Start (...) (..) End")
-        (0.0, [("Start", 1.6), ("End", 0.0)])  # 1.0 + 0.6 = 1.6
-
-        >>> split_text_with_pauses("(...) Hello")
-        (1.0, [("Hello", 0.0)])  # Leading pause
-    """
-    import re
-
-    # Pattern to match pause markers: (.), (..), (...)
-    # Use lookbehind and lookahead to split while preserving markers
-    pattern = r"\(\.\.\.\)|\(\.\.\)|\(\.\)"
-
-    # Split text and capture markers
-    parts = re.split(f"({pattern})", text)
-
-    # Process parts into segments with pauses
-    segments = []
-    current_text = ""
-    accumulated_pause = 0.0
-    initial_pause = 0.0
-    found_first_text = False
-
-    for part in parts:
-        if not part:
-            continue
-
-        # Check if this is a pause marker
-        if re.match(pattern, part):
-            # Determine pause duration
-            if part == "(...)":
-                pause_duration = pause_long
-            elif part == "(..)":
-                pause_duration = pause_medium
-            else:  # '(.)'
-                pause_duration = pause_short
-
-            # If we haven't found any text yet, this is initial pause
-            if not found_first_text and not current_text.strip():
-                initial_pause += pause_duration
-            else:
-                # Accumulate pause for current segment
-                accumulated_pause += pause_duration
-        else:
-            # This is text
-            stripped = part.strip()
-            if stripped:
-                found_first_text = True
-
-                # If we have accumulated text, save it as a segment
-                if current_text.strip():
-                    segments.append((current_text.strip(), accumulated_pause))
-                    accumulated_pause = 0.0
-                    current_text = ""
-
-                current_text = stripped
-            elif current_text.strip():
-                # Whitespace part after we have text, keep accumulating
-                current_text += part
-
-    # Add final segment if any
-    if current_text.strip():
-        segments.append((current_text.strip(), accumulated_pause))
-
-    return initial_pause, segments
+# SSMD Integration: Import break parsing from ssmd_parser module
+# Old pause markers (.), (..), (...) have been removed in favor of SSMD syntax
+from .ssmd_parser import (  # noqa: E402
+    has_ssmd_markup,
+    parse_ssmd_breaks,
+    parse_ssmd_to_segments,
+    ssmd_segments_to_phoneme_segments,
+)
 
 
 def text_to_phoneme_segments(
@@ -794,9 +697,6 @@ def text_to_phoneme_segments(
     tokenizer: Tokenizer,
     lang: str = "en-us",
     split_mode: str | None = None,
-    pause_short: float = 0.3,
-    pause_medium: float = 0.6,
-    pause_long: float = 1.0,
     pause_clause: float = 0.3,
     pause_sentence: float = 0.6,
     pause_paragraph: float = 1.0,
@@ -808,25 +708,33 @@ def text_to_phoneme_segments(
     """Convert text to list of PhonemeSegment with pauses populated.
 
     Unified function that handles all text-to-segment conversion:
-    - Manual pause markers (automatically detected: (.), (..), (...))
+    - SSMD markup (automatically detected: ...c, ...s, ...p, ...500ms, *emphasis*, etc.)
     - Automatic pauses (split_mode with trim_silence)
     - Combination of both
 
-    Pause markers in text are automatically detected and processed. If your text
-    contains (.), (..), or (...), they will be removed and converted to silence
-    after the preceding segment.
+    SSMD markup in text is automatically detected and processed. Supported features:
+    - Breaks: ...n, ...w, ...c, ...s, ...p, ...500ms, ...2s
+    - Emphasis: *text* (moderate), **text** (strong)
+    - Prosody: +loud+, >fast>, ^high^ (stored for future processing)
+    - Language: [Bonjour](fr) switches language for that segment
+    - Phonemes: [tomato](ph: təˈmeɪtoʊ) uses explicit phonemes
+    - Substitution: [H2O](sub: water) replaces text before phonemization
+    - Markers: @name (stored in metadata)
+
+    Note: Old pause markers (.), (..), (...) are NO LONGER SUPPORTED.
+    Use SSMD break syntax instead: ...c, ...s, ...p
 
     Args:
-        text: Input text (pause markers automatically detected)
+        text: Input text (SSMD markup automatically detected)
         tokenizer: Tokenizer instance for phonemization
-        lang: Language code
+        lang: Default language code (can be overridden per-segment with SSMD)
         split_mode: Optional split mode ('paragraph', 'sentence', 'clause')
-        pause_short: Duration for short pauses  (.)
-        pause_medium: Duration for medium pauses  (..)
-        pause_long: Duration for long pauses ...)
-        pause_clause: Duration for short pauses (clause boundaries)
-        pause_sentence: Duration for medium pauses (sentence boundaries)
-        pause_paragraph: Duration for long pauses (paragraph boundaries)
+        pause_short: Duration for SSMD ...c (comma/clause) pauses
+        pause_medium: Duration for SSMD ...s (sentence) pauses
+        pause_long: Duration for SSMD ...p (paragraph) pauses
+        pause_clause: Duration for automatic clause boundary pauses
+        pause_sentence: Duration for automatic sentence boundary pauses
+        pause_paragraph: Duration for automatic paragraph boundary pauses
         pause_variance: Standard deviation for Gaussian pause variance
         trim_silence: Whether automatic pauses should be added with split_mode
         optimal_phoneme_length: Optional target length(s) for batching segments.
@@ -845,16 +753,24 @@ def text_to_phoneme_segments(
         ImportError: If spaCy is required but not installed
 
     Example:
-        Basic usage with pause markers (automatically detected):
+        Basic usage with SSMD breaks (automatically detected):
 
         >>> from pykokoro import Tokenizer, text_to_phoneme_segments
         >>> tokenizer = Tokenizer()
         >>> segments = text_to_phoneme_segments(
-        ...     "Hello (.) World (...) End",
+        ...     "Hello ...c World ...p End",
         ...     tokenizer=tokenizer
         ... )
-        >>> # Automatically detects markers
+        >>> # Automatically detects SSMD breaks
         >>> # Returns segments with pause_after: [0.3, 1.0, 0.0]
+
+        SSMD with custom time:
+
+        >>> segments = text_to_phoneme_segments(
+        ...     "Wait ...500ms then continue.",
+        ...     tokenizer=tokenizer
+        ... )
+        >>> # Returns segment with 0.5s pause
 
         Automatic pauses with sentence splitting:
 
@@ -866,15 +782,15 @@ def text_to_phoneme_segments(
         ... )
         >>> # Automatically adds pauses between sentences
 
-        Combination of manual and automatic pauses:
+        Combination of SSMD and automatic pauses:
 
         >>> segments = text_to_phoneme_segments(
-        ...     "First part (...) Second sentence. Third sentence.",
+        ...     "First part ...p Second sentence. Third sentence.",
         ...     tokenizer=tokenizer,
         ...     split_mode="sentence",
         ...     trim_silence=True
         ... )
-        >>> # Manual pause after "First part", automatic pauses between sentences
+        >>> # SSMD pause after "First part", automatic pauses between sentences
     """
     # Create RNG if not provided
     if rng is None:
@@ -891,40 +807,45 @@ def text_to_phoneme_segments(
                 "python -m spacy download en_core_web_sm"
             ) from err
 
-    # Auto-detect pause markers in text
-    has_pauses = has_pause_markers(text)
+    # Auto-detect SSMD markup in text (replaces old pause marker detection)
+    has_ssmd = has_ssmd_markup(text)
 
-    # Case 1: Text contains pause markers
-    if has_pauses:
-        # Parse pause markers from text
-        initial_pause, pause_segments = split_text_with_pauses(
-            text, pause_short, pause_medium, pause_long
+    # Case 1: Text contains SSMD markup (breaks, emphasis, etc.)
+    if has_ssmd:
+        # Parse SSMD markup from text
+        initial_pause, ssmd_segments = parse_ssmd_to_segments(
+            text,
+            tokenizer,
+            lang=lang,
+            pause_none=0.0,
+            pause_weak=0.15,
+            pause_clause=pause_clause,
+            pause_sentence=pause_sentence,
+            pause_paragraph=pause_paragraph,
         )
 
-        # If split_mode is also enabled, process each pause segment with splitting
+        # Convert SSMD segments to phoneme segments
+        phoneme_segments = ssmd_segments_to_phoneme_segments(
+            ssmd_segments,
+            initial_pause,
+            tokenizer,
+            default_lang=lang,
+            paragraph=0,
+            sentence_start=0,
+        )
+
+        # If split_mode is also enabled, process each SSMD segment with splitting
         if split_mode is not None:
             all_segments: list[PhonemeSegment] = []
 
-            # Add initial pause as empty segment if present
-            if initial_pause > 0:
-                all_segments.append(
-                    PhonemeSegment(
-                        text="",
-                        phonemes="",
-                        tokens=[],
-                        lang=lang,
-                        pause_after=initial_pause,
-                    )
-                )
-
-            # Process each pause-delimited segment with split_mode
-            for segment_text, pause_after in pause_segments:
-                if segment_text.strip():
+            # Process each SSMD-parsed segment
+            for segment in phoneme_segments:
+                if segment.text.strip():
                     # Split this segment using split_mode
                     sub_segments = split_and_phonemize_text(
-                        segment_text,
+                        segment.text,
                         tokenizer=tokenizer,
-                        lang=lang,
+                        lang=segment.lang,  # Use segment's language
                         split_mode=split_mode,
                         optimal_phoneme_length=optimal_phoneme_length,
                     )
@@ -940,30 +861,19 @@ def text_to_phoneme_segments(
                             rng,
                         )
 
-                    # Override last sub-segment's pause with explicit pause_after
+                    # Override last sub-segment's pause with SSMD pause_after
                     if sub_segments:
-                        sub_segments[-1].pause_after += pause_after
+                        sub_segments[-1].pause_after += segment.pause_after
 
                     all_segments.extend(sub_segments)
                 else:
-                    # Empty text segment, just add pause
-                    if pause_after > 0:
-                        all_segments.append(
-                            PhonemeSegment(
-                                text="",
-                                phonemes="",
-                                tokens=[],
-                                lang=lang,
-                                pause_after=pause_after,
-                            )
-                        )
+                    # Empty text segment (just a pause), preserve it
+                    all_segments.append(segment)
 
             return all_segments
         else:
-            # No split_mode, just convert pause segments directly
-            return convert_pause_segments_to_phoneme_segments(
-                pause_segments, initial_pause, tokenizer, lang
-            )
+            # No split_mode, return SSMD segments directly
+            return phoneme_segments
 
     # Case 2: Automatic splitting with split_mode
     elif split_mode is not None:

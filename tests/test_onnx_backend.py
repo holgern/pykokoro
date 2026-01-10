@@ -528,30 +528,43 @@ class TestCreateWithPauses:
             sig = inspect.signature(kokoro.create)
             params = sig.parameters
 
-            assert "pause_short" in params
-            assert "pause_medium" in params
-            assert "pause_long" in params
+            # New SSMD-compatible pause parameters
+            assert "pause_clause" in params
+            assert "pause_sentence" in params
+            assert "pause_paragraph" in params
             assert "split_mode" in params
             assert "trim_silence" in params
         except Exception:
             pytest.skip("Could not inspect signature")
 
-    def test_pause_markers_automatically_detected(self, monkeypatch):
-        """Test that pause markers in text are automatically detected and processed."""
+    def test_ssmd_breaks_automatically_detected(self, monkeypatch):
+        """Test that SSMD break markers in text are automatically detected and processed."""
         from pykokoro.onnx_backend import Kokoro
 
         kokoro = Kokoro()
 
-        # Track if split_text_with_pauses was called
-        split_called = {"called": False, "args": None}
+        # Track if text_to_phoneme_segments was called
+        segments_called = {"called": False, "text": None}
 
-        def mock_split(text, pause_short=0.3, pause_medium=0.6, pause_long=1.0):
-            split_called["called"] = True
-            split_called["args"] = (text, pause_short, pause_medium, pause_long)
-            return 0.0, [("test text", 0.0)]
+        def mock_text_to_phoneme_segments(*args, **kwargs):
+            segments_called["called"] = True
+            segments_called["text"] = kwargs.get("text") or (args[0] if args else None)
+            # Return mock segment
+            from pykokoro.phonemes import PhonemeSegment
+
+            return [
+                PhonemeSegment(
+                    text="test text",
+                    phonemes="tɛst tɛkst",
+                    tokens=[1, 2, 3],
+                    lang="en-us",
+                )
+            ]
 
         # Mock the function
-        monkeypatch.setattr("pykokoro.phonemes.split_text_with_pauses", mock_split)
+        monkeypatch.setattr(
+            "pykokoro.phonemes.text_to_phoneme_segments", mock_text_to_phoneme_segments
+        )
 
         # Mock other methods to prevent actual TTS
         def mock_init(self):
@@ -573,26 +586,38 @@ class TestCreateWithPauses:
             lambda self, name: __import__("numpy").zeros(10),
         )
 
-        # Call with text containing pause markers - should auto-detect
-        kokoro.create("Test (.) text", voice="af_sarah")
+        # Call with text containing SSMD breaks - should auto-detect
+        kokoro.create("Test ...c text", voice="af_sarah")
 
-        assert split_called["called"]
-        assert split_called["args"][0] == "Test (.) text"
+        assert segments_called["called"]
+        assert segments_called["text"] == "Test ...c text"
 
-    def test_no_pause_markers_not_processed(self, monkeypatch):
-        """Test that text without pause markers is NOT processed for pauses."""
+    def test_plain_text_processed_normally(self, monkeypatch):
+        """Test that text without SSMD markers is processed normally."""
         from pykokoro.onnx_backend import Kokoro
 
         kokoro = Kokoro()
 
-        # Track if split_text_with_pauses was called
-        split_called = {"called": False}
+        # Track if text_to_phoneme_segments was called
+        segments_called = {"called": False}
 
-        def mock_split(text, pause_short=0.3, pause_medium=0.6, pause_long=1.0):
-            split_called["called"] = True
-            return 0.0, []
+        def mock_text_to_phoneme_segments(*args, **kwargs):
+            segments_called["called"] = True
+            # Return mock segment
+            from pykokoro.phonemes import PhonemeSegment
 
-        monkeypatch.setattr("pykokoro.phonemes.split_text_with_pauses", mock_split)
+            return [
+                PhonemeSegment(
+                    text="test text",
+                    phonemes="tɛst tɛkst",
+                    tokens=[1, 2, 3],
+                    lang="en-us",
+                )
+            ]
+
+        monkeypatch.setattr(
+            "pykokoro.phonemes.text_to_phoneme_segments", mock_text_to_phoneme_segments
+        )
 
         # Mock other methods
         def mock_init(self):
@@ -614,10 +639,11 @@ class TestCreateWithPauses:
             lambda self, name: __import__("numpy").zeros(10),
         )
 
-        # Call with text without pause markers - should NOT trigger pause processing
+        # Call with text without SSMD markers - should still work normally
         kokoro.create("Test text", voice="af_sarah")
 
-        assert not split_called["called"]
+        # Should still be called (all text goes through text_to_phoneme_segments now)
+        assert segments_called["called"]
 
     def test_generate_silence_function(self):
         """Test that generate_silence utility works correctly."""
