@@ -181,6 +181,29 @@ The formula [H2O](sub: water) is essential for life.
     sf.write(output_file_emphasis, samples_emphasis, sample_rate)
     print(f"Created: {output_file_emphasis}")
 
+    # Demo 5: Voice switching
+    print("\n--- Demo 5: Voice Switching ---")
+    voice_switching_text = """
+[Hello, I'm Sarah!](voice: af_sarah) ...s
+[And I'm Michael!](voice: am_michael) ...s
+[Nice to meet you both!](voice: af_nicole)
+"""
+    print("Voice switching example:")
+    print(voice_switching_text)
+
+    print("\nGenerating audio with automatic voice switching...")
+    samples_voices, _ = kokoro.create(
+        voice_switching_text,
+        voice=VOICE,  # Default voice
+        speed=1.0,
+        lang=LANG,
+    )
+
+    output_file_voices = "ssmd_voice_switching_demo.wav"
+    sf.write(output_file_voices, samples_voices, sample_rate)
+    print(f"Created: {output_file_voices}")
+    print("Note: Each segment automatically uses its annotated voice!")
+
     kokoro.close()
 
     print("\n" + "=" * 70)
@@ -193,8 +216,11 @@ The formula [H2O](sub: water) is essential for life.
     print("  ✓ Phonetic pronunciation: [word](/phoneme/) (kokorog2p format)")
     print("  ✓ Substitution: [text](sub: replacement)")
     print("  ✓ Markers: @marker_name")
+    print("  ✓ Voice switching: [text](voice: name) - NEW!")
     print("\nNote: PyKokoro uses kokorog2p format [word](/phoneme/) for")
     print("      phonetic pronunciation, not SSMD's [word](ph: phoneme) syntax.")
+    print("\nVoice switching happens automatically per segment!")
+    print("Each [text](voice: name) annotation switches to that voice.")
 
 
 if __name__ == "__main__":

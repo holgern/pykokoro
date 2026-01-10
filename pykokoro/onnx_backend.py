@@ -2380,10 +2380,20 @@ class Kokoro:
         speed: float,
         trim_silence: bool,
     ) -> np.ndarray:
-        """Delegate to AudioGenerator (backward compatibility)."""
+        """Delegate to AudioGenerator with voice resolution support.
+
+        This wrapper provides voice resolution for per-segment voice switching
+        via SSMD voice annotations.
+        """
         self._init_kokoro()
+
+        # Create voice resolver callback
+        def voice_resolver(voice_name: str) -> np.ndarray:
+            """Resolve voice name to style vector."""
+            return self.get_voice_style(voice_name)
+
         return self._audio_generator.generate_from_segments(
-            segments, voice_style, speed, trim_silence
+            segments, voice_style, speed, trim_silence, voice_resolver=voice_resolver
         )
 
     def close(self) -> None:

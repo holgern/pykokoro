@@ -330,14 +330,185 @@ def parse_voice_annotation(annotation_content: str) -> dict[str, str | None]:
     return result
 
 
-def extract_ssmd_metadata(text: str) -> SSMDMetadata:
+def extract_voice_from_ssml(ssml: str) -> dict[str, str | None]:
+    """Extract voice attributes from SSML <voice> tag.
+
+    Args:
+        ssml: SSML text that may contain <voice> tags
+
+    Returns:
+        Dictionary with voice attributes: name, language, gender, variant
+
+    Example:
+        >>> extract_voice_from_ssml('<voice name="sarah">Hello</voice>')
+        {'name': 'sarah', 'language': None, 'gender': None, 'variant': None}
+    """
+    result: dict[str, str | None] = {
+        "name": None,
+        "language": None,
+        "gender": None,
+        "variant": None,
+    }
+
+    # Look for <voice> tag with attributes
+    voice_pattern = r"<voice\s+([^>]+)>"
+    voice_match = re.search(voice_pattern, ssml)
+    if not voice_match:
+        return result
+
+    # Extract all attributes from the voice tag
+    attrs_text = voice_match.group(1)
+    attr_pattern = r'(\w+)="([^"]+)"'
+    for attr_match in re.finditer(attr_pattern, attrs_text):
+        key = attr_match.group(1).lower()
+        value = attr_match.group(2)
+
+        if key == "name":
+            result["name"] = value
+        elif key == "language" or key == "lang":
+            result["language"] = value
+        elif key == "gender":
+            result["gender"] = value
+        elif key == "variant":
+            result["variant"] = value
+
+    return result
+
+
+def _extract_pause_from_ssml(
+    ssml: str,
+    pause_none: float = 0.0,
+    pause_weak: float = 0.15,
+    pause_clause: float = 0.3,
+    pause_sentence: float = 0.6,
+    pause_paragraph: float = 1.0,
+) -> float:
+    """Extract pause duration from SSML <break> tag.
+
+    Args:
+        ssml: SSML text that may contain <break> tags
+        pause_none: Duration for "none" strength
+        pause_weak: Duration for "weak" or "x-weak" strength
+        pause_clause: Duration for "medium" strength
+        pause_sentence: Duration for "strong" strength
+        pause_paragraph: Duration for "x-strong" strength
+
+    Returns:
+        Pause duration in seconds (uses last break tag found, defaults to 0.0)
+
+    Example:
+        >>> _extract_pause_from_ssml('Hello<break strength="medium"/>')
+        0.3
+    """
+    # Look for <break> tags
+    break_pattern = r"<break\s+([^>]+)/>"
+    breaks = list(re.finditer(break_pattern, ssml))
+
+    if not breaks:
+        return 0.0
+
+    # Use the last break in the sentence (typically at the end)
+    last_break = breaks[-1]
+    attrs_text = last_break.group(1)
+
+    # Extract strength attribute
+    strength_pattern = r'strength="([^"]+)"'
+    strength_match = re.search(strength_pattern, attrs_text)
+    if strength_match:
+        strength = strength_match.group(1)
+        strength_map = {
+            "none": pause_none,
+            "x-weak": pause_weak,
+            "weak": pause_weak,
+            "medium": pause_clause,
+            "strong": pause_sentence,
+            "x-strong": pause_paragraph,
+        }
+        return strength_map.get(strength, 0.0)
+
+    # Check for time attribute (e.g., time="500ms")
+    time_pattern = r'time="([0-9.]+)(ms|s)"'
+    time_match = re.search(time_pattern, attrs_text)
+    if time_match:
+        value = float(time_match.group(1))
+        unit = time_match.group(2)
+        if unit == "ms":
+            return value / 1000.0
+        else:  # seconds
+            return value
+
+    return 0.0
+
+
+def _extract_metadata_from_ssml(ssml: str) -> SSMDMetadata:
+    """Extract all metadata from SSML sentence.
+
+    Args:
+        ssml: SSML sentence string
+
+    Returns:
+        SSMDMetadata with extracted information
+
+    Example:
+        >>> _extract_metadata_from_ssml('<voice name="sarah"><emphasis>Hello</emphasis></voice>')
+        SSMDMetadata(voice_name='sarah', emphasis='moderate')
+    """
+    metadata = SSMDMetadata()
+
+    # Extract voice information
+    voice_info = extract_voice_from_ssml(ssml)
+    if voice_info["name"]:
+        metadata.voice_name = voice_info["name"]
+        metadata.voice_language = voice_info["language"]
+        metadata.voice_gender = voice_info["gender"]
+        metadata.voice_variant = voice_info["variant"]
+
+    # Extract emphasis
+    if "<emphasis>" in ssml or '<emphasis level="moderate">' in ssml:
+        metadata.emphasis = "moderate"
+    elif '<emphasis level="strong">' in ssml:
+        metadata.emphasis = "strong"
+
+    # Extract language (from <lang> or <voice language="..."> tags)
+    lang_pattern = r'<lang xml:lang="([^"]+)"'
+    lang_match = re.search(lang_pattern, ssml)
+    if lang_match:
+        metadata.language = lang_match.group(1)
+
+    # TODO: Extract prosody, phonemes, markers if needed
+
+    return metadata
+
+
+def _strip_ssml_tags(ssml: str) -> str:
+    """Strip all XML/SSML tags from text.
+
+    Args:
+        ssml: SSML text with tags
+
+    Returns:
+        Plain text with all tags removed
+
+    Example:
+        >>> _strip_ssml_tags('<voice name="sarah">Hello</voice>')
+        'Hello'
+    """
+    return re.sub(r"<[^>]+>", "", ssml)
+
+
+def extract_ssmd_metadata(text: str, ssml: str | None = None) -> SSMDMetadata:
     """Extract SSMD metadata from a text segment.
 
     Parses SSMD annotations to extract metadata like emphasis, voice,
     language, substitution, etc.
 
+    Supports both voice annotation formats:
+    - Inline: [text](voice: name)
+    - Marker: @voice: name (via SSML <voice> tags when ssml parameter provided)
+
     Args:
         text: Text segment potentially containing SSMD markup
+        ssml: Optional SSML version of text (for extracting <voice> tags)
 
     Returns:
         SSMDMetadata instance with extracted metadata
@@ -348,8 +519,20 @@ def extract_ssmd_metadata(text: str) -> SSMDMetadata:
 
         >>> extract_ssmd_metadata("[Hello](voice: af_sarah)")
         SSMDMetadata(voice_name='af_sarah', ...)
+
+        >>> extract_ssmd_metadata("Hello", '<voice name="sarah">Hello</voice>')
+        SSMDMetadata(voice_name='sarah', ...)
     """
     metadata = SSMDMetadata()
+
+    # First check for voice in SSML (from @voice: markers)
+    if ssml:
+        voice_info = extract_voice_from_ssml(ssml)
+        if voice_info["name"]:
+            metadata.voice_name = voice_info["name"]
+            metadata.voice_language = voice_info["language"]
+            metadata.voice_gender = voice_info["gender"]
+            metadata.voice_variant = voice_info["variant"]
 
     # Check for emphasis
     if re.search(r"\*\*[^*]+\*\*", text):
@@ -365,12 +548,15 @@ def extract_ssmd_metadata(text: str) -> SSMDMetadata:
 
         # Check annotation type
         if annotation_content.startswith("voice:") or ", gender:" in annotation_content:
-            # Voice annotation
-            voice_info = parse_voice_annotation(annotation_content)
-            metadata.voice_name = voice_info["name"]
-            metadata.voice_language = voice_info["language"]
-            metadata.voice_gender = voice_info["gender"]
-            metadata.voice_variant = voice_info["variant"]
+            # Voice annotation - but only use if no @voice marker from SSML
+            # When SSML is provided, voice from SSML takes precedence
+            # When multiple inline annotations exist, last one wins
+            if not (ssml and metadata.voice_name):
+                voice_info = parse_voice_annotation(annotation_content)
+                metadata.voice_name = voice_info["name"]
+                metadata.voice_language = voice_info["language"]
+                metadata.voice_gender = voice_info["gender"]
+                metadata.voice_variant = voice_info["variant"]
         elif annotation_content.startswith("sub:"):
             # Substitution
             metadata.substitution = annotation_content[4:].strip()
@@ -384,9 +570,9 @@ def extract_ssmd_metadata(text: str) -> SSMDMetadata:
             # Language code (e.g., "fr", "en-GB")
             metadata.language = annotation_content
 
-    # Extract markers @name
-    marker_pattern = r"(?:^|\s)@(\w+)"
-    markers = re.findall(marker_pattern, text)
+    # Extract markers @name (excluding @voice which is handled above)
+    marker_pattern = r"(?:^|\s)@(?!voice:)(\w+)"
+    markers = re.findall(marker_pattern, text, re.IGNORECASE)
     if markers:
         metadata.markers = markers
 
@@ -408,7 +594,10 @@ def parse_ssmd_to_segments(
     This function processes SSMD markup to extract:
     - Text segments with substitutions applied
     - Pause durations from break markers
-    - Metadata (emphasis, prosody, language, phonemes, etc.)
+    - Metadata (emphasis, prosody, language, phonemes, voice, etc.)
+
+    Voice markers (@voice: name) are handled by SSMD and propagate to all following
+    text in the same paragraph until the next @voice: marker or paragraph break.
 
     Args:
         text: Input text with SSMD markup
@@ -428,38 +617,71 @@ def parse_ssmd_to_segments(
         ...     "Hello ...c *important* ...s [Bonjour](fr)",
         ...     tokenizer
         ... )
+        >>> segments = parse_ssmd_to_segments(
+        ...     "@voice: sarah\\nHello!\\n\\n@voice: michael\\nWorld!",
+        ...     tokenizer
+        ... )
     """
-    # For now, use simple text extraction and break parsing
-    # Full SSMD parsing will be implemented in phases
+    # Strategy:
+    # 1. Split text by paragraph breaks (double newlines)
+    # 2. For each paragraph, parse breaks using parse_ssmd_breaks
+    # 3. Extract voice metadata from SSML (handles @voice: markers)
+    # 4. @voice: marker applies to entire paragraph
 
-    # First pass: Extract plain text with substitutions applied
-    doc = Document(text)
-    plain_text = to_text(text)
+    # Split by paragraph breaks but preserve the structure
+    paragraphs = re.split(r"\n\s*\n", text)
 
-    # Second pass: Parse breaks from original text
-    initial_pause, break_segments = parse_ssmd_breaks(
-        text,
-        pause_none=pause_none,
-        pause_weak=pause_weak,
-        pause_clause=pause_clause,
-        pause_sentence=pause_sentence,
-        pause_paragraph=pause_paragraph,
-    )
+    all_segments = []
+    first_paragraph = True
+    initial_pause = 0.0
 
-    # Convert to SSMDSegment objects with extracted metadata
-    ssmd_segments = []
-    for seg_text, pause_after in break_segments:
-        # Extract metadata from segment text before cleaning
-        metadata = extract_ssmd_metadata(seg_text)
+    for para_text in paragraphs:
+        if not para_text.strip():
+            continue
 
-        # Strip markup from segment text
-        clean_text = to_text(seg_text)
-
-        ssmd_segments.append(
-            SSMDSegment(text=clean_text, pause_after=pause_after, metadata=metadata)
+        # Parse breaks within this paragraph
+        para_initial_pause, para_segments = parse_ssmd_breaks(
+            para_text,
+            pause_none=pause_none,
+            pause_weak=pause_weak,
+            pause_clause=pause_clause,
+            pause_sentence=pause_sentence,
+            pause_paragraph=pause_paragraph,
         )
 
-    return initial_pause, ssmd_segments
+        # Store initial pause from first paragraph only
+        if first_paragraph:
+            initial_pause = para_initial_pause
+            first_paragraph = False
+
+        # Convert segment to SSML once per paragraph to extract voice
+        # (voice marker applies to whole paragraph)
+        para_doc = Document(para_text)
+        para_ssml = para_doc.to_ssml()
+        para_voice_metadata = _extract_metadata_from_ssml(para_ssml)
+
+        # Process each break segment within the paragraph
+        for seg_text, pause_after in para_segments:
+            # Extract metadata specific to this segment
+            seg_doc = Document(seg_text)
+            seg_ssml = seg_doc.to_ssml()
+            metadata = _extract_metadata_from_ssml(seg_ssml)
+
+            # If paragraph has a voice marker, use it (unless segment has its own)
+            if para_voice_metadata.voice_name and not metadata.voice_name:
+                metadata.voice_name = para_voice_metadata.voice_name
+                metadata.voice_language = para_voice_metadata.voice_language
+                metadata.voice_gender = para_voice_metadata.voice_gender
+                metadata.voice_variant = para_voice_metadata.voice_variant
+
+            # Strip markup from segment text
+            clean_text = _strip_ssml_tags(seg_ssml)
+
+            all_segments.append(
+                SSMDSegment(text=clean_text, pause_after=pause_after, metadata=metadata)
+            )
+
+    return initial_pause, all_segments
 
 
 def ssmd_segments_to_phoneme_segments(
@@ -517,7 +739,7 @@ def ssmd_segments_to_phoneme_segments(
         # Tokenize phonemes
         tokens = tokenizer.tokenize(phonemes)
 
-        # Create phoneme segment
+        # Create phoneme segment with SSMD metadata
         segment = PhonemeSegment(
             text=ssmd_seg.text,
             phonemes=phonemes,
@@ -526,10 +748,8 @@ def ssmd_segments_to_phoneme_segments(
             paragraph=paragraph,
             sentence=sentence_start + i,
             pause_after=ssmd_seg.pause_after,
+            ssmd_metadata=ssmd_seg.metadata.to_dict(),
         )
-
-        # TODO: Store SSMD metadata for future prosody processing
-        # Could add metadata field to PhonemeSegment or use separate structure
 
         segments.append(segment)
 

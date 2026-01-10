@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Literal
+from typing import Callable, Literal
 
 import numpy as np
 import onnxruntime as rt
@@ -223,6 +223,7 @@ class AudioGenerator:
         voice_style: np.ndarray,
         speed: float,
         trim_silence: bool,
+        voice_resolver: Callable[[str], np.ndarray] | None = None,
     ) -> np.ndarray:
         """Generate audio from list of PhonemeSegment instances.
 
@@ -230,13 +231,17 @@ class AudioGenerator:
         - Segments with phonemes (generate speech)
         - Empty segments (skip, only use pause_after)
         - Pause insertion based on pause_after field
+        - Per-segment voice switching via SSMD voice metadata
         - Optional silence trimming
 
         Args:
             segments: List of PhonemeSegment instances
-            voice_style: Voice style vector
+            voice_style: Default voice style vector (used when no voice metadata)
             speed: Speech speed multiplier
             trim_silence: Whether to trim silence from segment boundaries
+            voice_resolver: Optional callback to resolve voice names to style vectors.
+                Takes voice name (str) and returns voice style array.
+                If provided and segment has voice metadata, uses per-segment voice.
 
         Returns:
             Concatenated audio array
@@ -244,6 +249,21 @@ class AudioGenerator:
         audio_parts = []
 
         for segment in segments:
+            # Determine voice style for this segment
+            segment_voice_style = voice_style  # Default
+
+            # Check for SSMD voice metadata
+            if voice_resolver and segment.ssmd_metadata:
+                voice_name = segment.ssmd_metadata.get("voice_name")
+                if voice_name:
+                    try:
+                        segment_voice_style = voice_resolver(voice_name)
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to resolve voice '{voice_name}' for segment, "
+                            f"using default voice: {e}"
+                        )
+
             # Generate speech if phonemes present
             if segment.phonemes.strip():
                 # Handle long phonemes by splitting
@@ -251,14 +271,14 @@ class AudioGenerator:
                     batches = self.split_phonemes(segment.phonemes)
                     for batch in batches:
                         audio, _ = self.generate_from_phonemes(
-                            batch, voice_style, speed
+                            batch, segment_voice_style, speed
                         )
                         if trim_silence:
                             audio, _ = trim_audio(audio)
                         audio_parts.append(audio)
                 else:
                     audio, _ = self.generate_from_phonemes(
-                        segment.phonemes, voice_style, speed
+                        segment.phonemes, segment_voice_style, speed
                     )
                     if trim_silence:
                         audio, _ = trim_audio(audio)

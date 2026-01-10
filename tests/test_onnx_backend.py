@@ -575,9 +575,13 @@ class TestCreateWithPauses:
 
             self._audio_generator = Mock()
             self._audio_generator.generate_from_segments = (
-                lambda segments, voice_style, speed, trim_silence: __import__(
-                    "numpy"
-                ).array([0.0], dtype=__import__("numpy").float32)
+                lambda segments,
+                voice_style,
+                speed,
+                trim_silence,
+                voice_resolver=None: __import__("numpy").array(
+                    [0.0], dtype=__import__("numpy").float32
+                )
             )
 
         monkeypatch.setattr("pykokoro.onnx_backend.Kokoro._init_kokoro", mock_init)
@@ -628,9 +632,13 @@ class TestCreateWithPauses:
 
             self._audio_generator = Mock()
             self._audio_generator.generate_from_segments = (
-                lambda segments, voice_style, speed, trim_silence: __import__(
-                    "numpy"
-                ).array([0.0], dtype=__import__("numpy").float32)
+                lambda segments,
+                voice_style,
+                speed,
+                trim_silence,
+                voice_resolver=None: __import__("numpy").array(
+                    [0.0], dtype=__import__("numpy").float32
+                )
             )
 
         monkeypatch.setattr("pykokoro.onnx_backend.Kokoro._init_kokoro", mock_init)

@@ -454,3 +454,183 @@ class TestSSMDVoiceAnnotations:
         assert data["voice_language"] == "en-US"
         assert data["voice_gender"] == "female"
         assert data["voice_variant"] == "1"
+
+
+class TestSSMDVoiceSwitching:
+    """Tests for per-segment voice switching functionality."""
+
+    def test_ssmd_metadata_preserved_in_phoneme_segments(self):
+        """Test that voice metadata is preserved in PhonemeSegment."""
+        from pykokoro.ssmd_parser import (
+            SSMDSegment,
+            SSMDMetadata,
+            ssmd_segments_to_phoneme_segments,
+        )
+        from pykokoro.tokenizer import create_tokenizer
+
+        tokenizer = create_tokenizer()
+
+        # Create SSMD segments with voice metadata
+        ssmd_segments = [
+            SSMDSegment(
+                text="Hello",
+                pause_after=0.5,
+                metadata=SSMDMetadata(voice_name="af_sarah"),
+            ),
+            SSMDSegment(
+                text="World",
+                pause_after=0.0,
+                metadata=SSMDMetadata(voice_name="am_michael"),
+            ),
+        ]
+
+        phoneme_segments = ssmd_segments_to_phoneme_segments(
+            ssmd_segments,
+            initial_pause=0.0,
+            tokenizer=tokenizer,
+        )
+
+        assert len(phoneme_segments) == 2
+        assert phoneme_segments[0].ssmd_metadata is not None
+        assert phoneme_segments[0].ssmd_metadata["voice_name"] == "af_sarah"
+        assert phoneme_segments[1].ssmd_metadata is not None
+        assert phoneme_segments[1].ssmd_metadata["voice_name"] == "am_michael"
+
+    def test_parse_ssmd_with_voice_creates_metadata(self):
+        """Test that parsing SSMD text with voice creates proper metadata."""
+        from pykokoro.ssmd_parser import parse_ssmd_to_segments
+        from pykokoro.tokenizer import create_tokenizer
+
+        tokenizer = create_tokenizer()
+
+        text = "[Hello](voice: af_sarah) ...s [World](voice: am_michael)"
+        initial_pause, segments = parse_ssmd_to_segments(text, tokenizer)
+
+        assert len(segments) == 2
+        assert segments[0].metadata.voice_name == "af_sarah"
+        assert segments[0].pause_after == 0.6  # sentence pause
+        assert segments[1].metadata.voice_name == "am_michael"
+
+    def test_voice_resolver_called_for_segment_with_voice(self):
+        """Test that AudioGenerator calls voice_resolver for segments with voice metadata."""
+        from pykokoro.audio_generator import AudioGenerator
+        from pykokoro.phonemes import PhonemeSegment
+        from pykokoro.tokenizer import create_tokenizer
+        from unittest.mock import Mock
+        import numpy as np
+
+        tokenizer = create_tokenizer()
+
+        # Create mock session
+        mock_session = Mock()
+        mock_session.get_inputs.return_value = [Mock(name="input_ids")]
+        mock_session.run.return_value = [np.zeros((1, 100), dtype=np.float32)]
+
+        generator = AudioGenerator(mock_session, tokenizer)
+
+        # Create segments with voice metadata
+        segments = [
+            PhonemeSegment(
+                text="Hello",
+                phonemes="hɛˈloʊ",
+                tokens=[1, 2, 3],
+                ssmd_metadata={"voice_name": "af_sarah"},
+            ),
+            PhonemeSegment(
+                text="World",
+                phonemes="wɝld",
+                tokens=[4, 5],
+                ssmd_metadata={"voice_name": "am_michael"},
+            ),
+        ]
+
+        # Mock voice resolver
+        voice_calls = []
+
+        def mock_voice_resolver(voice_name: str) -> np.ndarray:
+            voice_calls.append(voice_name)
+            return np.zeros(512, dtype=np.float32)
+
+        default_voice = np.zeros(512, dtype=np.float32)
+
+        # Generate with voice resolver
+        audio = generator.generate_from_segments(
+            segments,
+            default_voice,
+            speed=1.0,
+            trim_silence=False,
+            voice_resolver=mock_voice_resolver,
+        )
+
+        # Verify voice_resolver was called for each segment
+        assert len(voice_calls) == 2
+        assert voice_calls[0] == "af_sarah"
+        assert voice_calls[1] == "am_michael"
+
+    def test_voice_switching_without_resolver_uses_default(self):
+        """Test that segments with voice metadata but no resolver use default voice."""
+        from pykokoro.audio_generator import AudioGenerator
+        from pykokoro.phonemes import PhonemeSegment
+        from pykokoro.tokenizer import create_tokenizer
+        from unittest.mock import Mock
+        import numpy as np
+
+        tokenizer = create_tokenizer()
+
+        # Create mock session
+        mock_session = Mock()
+        mock_session.get_inputs.return_value = [Mock(name="input_ids")]
+        mock_session.run.return_value = [np.zeros((1, 100), dtype=np.float32)]
+
+        generator = AudioGenerator(mock_session, tokenizer)
+
+        # Create segment with voice metadata
+        segments = [
+            PhonemeSegment(
+                text="Hello",
+                phonemes="hɛˈloʊ",
+                tokens=[1, 2, 3],
+                ssmd_metadata={"voice_name": "af_sarah"},
+            ),
+        ]
+
+        default_voice = np.zeros(512, dtype=np.float32)
+
+        # Generate WITHOUT voice resolver (should use default)
+        audio = generator.generate_from_segments(
+            segments,
+            default_voice,
+            speed=1.0,
+            trim_silence=False,
+            voice_resolver=None,  # No resolver
+        )
+
+        # Should succeed and use default voice
+        assert isinstance(audio, np.ndarray)
+
+    def test_text_to_phoneme_segments_preserves_voice_metadata(self):
+        """Test end-to-end: text with SSMD voice → PhonemeSegments with metadata."""
+        from pykokoro.phonemes import text_to_phoneme_segments
+        from pykokoro.tokenizer import create_tokenizer
+
+        tokenizer = create_tokenizer()
+
+        text = "[Hello there](voice: af_sarah) ...s [Goodbye](voice: am_michael)"
+
+        segments = text_to_phoneme_segments(
+            text=text,
+            tokenizer=tokenizer,
+            lang="en-us",
+        )
+
+        # Should have 2 segments with voice metadata
+        assert len(segments) >= 2
+
+        # Find segments with actual text (not empty pause segments)
+        text_segments = [s for s in segments if s.text.strip()]
+        assert len(text_segments) == 2
+
+        assert text_segments[0].ssmd_metadata is not None
+        assert text_segments[0].ssmd_metadata["voice_name"] == "af_sarah"
+        assert text_segments[1].ssmd_metadata is not None
+        assert text_segments[1].ssmd_metadata["voice_name"] == "am_michael"
