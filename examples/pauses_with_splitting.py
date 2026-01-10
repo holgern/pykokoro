@@ -100,13 +100,16 @@ def main():
     sentence_total = pause_counts["...s"] * 0.6
     paragraph_total = pause_counts["...p"] * 1.2
     print(
-        f"  Clause pauses (...c):     {pause_counts['...c']} × 0.3s = {clause_total:.1f}s"
+        f"  Clause pauses (...c):     "
+        f"{pause_counts['...c']} × 0.3s = {clause_total:.1f}s"
     )
     print(
-        f"  Sentence pauses (...s):   {pause_counts['...s']} × 0.6s = {sentence_total:.1f}s"
+        f"  Sentence pauses (...s):   "
+        f"{pause_counts['...s']} × 0.6s = {sentence_total:.1f}s"
     )
     print(
-        f"  Paragraph pauses (...p):  {pause_counts['...p']} × 1.2s = {paragraph_total:.1f}s"
+        f"  Paragraph pauses (...p):  "
+        f"{pause_counts['...p']} × 1.2s = {paragraph_total:.1f}s"
     )
     print(f"  Total pause time:         ~{total_pause_time:.1f}s")
     print(f"  Estimated speech time:    ~{duration - total_pause_time:.1f}s")

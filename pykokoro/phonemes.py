@@ -686,7 +686,6 @@ def convert_pause_segments_to_phoneme_segments(
 # Old pause markers (.), (..), (...) have been removed in favor of SSMD syntax
 from .ssmd_parser import (  # noqa: E402
     has_ssmd_markup,
-    parse_ssmd_breaks,
     parse_ssmd_to_segments,
     ssmd_segments_to_phoneme_segments,
 )

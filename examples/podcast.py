@@ -26,6 +26,8 @@ import pykokoro
 # Podcast script using SSMD voice annotations
 # Each speaker's dialogue is wrapped in [text](voice: name) annotation
 # Pauses are added with SSMD break markers: ...s (sentence pause)
+# fmt: off
+# ruff: noqa: E501
 PODCAST_SCRIPT = """
 @voice: af_sarah
 Welcome to Tech Talk! I'm Sarah, and today we're diving into the fascinating world of text-to-speech technology.
@@ -72,6 +74,7 @@ Thank you so much for joining us, Nicole! And thank you to our listeners for tun
 @voice: am_michael
 Until next time, keep exploring the future of technology!
 """
+# fmt: on
 
 
 def main():
@@ -83,13 +86,14 @@ def main():
     print("-" * 70)
     # Show first few lines as preview
     lines = PODCAST_SCRIPT.strip().split("\n")
-    for i, line in enumerate(lines[:8], 1):
+    for line in lines[:8]:
         if line.strip():
             print(line)
     print("...")
-    print(
-        f"({len([l for l in lines if l.strip() and l.startswith('[')])} speaker segments)"
+    speaker_count = len(
+        [line for line in lines if line.strip() and line.startswith("@voice:")]
     )
+    print(f"({speaker_count} speaker segments)")
     print("-" * 70)
 
     print("\nInitializing TTS engine...")

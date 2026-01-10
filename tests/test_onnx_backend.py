@@ -538,7 +538,7 @@ class TestCreateWithPauses:
             pytest.skip("Could not inspect signature")
 
     def test_ssmd_breaks_automatically_detected(self, monkeypatch):
-        """Test that SSMD break markers in text are automatically detected and processed."""
+        """Test SSMD break markers automatically detected and processed."""
         from pykokoro.onnx_backend import Kokoro
 
         kokoro = Kokoro()

@@ -2,7 +2,8 @@
 
 import logging
 import re
-from typing import Callable, Literal
+from collections.abc import Callable
+from typing import Literal
 
 import numpy as np
 import onnxruntime as rt

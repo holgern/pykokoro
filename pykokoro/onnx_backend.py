@@ -9,7 +9,7 @@ import sqlite3
 import urllib.request
 from collections.abc import AsyncGenerator, Callable, Generator
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 import numpy as np
 import onnxruntime as rt
@@ -22,6 +22,9 @@ from .tokenizer import EspeakConfig, Tokenizer, TokenizerConfig
 from .trim import trim as trim_audio
 from .utils import get_user_cache_path
 from .voice_manager import VoiceBlend, VoiceManager
+
+if TYPE_CHECKING:
+    from ssmd import Document
 
 # Logger for debugging
 logger = logging.getLogger(__name__)
@@ -1934,7 +1937,7 @@ class Kokoro:
 
     def create_from_document(
         self,
-        document: "Document",
+        document: "Document",  # noqa: F821
         voice: str | np.ndarray | VoiceBlend,
         speed: float = 1.0,
         lang: str = "en-us",
@@ -1970,7 +1973,6 @@ class Kokoro:
             >>> tts = Kokoro()
             >>> audio, sr = tts.create_from_document(doc, voice="af_sarah")
         """
-        from ssmd import Document
 
         # Convert document to SSMD text
         ssmd_text = document.to_ssmd()

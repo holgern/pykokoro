@@ -185,7 +185,8 @@ audio, sr = tts.create_from_phonemes(phonemes, voice="af_sarah")
 
 ### Pause Control
 
-PyKokoro uses SSMD (Speech Synthesis Markdown) syntax for controlling pauses in generated speech:
+PyKokoro uses SSMD (Speech Synthesis Markdown) syntax for controlling pauses in
+generated speech:
 
 #### 1. SSMD Break Markers
 
@@ -212,7 +213,8 @@ audio, sr = tts.create(
 - `...500ms` - Custom pause (500 milliseconds)
 - `...2s` - Custom pause (2 seconds)
 
-**Note:** Bare `...` (ellipsis) is NOT treated as a pause and will be phonemized normally.
+**Note:** Bare `...` (ellipsis) is NOT treated as a pause and will be phonemized
+normally.
 
 **Custom Pause Durations:**
 
