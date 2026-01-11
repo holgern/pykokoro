@@ -279,6 +279,149 @@ For the most natural-sounding speech, use automatic pause insertion:
 
 See ``examples/automatic_pauses_demo.py`` for a complete demonstration.
 
+Text Normalization (Say-As)
+----------------------------
+
+Basic Number Normalization
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from pykokoro import Kokoro
+   import soundfile as sf
+
+   with Kokoro() as kokoro:
+       # Cardinal numbers
+       text = "I have [123](as: cardinal) apples and [456](as: cardinal) oranges."
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       sf.write("cardinal_numbers.wav", audio, sr)
+       # TTS says: "I have one hundred twenty-three apples and four hundred fifty-six oranges"
+
+       # Ordinal numbers
+       text = "He came in [1](as: ordinal) place, she came in [2](as: ordinal) place."
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       sf.write("ordinal_numbers.wav", audio, sr)
+       # TTS says: "He came in first place, she came in second place"
+
+       # Digits (spell out)
+       text = "My PIN is [1234](as: digits)"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       sf.write("digits.wav", audio, sr)
+       # TTS says: "My PIN is one two three four"
+
+Date and Time Examples
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from pykokoro import Kokoro
+   import soundfile as sf
+
+   with Kokoro() as kokoro:
+       # Date with format
+       text = "The meeting is on [12/31/2024](as: date, format: mdy)"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       sf.write("date.wav", audio, sr)
+       # TTS says: "The meeting is on December thirty-first, two thousand twenty-four"
+
+       # Time
+       text = "The time is [14:30](as: time)"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       sf.write("time.wav", audio, sr)
+       # TTS says: "The time is two thirty PM"
+
+Telephone and Units
+~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from pykokoro import Kokoro
+   import soundfile as sf
+
+   with Kokoro() as kokoro:
+       # Telephone number
+       text = "Call us at [+1-555-0123](as: telephone)"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       sf.write("telephone.wav", audio, sr)
+       # TTS says: "Call us at plus one five five five oh one two three"
+
+       # Units
+       text = "The package weighs [5kg](as: unit)"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       sf.write("units.wav", audio, sr)
+       # TTS says: "The package weighs five kilograms"
+
+       # Fractions
+       text = "Add [1/2](as: fraction) cup of flour"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       sf.write("fractions.wav", audio, sr)
+       # TTS says: "Add one half cup of flour"
+
+Characters and Text
+~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from pykokoro import Kokoro
+   import soundfile as sf
+
+   with Kokoro() as kokoro:
+       # Spell out characters
+       text = "The code is [ABC](as: characters)"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       sf.write("characters.wav", audio, sr)
+       # TTS says: "The code is A B C"
+
+Multi-Language Say-As
+~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from pykokoro import Kokoro
+   import soundfile as sf
+
+   with Kokoro() as kokoro:
+       # French cardinal
+       text = "J'ai [123](as: cardinal) pommes"
+       audio, sr = kokoro.create(text, voice="ff_siwis", lang="fr-fr")
+       sf.write("french_cardinal.wav", audio, sr)
+       # TTS says: "J'ai cent vingt-trois pommes"
+
+       # German ordinal
+       text = "Er ist [3](as: ordinal)"
+       audio, sr = kokoro.create(text, voice="gf_maria", lang="de-de")
+       sf.write("german_ordinal.wav", audio, sr)
+       # TTS says: "Er ist dritte"
+
+Combined Features Demo
+~~~~~~~~~~~~~~~~~~~~~~
+
+Combine say-as with other SSMD features:
+
+.. code-block:: python
+
+   from pykokoro import Kokoro
+   import soundfile as sf
+
+   with Kokoro() as kokoro:
+       # Say-as + pauses + emphasis
+       text = """
+       The winner is *[1](as: ordinal)*! (..)
+       Second place goes to [2](as: ordinal). (.)
+       And [3](as: ordinal) place is also impressive! (..)
+
+       The total prize money is [1000](as: cardinal) +loud+ dollars!
+       """
+
+       audio, sr = kokoro.create(
+           text,
+           voice="af_sarah",
+           enable_pauses=True
+       )
+       sf.write("combined_features.wav", audio, sr)
+
+See ``examples/say_as_demo.py`` for a comprehensive demonstration of all say-as features.
+
 Speed Control
 -------------
 
