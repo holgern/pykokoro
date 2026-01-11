@@ -8,3 +8,4 @@ pytest-cov
 coverage
 tox
 lingua-language-detector
+kokorog2p[all]
