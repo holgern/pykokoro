@@ -9,6 +9,7 @@ import numpy as np
 import onnxruntime as rt
 
 from .phonemes import PhonemeSegment
+from .prosody import apply_prosody
 from .tokenizer import Tokenizer
 from .trim import trim as trim_audio
 from .utils import generate_silence
@@ -276,6 +277,10 @@ class AudioGenerator:
                         )
                         if trim_silence:
                             audio, _ = trim_audio(audio)
+
+                        # Apply prosody modifications if present
+                        audio = self._apply_segment_prosody(audio, segment)
+
                         audio_parts.append(audio)
                 else:
                     audio, _ = self.generate_from_phonemes(
@@ -283,6 +288,10 @@ class AudioGenerator:
                     )
                     if trim_silence:
                         audio, _ = trim_audio(audio)
+
+                    # Apply prosody modifications if present
+                    audio = self._apply_segment_prosody(audio, segment)
+
                     audio_parts.append(audio)
 
             # Add pause after segment (works for both empty and non-empty phonemes)
@@ -294,6 +303,33 @@ class AudioGenerator:
             if audio_parts
             else np.array([], dtype=np.float32)
         )
+
+    def _apply_segment_prosody(
+        self, audio: np.ndarray, segment: PhonemeSegment
+    ) -> np.ndarray:
+        """Apply prosody modifications from segment metadata to audio.
+
+        Args:
+            audio: Input audio array
+            segment: PhonemeSegment with potential prosody metadata
+
+        Returns:
+            Audio with prosody modifications applied
+        """
+        if not segment.ssmd_metadata:
+            return audio
+
+        volume = segment.ssmd_metadata.get("prosody_volume")
+        pitch = segment.ssmd_metadata.get("prosody_pitch")
+        rate = segment.ssmd_metadata.get("prosody_rate")
+
+        # Apply prosody if any prosody metadata is present
+        if volume or pitch or rate:
+            audio = apply_prosody(
+                audio, SAMPLE_RATE, volume=volume, pitch=pitch, rate=rate
+            )
+
+        return audio
 
     def generate_from_tokens(
         self,

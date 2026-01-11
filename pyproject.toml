@@ -26,7 +26,7 @@ dependencies = [
     "chardet",
     "charset-normalizer",
     "huggingface-hub",
-    "ssmd>=0.1.0",
+    "ssmd>=0.4.1",
 ]
 classifiers=[
     'Development Status :: 4 - Beta',
@@ -54,6 +54,10 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
 ]
+prosody = [
+    "audiomentations>=0.36.0",  # Primary, highest quality
+    "librosa>=0.10.0",          # Fallback
+]
 gpu = ["onnxruntime-gpu>=1.17.0"]
 openvino = ["onnxruntime-openvino>=1.17.0"]
 directml = ["onnxruntime-directml>=1.17.0"]
@@ -63,6 +67,8 @@ all = [
     "onnxruntime-openvino>=1.17.0",
     "onnxruntime-directml>=1.17.0",
     "coremltools>=7.0",
+    "audiomentations>=0.36.0",
+    "librosa>=0.10.0",
 ]
 
 [tool.setuptools_scm]

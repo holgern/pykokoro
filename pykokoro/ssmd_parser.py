@@ -395,11 +395,11 @@ def ssmd_segments_to_phoneme_segments(
         if ssmd_seg.metadata.phonemes:
             # Use explicit phoneme override
             phonemes = ssmd_seg.metadata.phonemes
-            tokens = tokenizer.text_to_tokens(phonemes, lang=lang)
+            tokens = tokenizer.tokenize(phonemes)
         else:
             # Phonemize the text
             phonemes = tokenizer.phonemize(ssmd_seg.text, lang=lang)
-            tokens = tokenizer.text_to_tokens(phonemes, lang=lang)
+            tokens = tokenizer.tokenize(phonemes)
 
         # Create phoneme segment with voice metadata
         seg = PhonemeSegment(
