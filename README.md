@@ -20,6 +20,8 @@ A Python library for Kokoro TTS (Text-to-Speech) using ONNX runtime.
 - **GPU Acceleration**: Optional CUDA, CoreML, or DirectML support
 - **Phoneme Support**: Advanced phoneme-based generation with kokorog2p
 - **Hugging Face Integration**: Automatic model downloading from Hugging Face Hub
+- **Text Normalization**: Automatic say-as support for numbers, dates, phone numbers,
+  and more using SSMD markup
 
 ## Installation
 
@@ -302,7 +304,99 @@ audio, sr = tts.create(
 See `examples/pauses_demo.py`, `examples/pauses_with_splitting.py`, and
 `examples/automatic_pauses_demo.py` for complete examples.
 
-#### 3. Optimal Phoneme Length for Better Quality (NEW!)
+### Text Normalization (Say-As)
+
+PyKokoro supports automatic text normalization using SSMD (Speech Synthesis
+Markdown) syntax. Convert numbers, dates, phone numbers, and more into
+speakable text:
+
+```python
+# Cardinal numbers
+text = "I have [123](as: cardinal) apples"
+audio, sr = tts.create(text, voice="af_sarah")
+# TTS says: "I have one hundred twenty-three apples"
+
+# Ordinal numbers
+text = "I came in [3](as: ordinal) place"
+# TTS says: "I came in third place"
+
+# Digits (spell out)
+text = "My PIN is [1234](as: digits)"
+# TTS says: "My PIN is one two three four"
+
+# Telephone numbers
+text = "Call [+1-555-0123](as: telephone)"
+# TTS says: "Call plus one five five five oh one two three"
+
+# Dates with custom formatting
+text = "Today is [12/31/2024](as: date, format: mdy)"
+# TTS says: "Today is December thirty-first, two thousand twenty-four"
+
+# Time (12-hour or 24-hour)
+text = "The time is [14:30](as: time)"
+# TTS says: "The time is two thirty PM"
+
+# Characters (spell out)
+text = "The code is [ABC](as: characters)"
+# TTS says: "The code is A B C"
+
+# Fractions
+text = "Add [1/2](as: fraction) cup of sugar"
+# TTS says: "Add one half cup of sugar"
+
+# Units
+text = "The package weighs [5kg](as: unit)"
+# TTS says: "The package weighs five kilograms"
+```
+
+**Supported Say-As Types:**
+
+- `cardinal` - Numbers as cardinals: "123" → "one hundred twenty-three"
+- `ordinal` - Numbers as ordinals: "3" → "third"
+- `digits` - Spell out digits: "123" → "one two three"
+- `number` - Alias for cardinal
+- `fraction` - Fractions: "1/2" → "one half"
+- `characters` - Spell out text: "ABC" → "A B C"
+- `telephone` - Phone numbers: "+1-555-0123" → "plus one five five five oh one two three"
+- `date` - Dates with format support (mdy, dmy, ymd, ym, my, md, dm, d, m, y)
+- `time` - Time in 12h or 24h format
+- `unit` - Units: "5kg" → "five kilograms"
+- `expletive` - Censors to "beep"
+
+**Multi-language Support:**
+
+Say-as works with multiple languages (English, French, German, Spanish, and more):
+
+```python
+# French cardinal
+text = "[123](as: cardinal)"
+audio, sr = tts.create(text, voice="ff_siwis", lang="fr-fr")
+# TTS says: "cent vingt-trois"
+
+# German ordinal
+text = "[3](as: ordinal)"
+audio, sr = tts.create(text, voice="gf_maria", lang="de-de")
+# TTS says: "dritte"
+```
+
+**Combining with Other Features:**
+
+Say-as works seamlessly with all SSMD features:
+
+```python
+# With prosody
+text = "[100](as: cardinal) +loud+ dollars!"
+
+# With pauses
+text = "[First](as: ordinal) ...c [second](as: ordinal) ...c [third](as: ordinal)!"
+
+# With emphasis
+text = "The winner is *[1](as: ordinal)*!"
+```
+
+See `examples/say_as_demo.py` for comprehensive examples.
+
+#### 4. Optimal Phoneme Length for Better Quality
 
 When using sentence splitting, very short sentences (like "Why?" or "Go!") can produce
 poor audio quality when processed individually (only 3-8 phonemes each). The
