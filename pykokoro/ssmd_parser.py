@@ -8,6 +8,7 @@ rich markup syntax for TTS generation including:
 - Language switching: [Bonjour](fr)
 - Phonetic pronunciation: [tomato](ph: təˈmeɪtoʊ)
 - Substitution: [H2O](sub: water)
+- Say-as: [123](as: cardinal), [3rd](as: ordinal), [+1-555-0123](as: telephone)
 - Voice markers: @voice: name
 - Markers: @marker_name
 
@@ -42,6 +43,9 @@ class SSMDMetadata:
         language: Language code override for this segment
         phonemes: Explicit phoneme string (bypasses G2P)
         substitution: Substitution text (replaces original before G2P)
+        say_as_interpret: Say-as interpretation type (e.g., "telephone", "date")
+        say_as_format: Say-as format attribute (e.g., "mdy" for dates)
+        say_as_detail: Say-as detail attribute (e.g., "2" for cardinal detail)
         markers: List of marker names in this segment
         voice_name: Voice name for this segment (e.g., "af_sarah", "Joanna")
         voice_language: Voice language attribute (e.g., "en-US", "fr-FR")
@@ -56,6 +60,9 @@ class SSMDMetadata:
     language: str | None = None
     phonemes: str | None = None
     substitution: str | None = None
+    say_as_interpret: str | None = None
+    say_as_format: str | None = None
+    say_as_detail: str | None = None
     markers: list[str] = field(default_factory=list)
     voice_name: str | None = None
     voice_language: str | None = None
@@ -72,6 +79,9 @@ class SSMDMetadata:
             "language": self.language,
             "phonemes": self.phonemes,
             "substitution": self.substitution,
+            "say_as_interpret": self.say_as_interpret,
+            "say_as_format": self.say_as_format,
+            "say_as_detail": self.say_as_detail,
             "markers": self.markers,
             "voice_name": self.voice_name,
             "voice_language": self.voice_language,
@@ -179,20 +189,39 @@ def _convert_break_strength_to_duration(
 
 def _map_ssmd_segment_to_metadata(
     ssmd_seg: SSMDParserSegment,
+    lang: str = "en-us",
 ) -> tuple[str, SSMDMetadata]:
     """Map SSMD parser segment to PyKokoro metadata.
 
     Args:
         ssmd_seg: SSMDSegment from SSMD parser
+        lang: Language code for say-as normalization
 
     Returns:
         Tuple of (text, metadata)
     """
+    from .say_as import normalize_say_as
+
     metadata = SSMDMetadata()
 
-    # Handle text transformations (substitution > phoneme > original)
+    # Handle text transformations (priority: say-as > substitution > phoneme > original)
     text = ssmd_seg.text
-    if ssmd_seg.substitution:
+
+    if ssmd_seg.say_as:
+        # Store say-as metadata
+        metadata.say_as_interpret = ssmd_seg.say_as.interpret_as
+        metadata.say_as_format = ssmd_seg.say_as.format
+        metadata.say_as_detail = ssmd_seg.say_as.detail
+
+        # Normalize text based on interpret-as type
+        text = normalize_say_as(
+            text,
+            interpret_as=ssmd_seg.say_as.interpret_as,
+            lang=lang,
+            format_str=ssmd_seg.say_as.format,
+            detail=ssmd_seg.say_as.detail,
+        )
+    elif ssmd_seg.substitution:
         text = ssmd_seg.substitution
         metadata.substitution = ssmd_seg.substitution
     elif ssmd_seg.phoneme:
@@ -298,8 +327,12 @@ def parse_ssmd_to_segments(
 
         # Process each segment in the sentence
         for seg_idx, ssmd_seg in enumerate(sentence.segments):
+            # Determine language for this segment
+            # Priority: segment lang > sentence lang > default
+            segment_lang = ssmd_seg.language or lang
+
             # Map SSMD segment to PyKokoro metadata
-            seg_text, metadata = _map_ssmd_segment_to_metadata(ssmd_seg)
+            seg_text, metadata = _map_ssmd_segment_to_metadata(ssmd_seg, segment_lang)
 
             # Apply voice context if segment doesn't have its own voice
             if not metadata.voice_name and voice_metadata.voice_name:

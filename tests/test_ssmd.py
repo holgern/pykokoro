@@ -432,3 +432,163 @@ class TestSSMDVoiceSwitching:
         assert text_segments[0].ssmd_metadata["voice_name"] == "af_sarah"
         assert text_segments[1].ssmd_metadata is not None
         assert text_segments[1].ssmd_metadata["voice_name"] == "am_michael"
+
+
+class TestSSMDSayAsSupport:
+    """Tests for say-as support in SSMD integration."""
+
+    def test_say_as_cardinal_normalization(self):
+        """Test say-as cardinal number normalization."""
+        from pykokoro.phonemes import text_to_phoneme_segments
+        from pykokoro.tokenizer import Tokenizer
+
+        tokenizer = Tokenizer()
+        text = "I have [123](as: cardinal) apples"
+        segments = text_to_phoneme_segments(text, tokenizer, lang="en-us")
+
+        # Find segment with normalized number
+        normalized_seg = next(
+            (
+                s
+                for s in segments
+                if s.ssmd_metadata
+                and s.ssmd_metadata.get("say_as_interpret") == "cardinal"
+            ),
+            None,
+        )
+        assert normalized_seg is not None
+        assert "hundred" in normalized_seg.text.lower()
+        assert normalized_seg.ssmd_metadata["say_as_interpret"] == "cardinal"
+
+    def test_say_as_ordinal_normalization(self):
+        """Test say-as ordinal number normalization."""
+        from pykokoro.phonemes import text_to_phoneme_segments
+        from pykokoro.tokenizer import Tokenizer
+
+        tokenizer = Tokenizer()
+        text = "I came in [3](as: ordinal) place"
+        segments = text_to_phoneme_segments(text, tokenizer, lang="en-us")
+
+        normalized_seg = next(
+            (
+                s
+                for s in segments
+                if s.ssmd_metadata
+                and s.ssmd_metadata.get("say_as_interpret") == "ordinal"
+            ),
+            None,
+        )
+        assert normalized_seg is not None
+        assert normalized_seg.text.lower() == "third"
+        assert normalized_seg.ssmd_metadata["say_as_interpret"] == "ordinal"
+
+    def test_say_as_digits_normalization(self):
+        """Test say-as digits normalization."""
+        from pykokoro.phonemes import text_to_phoneme_segments
+        from pykokoro.tokenizer import Tokenizer
+
+        tokenizer = Tokenizer()
+        text = "My PIN is [1234](as: digits)"
+        segments = text_to_phoneme_segments(text, tokenizer, lang="en-us")
+
+        normalized_seg = next(
+            (
+                s
+                for s in segments
+                if s.ssmd_metadata
+                and s.ssmd_metadata.get("say_as_interpret") == "digits"
+            ),
+            None,
+        )
+        assert normalized_seg is not None
+        assert "one" in normalized_seg.text.lower()
+        assert "two" in normalized_seg.text.lower()
+        assert "three" in normalized_seg.text.lower()
+        assert "four" in normalized_seg.text.lower()
+
+    def test_say_as_characters_normalization(self):
+        """Test say-as characters normalization."""
+        from pykokoro.phonemes import text_to_phoneme_segments
+        from pykokoro.tokenizer import Tokenizer
+
+        tokenizer = Tokenizer()
+        text = "Spell [ABC](as: characters)"
+        segments = text_to_phoneme_segments(text, tokenizer, lang="en-us")
+
+        normalized_seg = next(
+            (
+                s
+                for s in segments
+                if s.ssmd_metadata
+                and s.ssmd_metadata.get("say_as_interpret") == "characters"
+            ),
+            None,
+        )
+        assert normalized_seg is not None
+        assert normalized_seg.text == "A B C"
+
+    def test_say_as_telephone_normalization(self):
+        """Test say-as telephone normalization."""
+        from pykokoro.phonemes import text_to_phoneme_segments
+        from pykokoro.tokenizer import Tokenizer
+
+        tokenizer = Tokenizer()
+        text = "Call [+1-555-0123](as: telephone)"
+        segments = text_to_phoneme_segments(text, tokenizer, lang="en-us")
+
+        normalized_seg = next(
+            (
+                s
+                for s in segments
+                if s.ssmd_metadata
+                and s.ssmd_metadata.get("say_as_interpret") == "telephone"
+            ),
+            None,
+        )
+        assert normalized_seg is not None
+        assert "plus" in normalized_seg.text.lower()
+        assert "one" in normalized_seg.text.lower()
+
+    def test_say_as_expletive_censoring(self):
+        """Test say-as expletive censoring."""
+        from pykokoro.phonemes import text_to_phoneme_segments
+        from pykokoro.tokenizer import Tokenizer
+
+        tokenizer = Tokenizer()
+        text = "This is [inappropriate](as: expletive)"
+        segments = text_to_phoneme_segments(text, tokenizer, lang="en-us")
+
+        normalized_seg = next(
+            (
+                s
+                for s in segments
+                if s.ssmd_metadata
+                and s.ssmd_metadata.get("say_as_interpret") == "expletive"
+            ),
+            None,
+        )
+        assert normalized_seg is not None
+        assert normalized_seg.text == "beep"
+
+    def test_say_as_metadata_preserved(self):
+        """Test that say-as metadata is preserved in segments."""
+        from pykokoro.phonemes import text_to_phoneme_segments
+        from pykokoro.tokenizer import Tokenizer
+
+        tokenizer = Tokenizer()
+        text = "The year [2024](as: cardinal)"
+        segments = text_to_phoneme_segments(text, tokenizer, lang="en-us")
+
+        # Check metadata is preserved
+        say_as_seg = next(
+            (
+                s
+                for s in segments
+                if s.ssmd_metadata and s.ssmd_metadata.get("say_as_interpret")
+            ),
+            None,
+        )
+        assert say_as_seg is not None
+        assert say_as_seg.ssmd_metadata["say_as_interpret"] == "cardinal"
+        assert say_as_seg.ssmd_metadata.get("say_as_format") is None
+        assert say_as_seg.ssmd_metadata.get("say_as_detail") is None

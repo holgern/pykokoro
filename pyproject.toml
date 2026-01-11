@@ -27,6 +27,8 @@ dependencies = [
     "charset-normalizer",
     "huggingface-hub",
     "ssmd>=0.4.1",
+    "num2words>=0.5.12",
+    "babel>=2.12.0",
 ]
 classifiers=[
     'Development Status :: 4 - Beta',
