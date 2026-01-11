@@ -255,9 +255,6 @@ class Tokenizer:
             else None
         )
 
-        # Phoneme dictionary cache (lazy loaded)
-        self._phoneme_dictionary: dict[str, str] | None = None
-
         # Log if espeak_config was provided (deprecated)
         if espeak_config is not None and (
             espeak_config.lib_path or espeak_config.data_path
@@ -266,18 +263,23 @@ class Tokenizer:
                 "EspeakConfig is deprecated. kokorog2p manages espeak internally."
             )
 
-        # Load phoneme dictionary if specified
-        if self.config.phoneme_dictionary_path:
-            try:
-                self._phoneme_dictionary = self._load_phoneme_dictionary(
-                    self.config.phoneme_dictionary_path
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to load phoneme dictionary from "
-                    f"'{self.config.phoneme_dictionary_path}': {e}. "
-                    f"Continuing without custom phoneme dictionary."
-                )
+    def __getattribute__(self, name: str):
+        """Override to warn about deprecated attributes.
+
+        This method intercepts attribute access to provide deprecation warnings
+        for legacy attributes that are maintained for backward compatibility.
+        """
+        # Warn when accessing deprecated _phoneme_dictionary attribute
+        if name == "_phoneme_dictionary":
+            import warnings
+
+            warnings.warn(
+                "_phoneme_dictionary is deprecated and will be removed "
+                "in a future version. Use _phoneme_dictionary_obj instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return super().__getattribute__(name)
 
     def _validate_mixed_language_config(self) -> None:
         """Delegate to MixedLanguageHandler.validate_config (backward compatibility)."""

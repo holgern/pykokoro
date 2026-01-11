@@ -9,7 +9,7 @@ import sqlite3
 import urllib.request
 from collections.abc import AsyncGenerator, Callable, Generator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import onnxruntime as rt
@@ -18,6 +18,7 @@ from huggingface_hub import hf_hub_download
 from .audio_generator import AudioGenerator
 from .onnx_session import OnnxSessionManager
 from .phonemes import PhonemeSegment
+from .provider_config import ProviderConfigManager
 from .tokenizer import EspeakConfig, Tokenizer, TokenizerConfig
 from .trim import trim as trim_audio
 from .utils import get_user_cache_path
@@ -1077,7 +1078,7 @@ class Kokoro:
         provider_options: dict[str, Any] | None = None,
         vocab_version: str = "v1.0",
         espeak_config: EspeakConfig | None = None,
-        tokenizer_config: Optional["TokenizerConfig"] = None,
+        tokenizer_config: "TokenizerConfig | None" = None,
         model_quality: ModelQuality | None = None,
         model_source: ModelSource = DEFAULT_MODEL_SOURCE,
         model_variant: ModelVariant = DEFAULT_MODEL_VARIANT,
@@ -1357,40 +1358,12 @@ class Kokoro:
         Returns:
             Dictionary of default provider options (string values)
         """
-        defaults: dict[str, str] = {}
-
-        if provider == "OpenVINOExecutionProvider":
-            # Use cache dir from PyKokoro
-            cache_dir = get_user_cache_path() / "openvino_cache"
-            cache_dir.mkdir(parents=True, exist_ok=True)
-
-            defaults = {
-                "device_type": "CPU_FP32",
-                "cache_dir": str(cache_dir),
-                "enable_opencl_throttling": "false",
-            }
-
-            # Auto-set precision based on model_quality
-            if self._model_quality in ["fp16", "fp16-gpu"]:
-                defaults["precision"] = "FP16"
-            elif self._model_quality == "fp32":
-                defaults["precision"] = "FP32"
-            else:
-                # For quantized models, use FP32 precision in OpenVINO
-                defaults["precision"] = "FP32"
-
-        elif provider == "CUDAExecutionProvider":
-            defaults = {
-                "device_id": "0",
-                "arena_extend_strategy": "kNextPowerOfTwo",
-            }
-
-        elif provider == "DmlExecutionProvider":
-            defaults = {
-                "device_id": "0",
-            }
-
-        return defaults
+        cache_path = get_user_cache_path()
+        return ProviderConfigManager.get_default_provider_options(
+            provider=provider,
+            model_quality=self._model_quality,
+            cache_path=cache_path,
+        )
 
     def _get_provider_specific_options(
         self,
@@ -1410,65 +1383,10 @@ class Kokoro:
         Returns:
             Dictionary of provider-specific options with string values
         """
-        # Define known provider options
-        provider_options_map: dict[str, list[str]] = {
-            "OpenVINOExecutionProvider": [
-                "device_type",
-                "precision",
-                "num_of_threads",
-                "cache_dir",
-                "enable_opencl_throttling",
-            ],
-            "CUDAExecutionProvider": [
-                "device_id",
-                "gpu_mem_limit",
-                "arena_extend_strategy",
-                "cudnn_conv_algo_search",
-                "do_copy_in_default_stream",
-            ],
-            "DmlExecutionProvider": ["device_id", "disable_metacommands"],
-            "CoreMLExecutionProvider": [
-                "MLComputeUnits",
-                "EnableOnSubgraphs",
-                "ModelFormat",
-            ],
-        }
-
-        known_options = provider_options_map.get(provider, [])
-
-        # General SessionOptions attributes (exclude from provider options)
-        session_attrs = {
-            "intra_op_num_threads",
-            "inter_op_num_threads",
-            "num_threads",
-            "threads",
-            "graph_optimization_level",
-            "execution_mode",
-            "enable_profiling",
-            "enable_mem_pattern",
-            "enable_cpu_mem_arena",
-            "enable_mem_reuse",
-            "log_severity_level",
-            "log_verbosity_level",
-        }
-
-        # Extract only provider-specific options
-        provider_opts: dict[str, str] = {}
-        for key, value in all_options.items():
-            if key in session_attrs:
-                continue  # Skip SessionOptions attributes
-
-            if known_options and key not in known_options:
-                logger.warning(
-                    f"Unknown option '{key}' for {provider}. "
-                    f"Known options: {known_options}"
-                )
-                continue
-
-            # Convert to string as required by ONNX Runtime
-            provider_opts[key] = str(value)
-
-        return provider_opts
+        return ProviderConfigManager.get_provider_specific_options(
+            provider=provider,
+            all_options=all_options,
+        )
 
     def _apply_provider_options(
         self,

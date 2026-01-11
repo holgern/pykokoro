@@ -76,7 +76,9 @@ class AudioGenerator:
         tokens = self._tokenizer.tokenize(phonemes)
 
         # Get voice style for this token length (clamp to valid range)
-        style_idx = min(len(tokens), MAX_PHONEME_LENGTH - 1)
+        # Ensure index doesn't exceed voice_style array bounds
+        max_style_idx = voice_style.shape[0] - 1 if len(voice_style.shape) > 0 else 0
+        style_idx = min(len(tokens), MAX_PHONEME_LENGTH - 1, max_style_idx)
         voice_style_indexed = voice_style[style_idx]
 
         # Pad tokens with start/end tokens
@@ -219,6 +221,113 @@ class AudioGenerator:
             else np.array([], dtype=np.float32)
         )
 
+    def _resolve_segment_voice(
+        self,
+        segment: PhonemeSegment,
+        default_voice_style: np.ndarray,
+        voice_resolver: Callable[[str], np.ndarray] | None,
+    ) -> np.ndarray:
+        """Resolve voice style for a segment, checking SSMD voice metadata.
+
+        Args:
+            segment: Phoneme segment to process
+            default_voice_style: Default voice style if no metadata present
+            voice_resolver: Optional callback to resolve voice names
+
+        Returns:
+            Voice style array for this segment
+        """
+        # Use default voice by default
+        segment_voice_style = default_voice_style
+
+        # Check for SSMD voice metadata override
+        if voice_resolver and segment.ssmd_metadata:
+            voice_name = segment.ssmd_metadata.get("voice_name")
+            if voice_name:
+                try:
+                    segment_voice_style = voice_resolver(voice_name)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to resolve voice '{voice_name}' for segment, "
+                        f"using default voice: {e}"
+                    )
+
+        return segment_voice_style
+
+    def _generate_single_segment_audio(
+        self,
+        segment: PhonemeSegment,
+        voice_style: np.ndarray,
+        speed: float,
+        trim_silence: bool,
+    ) -> list[np.ndarray]:
+        """Generate audio for a single segment with phonemes.
+
+        Handles splitting long phonemes and applying prosody modifications.
+
+        Args:
+            segment: Phoneme segment to process
+            voice_style: Voice style to use
+            speed: Speech speed multiplier
+            trim_silence: Whether to trim silence from segment boundaries
+
+        Returns:
+            List of audio arrays (may be multiple if phonemes were split)
+        """
+        audio_parts = []
+
+        # Skip empty phoneme segments
+        if not segment.phonemes.strip():
+            return audio_parts
+
+        # Handle long phonemes by splitting
+        if len(segment.phonemes) > MAX_PHONEME_LENGTH:
+            batches = self.split_phonemes(segment.phonemes)
+            for batch in batches:
+                audio = self._generate_and_process_audio(
+                    batch, voice_style, speed, trim_silence, segment
+                )
+                audio_parts.append(audio)
+        else:
+            audio = self._generate_and_process_audio(
+                segment.phonemes, voice_style, speed, trim_silence, segment
+            )
+            audio_parts.append(audio)
+
+        return audio_parts
+
+    def _generate_and_process_audio(
+        self,
+        phonemes: str,
+        voice_style: np.ndarray,
+        speed: float,
+        trim_silence: bool,
+        segment: PhonemeSegment,
+    ) -> np.ndarray:
+        """Generate audio from phonemes and apply processing.
+
+        Args:
+            phonemes: Phoneme string to generate
+            voice_style: Voice style to use
+            speed: Speech speed multiplier
+            trim_silence: Whether to trim silence
+            segment: Original segment for prosody metadata
+
+        Returns:
+            Processed audio array
+        """
+        # Generate raw audio
+        audio, _ = self.generate_from_phonemes(phonemes, voice_style, speed)
+
+        # Trim silence if requested
+        if trim_silence:
+            audio, _ = trim_audio(audio)
+
+        # Apply prosody modifications if present
+        audio = self._apply_segment_prosody(audio, segment)
+
+        return audio
+
     def generate_from_segments(
         self,
         segments: list[PhonemeSegment],
@@ -251,50 +360,18 @@ class AudioGenerator:
         audio_parts = []
 
         for segment in segments:
-            # Determine voice style for this segment
-            segment_voice_style = voice_style  # Default
+            # Resolve voice style for this segment (may use SSMD metadata)
+            segment_voice_style = self._resolve_segment_voice(
+                segment, voice_style, voice_resolver
+            )
 
-            # Check for SSMD voice metadata
-            if voice_resolver and segment.ssmd_metadata:
-                voice_name = segment.ssmd_metadata.get("voice_name")
-                if voice_name:
-                    try:
-                        segment_voice_style = voice_resolver(voice_name)
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to resolve voice '{voice_name}' for segment, "
-                            f"using default voice: {e}"
-                        )
+            # Generate audio for segment phonemes
+            segment_audio = self._generate_single_segment_audio(
+                segment, segment_voice_style, speed, trim_silence
+            )
+            audio_parts.extend(segment_audio)
 
-            # Generate speech if phonemes present
-            if segment.phonemes.strip():
-                # Handle long phonemes by splitting
-                if len(segment.phonemes) > MAX_PHONEME_LENGTH:
-                    batches = self.split_phonemes(segment.phonemes)
-                    for batch in batches:
-                        audio, _ = self.generate_from_phonemes(
-                            batch, segment_voice_style, speed
-                        )
-                        if trim_silence:
-                            audio, _ = trim_audio(audio)
-
-                        # Apply prosody modifications if present
-                        audio = self._apply_segment_prosody(audio, segment)
-
-                        audio_parts.append(audio)
-                else:
-                    audio, _ = self.generate_from_phonemes(
-                        segment.phonemes, segment_voice_style, speed
-                    )
-                    if trim_silence:
-                        audio, _ = trim_audio(audio)
-
-                    # Apply prosody modifications if present
-                    audio = self._apply_segment_prosody(audio, segment)
-
-                    audio_parts.append(audio)
-
-            # Add pause after segment (works for both empty and non-empty phonemes)
+            # Add pause after segment (if specified)
             if segment.pause_after > 0:
                 audio_parts.append(generate_silence(segment.pause_after, SAMPLE_RATE))
 
