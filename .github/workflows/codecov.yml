@@ -9,6 +9,10 @@ jobs:
     - uses: actions/checkout@master
     - name: Setup Python
       uses: actions/setup-python@master
+    - name: Install espeak-ng
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y espeak-ng
     - name: 'generate report'
       run: |
         pip install coverage click pytest pytest-cov
@@ -26,4 +30,3 @@ jobs:
       uses: codecov/test-results-action@v1
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
- 
