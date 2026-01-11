@@ -428,6 +428,29 @@ class Tokenizer:
             g2p = self._get_g2p(lang)
             phonemes = g2p.phonemize(text)
 
+        # WORKAROUND: kokorog2p 0.3.1 may return empty strings in CI environments
+        # (likely due to dictionary initialization issues). Retry with espeak-only.
+        if not phonemes.strip() and text.strip():
+            logger.warning(
+                f"Phonemization returned empty for non-empty text '{text[:50]}...', "
+                "retrying with espeak-only mode (dictionary disabled)"
+            )
+            # Get the kokorog2p language code
+            kokorog2p_lang = SUPPORTED_LANGUAGES.get(
+                lang.lower(), SUPPORTED_LANGUAGES.get("en-us")
+            )
+            # Retry with dictionaries disabled (pure espeak mode)
+            g2p_fallback = get_g2p(
+                language=kokorog2p_lang,
+                use_espeak_fallback=True,
+                load_gold=False,  # Skip gold dictionary
+                load_silver=False,  # Skip silver dictionary
+                backend=self.config.backend,
+                version=self._kokorog2p_model,
+            )
+            phonemes = g2p_fallback.phonemize(text)
+            logger.info(f"Espeak-only phonemization result: '{phonemes[:50]}...'")
+
         # Filter to only characters in vocabulary using variant-specific model
         phonemes = filter_for_kokoro(phonemes, model=self._kokorog2p_model)
 
