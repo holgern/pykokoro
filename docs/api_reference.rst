@@ -49,7 +49,7 @@ The ``Kokoro`` class is the main entry point for text-to-speech generation.
 
 * ``create()`` - Main text-to-speech method with support for:
 
-  - Manual pause markers (``enable_pauses=True``)
+  - SSMD break syntax for pauses (``...c``, ``...s``, ``...p``, ``...500ms``)
   - Automatic natural pauses (``split_mode`` + ``trim_silence=True``)
   - Pause variance control (``pause_variance``, ``random_seed``)
 
@@ -72,13 +72,12 @@ The ``Kokoro`` class is the main entry point for text-to-speech generation.
        speed=1.5  # 1.5x speed
    )
 
-   # With manual pause markers
-   text = "First part. (...) Second part after long pause."
+   # With SSMD pause breaks
+   text = "First part ...p Second part after long pause."
    audio, sr = kokoro.create(
        text,
        voice="am_adam",
-       enable_pauses=True,
-       pause_long=1.5  # 1.5 second pause for (...)
+       pause_paragraph=1.5  # 1.5 second pause for ...p
    )
 
    # With automatic natural pauses

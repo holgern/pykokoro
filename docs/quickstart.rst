@@ -108,7 +108,7 @@ Control how fast or slow the speech is:
 Adding Pauses
 ~~~~~~~~~~~~~
 
-Add natural pauses in your speech using markers:
+Add natural pauses in your speech using SSMD break syntax:
 
 .. code-block:: python
 
@@ -117,16 +117,15 @@ Add natural pauses in your speech using markers:
    kokoro = Kokoro()
 
    text = """
-   Welcome to the tutorial. (.)
-   This is a short pause. (..)
-   And this is a longer pause. (...)
+   Welcome to the tutorial ...c
+   This is a short pause ...s
+   And this is a longer pause ...p
    These pauses make speech sound more natural.
    """
 
    audio, sr = kokoro.create(
        text,
-       voice="af_bella",
-       enable_pauses=True  # Enable pause markers
+       voice="af_bella"
    )
 
    import soundfile as sf
@@ -134,10 +133,11 @@ Add natural pauses in your speech using markers:
 
    kokoro.close()
 
-Pause durations:
-* ``(.)`` - Short pause (0.3 seconds)
-* ``(..)`` - Medium pause (0.6 seconds)
-* ``(...)`` - Long pause (1.0 seconds)
+Pause syntax (SSMD breaks):
+* ``...c`` - Short/comma pause (0.3 seconds, default)
+* ``...s`` - Medium/sentence pause (0.6 seconds, default)
+* ``...p`` - Long/paragraph pause (1.0 seconds, default)
+* ``...500ms`` - Custom duration pause (e.g., 500 milliseconds)
 
 Context Manager Usage
 ~~~~~~~~~~~~~~~~~~~~~
@@ -198,7 +198,6 @@ Here's a complete example putting it all together:
                text,
                voice=voice,
                speed=speed,
-               enable_pauses=True,
                split_mode="sentence"
            )
            sf.write(output_file, audio, sample_rate)
@@ -206,10 +205,10 @@ Here's a complete example putting it all together:
 
    # Example usage
    text = """
-   Welcome to PyKokoro! (..)
+   Welcome to PyKokoro! ...s
 
-   This library makes text-to-speech generation simple. (.)
-   You can control voice, speed, and add natural pauses. (..)
+   This library makes text-to-speech generation simple ...c
+   You can control voice, speed, and add natural pauses ...s
 
    Enjoy creating audio content!
    """

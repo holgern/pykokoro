@@ -269,40 +269,41 @@ PyKokoro provides two powerful ways to control pauses in your generated speech:
 
 Add explicit pauses using simple markers in your text:
 
-**Pause Markers:**
+**SSMD Break Syntax:**
 
-* ``(.)`` - Short pause (0.3 seconds by default)
-* ``(..)`` - Medium pause (0.6 seconds by default)
-* ``(...)`` - Long pause (1.0 seconds by default)
+* ``...c`` - Short/comma pause (0.3 seconds by default)
+* ``...s`` - Medium/sentence pause (0.6 seconds by default)
+* ``...p`` - Long/paragraph pause (1.0 seconds by default)
+* ``...500ms`` - Custom duration pause (e.g., 500 milliseconds)
 
 .. code-block:: python
 
    with Kokoro() as kokoro:
        text = """
-       Hello! (.) This is a short pause.
-       Now a medium pause. (..)
-       And finally a long pause. (...)
+       Hello! ...c This is a short pause.
+       Now a medium pause ...s
+       And finally a long pause ...p
        Back to normal speech.
        """
 
        audio, sr = kokoro.create(
            text,
-           voice="af_bella",
-           enable_pauses=True  # Must enable pause processing
+           voice="af_bella"
        )
 
 **Custom Pause Durations:**
+
+You can customize the default pause durations:
 
 .. code-block:: python
 
    with Kokoro() as kokoro:
        audio, sr = kokoro.create(
-           "Custom pauses (.) here (..) and here (...)",
+           "Custom pauses ...c here ...s and here ...p",
            voice="af_bella",
-           enable_pauses=True,
-           pause_short=0.2,    # Short pause (.)
-           pause_medium=0.5,   # Medium pause (..)
-           pause_long=0.8      # Long pause (...)
+           pause_clause=0.2,      # Comma pause ...c
+           pause_sentence=0.5,    # Sentence pause ...s
+           pause_paragraph=0.8    # Paragraph pause ...p
        )
 
 2. Automatic Natural Pauses (NEW!)
@@ -360,12 +361,11 @@ Use manual markers for special emphasis and automatic pauses for natural rhythm:
 .. code-block:: python
 
    with Kokoro() as kokoro:
-       text = "Welcome! (...) Let's discuss AI, deep learning, and robotics."
+       text = "Welcome! ...p Let's discuss AI ...c deep learning ...c and robotics."
 
        audio, sr = kokoro.create(
            text,
            voice="af_sarah",
-           enable_pauses=True,      # Manual (...) marker
            split_mode="clause",     # Automatic pauses at commas
            trim_silence=True,
            pause_variance=0.05
@@ -554,8 +554,8 @@ Say-as works seamlessly with all SSMD features:
        audio, sr = kokoro.create(text, voice="af_sarah")
 
        # With pauses
-       text = "[First](as: ordinal) (...) [second](as: ordinal) (...) [third](as: ordinal)!"
-       audio, sr = kokoro.create(text, voice="af_sarah", enable_pauses=True)
+       text = "[First](as: ordinal) ...s [second](as: ordinal) ...s [third](as: ordinal)!"
+       audio, sr = kokoro.create(text, voice="af_sarah")
 
        # With emphasis
        text = "The winner is *[1](as: ordinal)*!"

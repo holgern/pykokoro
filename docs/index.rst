@@ -25,7 +25,7 @@ Features
 * **Voice Selection**: Choose from 54 voices (v1.0) or 103 voices (v1.1-zh) with various styles and accents
 * **Voice Blending**: Create custom voice styles by blending multiple voices
 * **Text Normalization**: Automatic say-as support for numbers, dates, phone numbers, and more using SSMD markup
-* **Pause Control**: Add precise pauses using simple markers: `(.)`, `(..)`, `(...)`
+* **Pause Control**: Add precise pauses using SSMD break syntax: `...c`, `...s`, `...p`, `...500ms`
 * **Smart Text Splitting**: Automatically split long text at sentence, paragraph, or clause boundaries
 * **Phoneme-Based Generation**: Generate speech directly from phonemes for precise control
 * **GPU Acceleration**: Optional GPU support for faster generation

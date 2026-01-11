@@ -53,17 +53,16 @@ Demonstrate different pause durations:
    import soundfile as sf
 
    text = """
-   This is a sentence with a short pause. (.)
-   Now a medium pause. (..)
-   And finally a long pause. (...)
+   This is a sentence with a short pause ...c
+   Now a medium pause ...s
+   And finally a long pause ...p
    Back to normal.
    """
 
    with Kokoro() as kokoro:
        audio, sr = kokoro.create(
            text,
-           voice="af_bella",
-           enable_pauses=True
+           voice="af_bella"
        )
        sf.write("pauses_demo.wav", audio, sr)
 
@@ -75,16 +74,15 @@ Custom Pause Durations
    from pykokoro import Kokoro
    import soundfile as sf
 
-   text = "Custom (.) pauses (..) here (...)"
+   text = "Custom ...c pauses ...s here ...p"
 
    with Kokoro() as kokoro:
        audio, sr = kokoro.create(
            text,
            voice="af_bella",
-           enable_pauses=True,
-           pause_short=0.2,    # 200ms
-           pause_medium=0.5,   # 500ms
-           pause_long=1.0      # 1 second
+           pause_clause=0.2,      # 200ms for ...c
+           pause_sentence=0.5,    # 500ms for ...s
+           pause_paragraph=1.0    # 1 second for ...p
        )
        sf.write("custom_pauses.wav", audio, sr)
 
@@ -220,10 +218,10 @@ With Pause Markers and Splitting
    import soundfile as sf
 
    text = """
-   Welcome to this demonstration. (..)
+   Welcome to this demonstration ...s
 
-   This text uses both pause markers and sentence splitting. (.)
-   The combination creates very natural-sounding speech. (..)
+   This text uses both pause markers and sentence splitting ...c
+   The combination creates very natural-sounding speech ...s
 
    Try it yourself!
    """
@@ -232,7 +230,6 @@ With Pause Markers and Splitting
        audio, sr = kokoro.create(
            text,
            voice="af_bella",
-           enable_pauses=True,
            split_mode="sentence"
        )
        sf.write("combined_demo.wav", audio, sr)
@@ -406,17 +403,16 @@ Combine say-as with other SSMD features:
    with Kokoro() as kokoro:
        # Say-as + pauses + emphasis
        text = """
-       The winner is *[1](as: ordinal)*! (..)
-       Second place goes to [2](as: ordinal). (.)
-       And [3](as: ordinal) place is also impressive! (..)
+       The winner is *[1](as: ordinal)*! ...s
+       Second place goes to [2](as: ordinal) ...c
+       And [3](as: ordinal) place is also impressive! ...s
 
        The total prize money is [1000](as: cardinal) +loud+ dollars!
        """
 
        audio, sr = kokoro.create(
            text,
-           voice="af_sarah",
-           enable_pauses=True
+           voice="af_sarah"
        )
        sf.write("combined_features.wav", audio, sr)
 
@@ -675,7 +671,6 @@ Chapter Processing
                full_text,
                voice="af_bella",
                speed=1.0,
-               enable_pauses=True,
                split_mode="sentence"
            )
 
@@ -804,7 +799,6 @@ Simple CLI
        parser.add_argument('-o', '--output', required=True, help='Output WAV file')
        parser.add_argument('-v', '--voice', default='af_bella', help='Voice name')
        parser.add_argument('-s', '--speed', type=float, default=1.0, help='Speech speed')
-       parser.add_argument('--pauses', action='store_true', help='Enable pause markers')
 
        args = parser.parse_args()
 
@@ -812,8 +806,7 @@ Simple CLI
            audio, sr = kokoro.create(
                args.text,
                voice=args.voice,
-               speed=args.speed,
-               enable_pauses=args.pauses
+               speed=args.speed
            )
            sf.write(args.output, audio, sr)
            print(f"Generated {args.output}")
@@ -826,4 +819,4 @@ Usage:
 .. code-block:: bash
 
    python tts_cli.py "Hello, world!" -o output.wav -v af_bella -s 1.0
-   python tts_cli.py "With (.) pauses" -o pauses.wav --pauses
+   python tts_cli.py "With ...c pauses ...s here" -o pauses.wav

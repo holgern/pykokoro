@@ -110,7 +110,7 @@ Version 0.0.1 (2025-01-06)
 
 * Added ``split_and_phonemize_text()`` function for standalone text processing
 * Added ``enable_pauses`` parameter to ``create()`` method for pause marker support
-* Added pause markers: ``(.)``, ``(..)``, ``(...)`` for controlling speech pauses
+* Added pause markers: ``(.)``, ``(..)``, ``(...)`` for controlling speech pauses (DEPRECATED - use SSMD break syntax instead: ``...c``, ``...s``, ``...p``)
 * Added ``pause_short``, ``pause_medium``, ``pause_long`` parameters for custom pause durations
 * Added ``split_mode`` parameter to ``create()`` for intelligent text splitting
 * Added ``trim_silence`` parameter for removing silence between segments
