@@ -431,6 +431,136 @@ adds natural pauses between segments:
 This creates more natural-sounding speech with appropriate pauses at linguistic
 boundaries without requiring manual pause markers.
 
+Text Normalization (Say-As)
+----------------------------
+
+PyKokoro supports automatic text normalization using SSMD (Speech Synthesis Markdown)
+syntax. This feature converts numbers, dates, phone numbers, and other special formats
+into speakable text.
+
+Basic Usage
+~~~~~~~~~~~
+
+Use the ``[text](as: type)`` syntax to specify how text should be normalized:
+
+.. code-block:: python
+
+   with Kokoro() as kokoro:
+       # Cardinal numbers
+       text = "I have [123](as: cardinal) apples"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       # TTS says: "I have one hundred twenty-three apples"
+
+       # Ordinal numbers
+       text = "I came in [3](as: ordinal) place"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       # TTS says: "I came in third place"
+
+       # Digits (spell out)
+       text = "My PIN is [1234](as: digits)"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       # TTS says: "My PIN is one two three four"
+
+Supported Say-As Types
+~~~~~~~~~~~~~~~~~~~~~~~
+
+**Numbers:**
+
+* ``cardinal`` - Numbers as cardinals: "123" → "one hundred twenty-three"
+* ``ordinal`` - Numbers as ordinals: "3" → "third"
+* ``digits`` - Spell out digits: "123" → "one two three"
+* ``number`` - Alias for cardinal
+* ``fraction`` - Fractions: "1/2" → "one half"
+
+**Text:**
+
+* ``characters`` - Spell out text: "ABC" → "A B C"
+* ``expletive`` - Censors to "beep"
+
+**Date and Time:**
+
+* ``date`` - Dates with format support (mdy, dmy, ymd, ym, my, md, dm, d, m, y)
+* ``time`` - Time in 12h or 24h format
+
+**Other:**
+
+* ``telephone`` - Phone numbers: "+1-555-0123" → "plus one five five five oh one two three"
+* ``unit`` - Units: "5kg" → "five kilograms"
+
+Examples
+~~~~~~~~
+
+.. code-block:: python
+
+   with Kokoro() as kokoro:
+       # Telephone numbers
+       text = "Call [+1-555-0123](as: telephone)"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       # TTS says: "Call plus one five five five oh one two three"
+
+       # Dates with custom formatting
+       text = "Today is [12/31/2024](as: date, format: mdy)"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       # TTS says: "Today is December thirty-first, two thousand twenty-four"
+
+       # Time (12-hour or 24-hour)
+       text = "The time is [14:30](as: time)"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       # TTS says: "The time is two thirty PM"
+
+       # Characters (spell out)
+       text = "The code is [ABC](as: characters)"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       # TTS says: "The code is A B C"
+
+       # Fractions
+       text = "Add [1/2](as: fraction) cup of sugar"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       # TTS says: "Add one half cup of sugar"
+
+       # Units
+       text = "The package weighs [5kg](as: unit)"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+       # TTS says: "The package weighs five kilograms"
+
+Multi-language Support
+~~~~~~~~~~~~~~~~~~~~~~
+
+Say-as works with multiple languages (English, French, German, Spanish, and more):
+
+.. code-block:: python
+
+   with Kokoro() as kokoro:
+       # French cardinal
+       text = "[123](as: cardinal)"
+       audio, sr = kokoro.create(text, voice="ff_siwis", lang="fr-fr")
+       # TTS says: "cent vingt-trois"
+
+       # German ordinal
+       text = "[3](as: ordinal)"
+       audio, sr = kokoro.create(text, voice="gf_maria", lang="de-de")
+       # TTS says: "dritte"
+
+Combining with Other Features
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Say-as works seamlessly with all SSMD features:
+
+.. code-block:: python
+
+   with Kokoro() as kokoro:
+       # With prosody
+       text = "[100](as: cardinal) +loud+ dollars!"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+
+       # With pauses
+       text = "[First](as: ordinal) (...) [second](as: ordinal) (...) [third](as: ordinal)!"
+       audio, sr = kokoro.create(text, voice="af_sarah", enable_pauses=True)
+
+       # With emphasis
+       text = "The winner is *[1](as: ordinal)*!"
+       audio, sr = kokoro.create(text, voice="af_sarah")
+
 Trimming Silence Only
 ~~~~~~~~~~~~~~~~~~~~~~
 

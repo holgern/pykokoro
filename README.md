@@ -306,9 +306,8 @@ See `examples/pauses_demo.py`, `examples/pauses_with_splitting.py`, and
 
 ### Text Normalization (Say-As)
 
-PyKokoro supports automatic text normalization using SSMD (Speech Synthesis
-Markdown) syntax. Convert numbers, dates, phone numbers, and more into
-speakable text:
+PyKokoro supports automatic text normalization using SSMD (Speech Synthesis Markdown)
+syntax. Convert numbers, dates, phone numbers, and more into speakable text:
 
 ```python
 # Cardinal numbers
@@ -357,7 +356,8 @@ text = "The package weighs [5kg](as: unit)"
 - `number` - Alias for cardinal
 - `fraction` - Fractions: "1/2" → "one half"
 - `characters` - Spell out text: "ABC" → "A B C"
-- `telephone` - Phone numbers: "+1-555-0123" → "plus one five five five oh one two three"
+- `telephone` - Phone numbers: "+1-555-0123" → "plus one five five five oh one two
+  three"
 - `date` - Dates with format support (mdy, dmy, ymd, ym, my, md, dm, d, m, y)
 - `time` - Time in 12h or 24h format
 - `unit` - Units: "5kg" → "five kilograms"
