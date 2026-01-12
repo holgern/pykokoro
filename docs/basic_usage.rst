@@ -326,8 +326,7 @@ For more natural speech, enable automatic pause insertion at linguistic boundari
        audio, sr = kokoro.create(
            text,
            voice="af_sarah",
-           split_mode="clause",     # Split on commas and sentences
-           trim_silence=True,       # Enable automatic pause insertion
+           pause_mode="manual",       # PyKokoro controls pauses precisely
            pause_clause=0.25,        # Pause after clauses (commas)
            pause_sentence=0.5,        # Pause after sentences
            pause_paragraph=1.0,          # Pause after paragraphs
@@ -337,16 +336,17 @@ For more natural speech, enable automatic pause insertion at linguistic boundari
 
 **How It Works:**
 
-When ``trim_silence=True`` and ``split_mode`` is set, PyKokoro automatically:
+When ``pause_mode="manual"`` is set, PyKokoro automatically:
 
-* Detects linguistic boundaries (clauses, sentences, paragraphs)
+* Parses text using SSMD to detect sentences
 * Inserts appropriate pauses based on boundary type:
 
-  - **Clause boundary** (comma within sentence) → ``pause_short``
-  - **Sentence boundary** (within paragraph) → ``pause_medium``
-  - **Paragraph boundary** → ``pause_long``
+  - **Clause boundary** (comma within sentence) → ``pause_clause``
+  - **Sentence boundary** (within paragraph) → ``pause_sentence``
+  - **Paragraph boundary** → ``pause_paragraph``
 
 * Adds Gaussian variance to prevent robotic timing
+* Trims silence from segment boundaries for precise timing
 
 **Pause Variance:**
 
@@ -366,24 +366,17 @@ Use manual markers for special emphasis and automatic pauses for natural rhythm:
        audio, sr = kokoro.create(
            text,
            voice="af_sarah",
-           split_mode="clause",     # Automatic pauses at commas
-           trim_silence=True,
+           pause_mode="manual",     # PyKokoro controls pauses precisely
            pause_variance=0.05
        )
 
-Text Splitting
---------------
+Pause Modes
+-----------
 
-For long text, use ``split_mode`` to automatically split at natural boundaries.
+PyKokoro provides two pause modes:
 
-This improves prosody and handles phoneme length limits automatically.
-
-Split Modes
-~~~~~~~~~~~
-
-* ``"paragraph"`` - Split on double newlines
-* ``"sentence"`` - Split on sentence boundaries (requires spaCy)
-* ``"clause"`` - Split on sentences and commas (requires spaCy)
+* ``"tts"`` (default) - TTS generates pauses naturally
+* ``"manual"`` - PyKokoro controls all pauses with precision
 
 .. code-block:: python
 
@@ -394,11 +387,17 @@ Split Modes
        This is a new paragraph with more content.
        """
 
-       # Split by sentences
+       # Let TTS handle pauses naturally (default)
+       audio, sr = kokoro.create(
+           long_text,
+           voice="af_bella"
+       )
+
+       # Or take manual control of pauses
        audio, sr = kokoro.create(
            long_text,
            voice="af_bella",
-           split_mode="sentence"
+           pause_mode="manual"
        )
 
 Sentence splitting requires spaCy:
@@ -408,10 +407,10 @@ Sentence splitting requires spaCy:
    pip install spacy
    python -m spacy download en_core_web_sm
 
-Automatic Pauses with Text Splitting
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Automatic Pauses with Manual Mode
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-When combining ``split_mode`` with ``trim_silence=True``, PyKokoro automatically
+When using ``pause_mode="manual"``, PyKokoro automatically
 adds natural pauses between segments:
 
 .. code-block:: python
@@ -420,11 +419,10 @@ adds natural pauses between segments:
        audio, sr = kokoro.create(
            long_text,
            voice="af_bella",
-           split_mode="clause",      # Best for natural pauses
-           trim_silence=True,        # Enable automatic pauses
-           pause_short=0.25,         # Clause pauses
-           pause_medium=0.5,         # Sentence pauses
-           pause_long=1.0,           # Paragraph pauses
+           pause_mode="manual",      # PyKokoro controls pauses
+           pause_clause=0.25,        # Clause pauses
+           pause_sentence=0.5,       # Sentence pauses
+           pause_paragraph=1.0,      # Paragraph pauses
            pause_variance=0.05       # Natural variance
        )
 
@@ -560,21 +558,6 @@ Say-as works seamlessly with all SSMD features:
        # With emphasis
        text = "The winner is *[1](as: ordinal)*!"
        audio, sr = kokoro.create(text, voice="af_sarah")
-
-Trimming Silence Only
-~~~~~~~~~~~~~~~~~~~~~~
-
-To remove silence without adding automatic pauses, use ``trim_silence=True``
-without ``split_mode``:
-
-.. code-block:: python
-
-   with Kokoro() as kokoro:
-       audio, sr = kokoro.create(
-           text,
-           voice="af_bella",
-           trim_silence=True  # Just trim, no automatic pauses
-       )
 
 Error Handling
 --------------

@@ -98,12 +98,7 @@ __all__ = [
     "load_vocab_from_config",
 ]
 
+# Re-export Document from ssmd
+from ssmd import Document
 
-# Re-export Document from ssmd for convenience
-try:
-    from ssmd import Document
-
-    __all__.append("Document")
-except ImportError:
-    # ssmd not installed yet
-    pass
+__all__.append("Document")

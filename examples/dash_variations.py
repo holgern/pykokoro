@@ -88,7 +88,7 @@ def main():
             voice=VOICE,
             speed=1.0,
             lang=LANG,
-            trim_silence=True,
+            # Use default pause_mode="tts" for natural prosody
         )
 
         # Convert text to phonemes
@@ -102,7 +102,7 @@ def main():
             voice=VOICE,
             speed=1.0,
             lang=LANG,
-            trim_silence=True,
+            # Use default pause_mode="tts" for natural prosody
         )
 
         duration = len(samples) / sample_rate_value

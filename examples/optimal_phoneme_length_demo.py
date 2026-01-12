@@ -112,9 +112,8 @@ def generate_version(
         voice=VOICE,
         lang=LANG,
         speed=1.0,
-        split_mode="sentence",
+        # Use default pause_mode="tts" for natural prosody
         optimal_phoneme_length=optimal_phoneme_length,
-        trim_silence=True,
     )
 
     # Analyze segments separately for display
@@ -122,7 +121,7 @@ def generate_version(
         text=DIALOGUE_TEXT,
         tokenizer=kokoro.tokenizer,
         lang=LANG,
-        split_mode="sentence",
+        pause_mode="tts",
         optimal_phoneme_length=optimal_phoneme_length,
     )
 

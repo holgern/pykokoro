@@ -158,7 +158,7 @@ Use Kokoro as a context manager for automatic cleanup:
 Processing Long Text
 ~~~~~~~~~~~~~~~~~~~~
 
-For long text, use ``split_mode`` to automatically split at natural boundaries:
+For long text, PyKokoro automatically handles splitting at natural boundaries:
 
 .. code-block:: python
 
@@ -166,16 +166,23 @@ For long text, use ``split_mode`` to automatically split at natural boundaries:
 
    long_text = """
    This is a long passage of text. It has multiple sentences.
-   The split mode will handle this intelligently.
+   The text will be processed intelligently.
 
    This is a new paragraph. It will be processed efficiently.
    """
 
    with Kokoro() as kokoro:
+       # TTS handles pauses naturally (default)
+       audio, sr = kokoro.create(
+           long_text,
+           voice="af_bella"
+       )
+
+       # Or take manual control of pauses
        audio, sr = kokoro.create(
            long_text,
            voice="af_bella",
-           split_mode="sentence"  # Split at sentence boundaries
+           pause_mode="manual"  # PyKokoro controls pauses
        )
 
        import soundfile as sf
@@ -197,8 +204,7 @@ Here's a complete example putting it all together:
            audio, sample_rate = kokoro.create(
                text,
                voice=voice,
-               speed=speed,
-               split_mode="sentence"
+               speed=speed
            )
            sf.write(output_file, audio, sample_rate)
            print(f"Saved audio to {output_file}")

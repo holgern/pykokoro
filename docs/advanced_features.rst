@@ -154,8 +154,8 @@ Work with phoneme segments for batch processing:
 Advanced Text Splitting
 ------------------------
 
-Split and Phonemize in One Step
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Split and Phonemize in One Step (Legacy API)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 For advanced text processing with automatic splitting and phoneme generation.
 
@@ -200,8 +200,8 @@ The ``split_and_phonemize_text`` function intelligently handles long text by:
        print(f"Phonemes: {segment.phonemes[:50]}...")
        # segment.phonemes is guaranteed to be <= 510
 
-Split Modes in Detail
-~~~~~~~~~~~~~~~~~~~~~
+Split Modes in Detail (Legacy API)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **Paragraph Mode:**
 
@@ -237,48 +237,32 @@ Splits on both sentences and commas for finer control:
        split_mode="clause"  # Splits on sentences and commas
    )
 
-Automatic Pause Control
-~~~~~~~~~~~~~~~~~~~~~~~~
+Pause Mode
+~~~~~~~~~~
 
-The ``PhonemeSegment`` objects include metadata for automatic pause insertion:
-
-.. code-block:: python
-
-   from pykokoro import split_and_phonemize_text, create_tokenizer
-
-   tokenizer = create_tokenizer()
-
-   segments = split_and_phonemize_text(
-       text,
-       tokenizer,
-       split_mode="clause"
-   )
-
-   # Each segment tracks its position
-   for segment in segments:
-       print(f"Paragraph: {segment.paragraph}")
-       print(f"Sentence: {segment.sentence}")
-       print(f"Pause after: {segment.pause_after}")  # Can be set for custom pauses
-
-When using ``Kokoro.create()`` with ``trim_silence=True`` and a ``split_mode``,
-these segment boundaries are used to automatically insert natural pauses:
+The modern ``Kokoro.create()`` API uses ``pause_mode`` for controlling pause behavior:
 
 .. code-block:: python
 
    from pykokoro import Kokoro
 
    with Kokoro() as kokoro:
-       # Automatic pause insertion based on segment boundaries
+       # Default: TTS controls pauses naturally
+       audio, sr = kokoro.create(
+           long_text,
+           voice="af_sarah"
+       )
+
+       # Manual mode: PyKokoro controls pauses precisely
        audio, sr = kokoro.create(
            long_text,
            voice="af_sarah",
-           split_mode="clause",
-           trim_silence=True,       # Enable automatic pauses
-           pause_short=0.25,        # Clause boundaries
-           pause_medium=0.5,        # Sentence boundaries
-           pause_long=1.0,          # Paragraph boundaries
-           pause_variance=0.05,     # Natural variance (Gaussian)
-           random_seed=42           # For reproducible results
+           pause_mode="manual",         # PyKokoro controls pauses
+           pause_clause=0.25,           # Clause boundaries
+           pause_sentence=0.5,          # Sentence boundaries
+           pause_paragraph=1.0,         # Paragraph boundaries
+           pause_variance=0.05,         # Natural variance (Gaussian)
+           random_seed=42               # For reproducible results
        )
 
 **Pause Variance Details:**
@@ -301,18 +285,18 @@ Use ``random_seed`` for consistent output across runs:
 
    # Same output every time
    audio1, sr = kokoro.create(text, voice="af_sarah",
-                              split_mode="clause", trim_silence=True,
+                              pause_mode="manual",
                               random_seed=42)
 
    audio2, sr = kokoro.create(text, voice="af_sarah",
-                              split_mode="clause", trim_silence=True,
+                              pause_mode="manual",
                               random_seed=42)
 
    # audio1 and audio2 are identical
 
    # Different output each time
    audio3, sr = kokoro.create(text, voice="af_sarah",
-                              split_mode="clause", trim_silence=True,
+                              pause_mode="manual",
                               random_seed=None)  # or omit parameter
 
 Custom Warning Callbacks
@@ -681,9 +665,9 @@ Performance Tips
 
    Use ``q6`` or ``q8`` for production; ``fp16`` only when quality is critical.
 
-5. **Use split_mode for Long Text**
+5. **Use pause_mode for Long Text**
 
-   Splitting long text improves quality and reduces memory usage.
+   Using ``pause_mode="manual"`` with appropriate pause settings improves quality for long text.
 
 Internal Architecture
 ---------------------

@@ -49,9 +49,9 @@ The ``Kokoro`` class is the main entry point for text-to-speech generation.
 
 * ``create()`` - Main text-to-speech method with support for:
 
-  - SSMD break syntax for pauses (``...c``, ``...s``, ``...p``, ``...500ms``)
-  - Automatic natural pauses (``split_mode`` + ``trim_silence=True``)
-  - Pause variance control (``pause_variance``, ``random_seed``)
+   - SSMD break syntax for pauses (``...c``, ``...s``, ``...p``, ``...500ms``)
+   - Automatic natural pauses with ``pause_mode="manual"``
+   - Pause variance control (``pause_variance``, ``random_seed``)
 
 * ``create_from_phonemes()`` - Generate from IPA phonemes
 * ``create_from_tokens()`` - Generate from token IDs
@@ -80,38 +80,30 @@ The ``Kokoro`` class is the main entry point for text-to-speech generation.
        pause_paragraph=1.5  # 1.5 second pause for ...p
    )
 
-   # With automatic natural pauses
-   long_text = """
-   Artificial intelligence is transforming our world. Machine learning
-   models are becoming more sophisticated, efficient, and accessible.
+   # With automatic natural pauses (manual pause control)
+    long_text = """
+    Artificial intelligence is transforming our world. Machine learning
+    models are becoming more sophisticated, efficient, and accessible.
 
-   Deep learning uses neural networks with many layers.
-   """
-   audio, sr = kokoro.create(
-       long_text,
-       voice="af_bella",
-       split_mode="clause",     # Split on commas and sentences
-       trim_silence=True,       # Enable automatic pauses
-       pause_clause=0.25,       # 250ms after commas
-       pause_sentence=0.5,      # 500ms after sentences
-       pause_paragraph=1.0,     # 1s after paragraphs
-       pause_variance=0.05,     # Natural variance
-       random_seed=42           # Reproducible
-   )
+    Deep learning uses neural networks with many layers.
+    """
+    audio, sr = kokoro.create(
+        long_text,
+        voice="af_bella",
+        pause_mode="manual",         # PyKokoro controls pauses precisely
+        pause_clause=0.25,           # 250ms after commas
+        pause_sentence=0.5,          # 500ms after sentences
+        pause_paragraph=1.0,         # 1s after paragraphs
+        pause_variance=0.05,         # Natural variance
+        random_seed=42               # Reproducible
+    )
 
-   # With language override
-   audio, sr = kokoro.create(
-       "Bonjour le monde",
-       voice="af_sarah",
-       lang="fr"
-   )
-
-   # Trim silence only
-   audio, sr = kokoro.create(
-       "Clean audio",
-       voice="bf_emma",
-       trim_silence=True
-   )
+    # With language override
+    audio, sr = kokoro.create(
+        "Bonjour le monde",
+        voice="af_sarah",
+        lang="fr"
+    )
 
 **create_from_phonemes() Examples:**
 
@@ -153,13 +145,12 @@ The ``Kokoro`` class is the main entry point for text-to-speech generation.
        """
 
        # Synchronous streaming
-       chunks = []
-       for audio_chunk, sample_rate, text_segment in kokoro.create_stream_sync(
-           long_text,
-           voice="af_sarah",
-           split_mode="sentence"
-       ):
-           print(f"Generated: {text_segment}")
+        chunks = []
+        for audio_chunk, sample_rate, text_segment in kokoro.create_stream_sync(
+            long_text,
+            voice="af_sarah"
+        ):
+            print(f"Generated: {text_segment}")
            chunks.append(audio_chunk)
            # You can play or process each chunk immediately
 
@@ -180,10 +171,9 @@ The ``Kokoro`` class is the main entry point for text-to-speech generation.
            text = "Async streaming allows concurrent operations."
 
            async for audio_chunk, sr, segment in kokoro.create_stream(
-               text,
-               voice="bf_emma",
-               split_mode="sentence"
-           ):
+                text,
+                voice="bf_emma"
+            ):
                print(f"Chunk: {segment}")
                # Process chunk asynchronously
                await process_audio_async(audio_chunk, sr)
@@ -753,48 +743,47 @@ Phoneme Classes
    from pykokoro import split_and_phonemize_text
 
    # Basic splitting and phonemization
-   text = "This is sentence one. This is sentence two."
-   segments = split_and_phonemize_text(
-       text,
-       lang="en-us",
-       split_mode="sentence",
-       max_phoneme_length=510
-   )
+    text = "This is sentence one. This is sentence two."
+    segments = split_and_phonemize_text(
+        text,
+        lang="en-us",
+        max_phoneme_length=510
+    )
 
-   for segment in segments:
-       print(segment.format_readable())
+    for segment in segments:
+        print(segment.format_readable())
 
-   # With clause splitting
-   text = "AI is transforming our world, making technology more accessible."
-   segments = split_and_phonemize_text(
-       text,
-       lang="en-us",
-       split_mode="clause",  # Split on commas too
-       max_phoneme_length=510
-   )
+    # With clause splitting (legacy API)
+    text = "AI is transforming our world, making technology more accessible."
+    segments = split_and_phonemize_text(
+        text,
+        lang="en-us",
+        split_mode="clause",  # Legacy: Split on commas too
+        max_phoneme_length=510
+    )
 
-   # Paragraph splitting
-   text = """
-   First paragraph here.
+    # Paragraph splitting (legacy API)
+    text = """
+    First paragraph here.
 
-   Second paragraph here.
-   """
-   segments = split_and_phonemize_text(
-       text,
-       lang="en-us",
-       split_mode="paragraph"
-   )
+    Second paragraph here.
+    """
+    segments = split_and_phonemize_text(
+        text,
+        lang="en-us",
+        split_mode="paragraph"  # Legacy
+    )
 
    # With warning callback
    def on_truncation(original_text, truncated_text):
        print(f"Warning: Text truncated from {len(original_text)} to {len(truncated_text)}")
 
    segments = split_and_phonemize_text(
-       "Very long text here" * 100,
-       lang="en-us",
-       split_mode="sentence",
-       warning_callback=on_truncation
-   )
+        "Very long text here" * 100,
+        lang="en-us",
+        split_mode="sentence",  # Legacy
+        warning_callback=on_truncation
+    )
 
 Internal Manager Classes
 -------------------------
@@ -1643,8 +1632,7 @@ Streaming for Low Latency
        chunks = []
        for audio_chunk, sr, segment in kokoro.create_stream_sync(
            long_text,
-           voice="af_sarah",
-           split_mode="sentence"
+           voice="af_sarah"
        ):
            print(f"Generated: {segment}")
            chunks.append(audio_chunk)
@@ -1692,23 +1680,21 @@ Batch Processing with Progress
    texts = Path("texts.txt").read_text().strip().split("\n")
 
    with Kokoro() as kokoro:
-       output_dir = Path("output")
-       output_dir.mkdir(exist_ok=True)
+        output_dir = Path("output")
+        output_dir.mkdir(exist_ok=True)
 
-       for i, text in enumerate(texts, 1):
-           print(f"Processing {i}/{len(texts)}: {text[:50]}...")
+        for i, text in enumerate(texts, 1):
+            print(f"Processing {i}/{len(texts)}: {text[:50]}...")
 
-           audio, sr = kokoro.create(
-               text,
-               voice="af_bella",
-               split_mode="sentence",
-               trim_silence=True
-           )
+            audio, sr = kokoro.create(
+                text,
+                voice="af_bella"
+            )
 
-           output_path = output_dir / f"audio_{i:03d}.wav"
-           sf.write(output_path, audio, sr)
+            output_path = output_dir / f"audio_{i:03d}.wav"
+            sf.write(output_path, audio, sr)
 
-       print(f"Generated {len(texts)} audio files")
+        print(f"Generated {len(texts)} audio files")
 
 Custom Phoneme Generation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1760,14 +1746,13 @@ Natural Pauses and Prosody
        audio, sr = kokoro.create(
            narration,
            voice="am_michael",
-           split_mode="clause",      # Natural pauses at commas
-           trim_silence=True,
-           pause_clause=0.3,         # 300ms after clauses
-           pause_sentence=0.6,       # 600ms after sentences
-           pause_paragraph=1.2,      # 1.2s between paragraphs
-           pause_variance=0.08,      # Natural variation
-           speed=0.95,               # Slightly slower for narration
-           random_seed=42            # Reproducible
+           pause_mode="manual",       # Manual pause control
+           pause_clause=0.3,          # 300ms after clauses
+           pause_sentence=0.6,        # 600ms after sentences
+           pause_paragraph=1.2,       # 1.2s between paragraphs
+           pause_variance=0.08,       # Natural variation
+           speed=0.95,                # Slightly slower for narration
+           random_seed=42             # Reproducible
        )
 
        sf.write("narration.wav", audio, sr)

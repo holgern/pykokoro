@@ -5,6 +5,28 @@ Demonstrate split_and_phonemize_text with different split modes.
 This example shows how to use the split_and_phonemize_text function
 with paragraph, sentence, and clause modes to intelligently split text
 for TTS processing.
+
+NOTE: This demonstrates the legacy split_and_phonemize_text() API which
+uses the `split_mode` parameter. For the simplified public API, use
+Kokoro.create() with the `pause_mode` parameter instead:
+
+    # Modern API (recommended for most use cases)
+    with Kokoro() as kokoro:
+        # Default: TTS controls pauses naturally
+        audio, sr = kokoro.create(text, voice="af_bella")
+
+        # Manual pause control
+        audio, sr = kokoro.create(
+            text,
+            voice="af_bella",
+            pause_mode="manual",
+            pause_sentence=0.5
+        )
+
+The split_and_phonemize_text() function is still useful for:
+- Direct access to phoneme segments
+- Custom processing pipelines
+- Integration with other TTS backends
 """
 
 from pykokoro import Tokenizer

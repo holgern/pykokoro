@@ -1512,20 +1512,20 @@ class Kokoro:
         speed: float = 1.0,
         lang: str = "en-us",
         is_phonemes: bool = False,
+        pause_mode: Literal["tts", "manual"] = "tts",
         pause_clause: float = 0.3,
         pause_sentence: float = 0.6,
         pause_paragraph: float = 1.0,
-        split_mode: str | None = None,
         optimal_phoneme_length: int | list[int] | None = None,
-        trim_silence: bool = False,
         pause_variance: float = 0.05,
         random_seed: int | None = None,
     ) -> tuple[np.ndarray, int]:
         """
         Generate audio from text or phonemes with SSMD markup support.
 
-        SSMD (Speech Synthesis Markdown) markup in text is automatically detected
-        and processed. Supported features include:
+        Text is always parsed through SSMD with sentence-level detection.
+        SSMD markup in text is automatically detected and processed.
+        Supported features include:
         - Breaks: ...n, ...w, ...c, ...s, ...p, ...500ms, ...2s
         - Emphasis: *text* (moderate), **text** (strong)
         - Prosody: +loud+, >fast>, ^high^ (stored for future processing)
@@ -1533,9 +1533,6 @@ class Kokoro:
         - Phonemes: [tomato](ph: təˈmeɪtoʊ) uses explicit phonemes
         - Substitution: [H2O](sub: water) replaces text before phonemization
         - Markers: @name (stored in metadata)
-
-        Note: Old pause markers (.), (..), (...) are NO LONGER SUPPORTED.
-        Use SSMD break syntax instead.
 
         Args:
             text: Text to synthesize (or phonemes if is_phonemes=True). SSMD
@@ -1545,39 +1542,33 @@ class Kokoro:
             lang: Default language code (e.g., 'en-us', 'en-gb', 'es', 'fr').
                 Can be overridden per-segment with SSMD [text](lang) syntax.
             is_phonemes: If True, treat 'text' as phonemes instead of text
+            pause_mode: Pause handling mode:
+                - "tts" (default): TTS generates pauses naturally at sentence
+                  boundaries. SSMD pauses are preserved. Best for natural speech.
+                - "manual": PyKokoro controls pauses with precision. Silence is
+                  trimmed from segment boundaries and automatic pauses are added
+                  between segments. Best for precise timing control.
             pause_clause: Duration for SSMD ...c (comma) breaks and automatic
-                clause boundary pauses when trim_silence=True with split_mode.
-                Default: 0.3s
+                clause boundary pauses when pause_mode="manual". Default: 0.3s
             pause_sentence: Duration for SSMD ...s (sentence) breaks and automatic
-                sentence boundary pauses when trim_silence=True with split_mode.
-                Default: 0.6s
+                sentence boundary pauses when pause_mode="manual". Default: 0.6s
             pause_paragraph: Duration for SSMD ...p (paragraph) breaks and automatic
-                paragraph boundary pauses when trim_silence=True with split_mode.
-                Default: 1.0s
-            split_mode: Optional text splitting mode. Options: None (default,
-                automatic phoneme-based), "paragraph" (double newlines),
-                "sentence" (requires spaCy), "clause" (sentences + commas,
-                requires spaCy). When combined with trim_silence=True,
-                automatically adds natural pauses between segments.
-            optimal_phoneme_length: Optional target phoneme length(s) for batching
-                when using split_mode. Prevents very short segments (like "Why?")
-                from being processed individually, improving audio quality.
-                - None (default): No batching, split_mode produces individual segments
+                paragraph boundary pauses when pause_mode="manual". Default: 1.0s
+            optimal_phoneme_length: Optional target phoneme length(s) for batching.
+                Prevents very short segments (like "Why?") from being processed
+                individually, improving audio quality and prosody.
+                - None (default): No batching
                 - int: Single target (e.g., 50 = merge until reaching ~50 phonemes)
                 - list[int]: Multiple targets in ascending order (e.g., [30, 50, 70]):
                     * Tries to reach highest target (70)
                     * Falls back to lower targets if needed (50, then 30)
                     * Stops merging when reaching a target or when adding next
                       segment would significantly overshoot (~30% tolerance)
-                Only applies when split_mode is set. Never exceeds max_phoneme_length
-                (510). Recommended: 50 or [30, 50] for dialogue-heavy text.
-            trim_silence: Whether to trim silence from segment boundaries.
-                When used with split_mode, adds natural pauses between
-                segments (clause/sentence/paragraph boundaries).
+                Never exceeds max_phoneme_length (510).
+                Recommended: 50 or [30, 50] for dialogue-heavy text.
             pause_variance: Standard deviation for Gaussian variance added to
-                automatic pauses (in seconds). Only applies when trim_silence=True
-                and split_mode is set. Default 0.05 (±100ms at 95% confidence).
-                Set to 0.0 to disable variance.
+                automatic pauses (in seconds). Only applies when pause_mode="manual".
+                Default 0.05 (±100ms at 95% confidence). Set to 0.0 to disable variance.
             random_seed: Optional random seed for reproducible pause variance.
                 If None, pauses will vary between runs.
 
@@ -1585,33 +1576,43 @@ class Kokoro:
             Tuple of (audio samples as numpy array, sample rate)
 
         Example:
-            Basic SSMD usage:
+            Basic usage (TTS handles pauses):
 
             >>> tts = Kokoro()
-            >>> # Use SSMD break syntax
             >>> audio, sr = tts.create(
-            ...     "Hello ...c world ...s How are you?",
+            ...     "Hello. How are you?",
             ...     voice="af_sarah"
             ... )
-            >>>
-            >>> # Custom time breaks
+
+            With SSMD breaks:
+
             >>> audio, sr = tts.create(
-            ...     "Wait ...500ms then continue.",
+            ...     "Hello ...500ms world.",
             ...     voice="af_sarah"
             ... )
-            >>>
-            >>> # Emphasis and language switching
+
+            Manual pause control:
+
+            >>> audio, sr = tts.create(
+            ...     "First sentence. Second sentence.",
+            ...     voice="af_sarah",
+            ...     pause_mode="manual"
+            ... )
+
+            Batching short sentences for better prosody:
+
+            >>> audio, sr = tts.create(
+            ...     '"Why?" "Do?" "Go!"',
+            ...     voice="af_sarah",
+            ...     optimal_phoneme_length=50
+            ... )
+
+            Language switching:
+
             >>> audio, sr = tts.create(
             ...     "This is *important*! [Bonjour](fr) everyone!",
             ...     voice="af_sarah"
             ... )
-            >>>
-            >>> # Using Document API
-            >>> from pykokoro import Document
-            >>> doc = Document()
-            >>> doc.add_sentence("Hello and *welcome*!")
-            >>> doc.add_sentence("This is ...500ms a pause.")
-            >>> audio, sr = tts.create_from_document(doc, voice="af_sarah")
         """
         self._init_kokoro()
 
@@ -1676,6 +1677,11 @@ class Kokoro:
         else:
             voice_style = voice
 
+        # Derive trim_silence from pause_mode
+        # "manual" mode trims silence so PyKokoro can control pauses precisely
+        # "tts" mode lets TTS generate natural pauses
+        trim_silence = pause_mode == "manual"
+
         # If already phonemes, use directly
         if is_phonemes:
             phonemes = text
@@ -1692,12 +1698,11 @@ class Kokoro:
             text=text,
             tokenizer=self.tokenizer,
             lang=lang,
-            split_mode=split_mode,
+            pause_mode=pause_mode,
             pause_clause=pause_clause,
             pause_sentence=pause_sentence,
             pause_paragraph=pause_paragraph,
             pause_variance=pause_variance,
-            trim_silence=trim_silence,
             optimal_phoneme_length=optimal_phoneme_length,
             rng=rng,
         )
@@ -1859,7 +1864,7 @@ class Kokoro:
         voice: str | np.ndarray | VoiceBlend,
         speed: float = 1.0,
         lang: str = "en-us",
-        trim_silence: bool = False,
+        pause_mode: Literal["tts", "manual"] = "tts",
     ) -> tuple[np.ndarray, int]:
         """
         Generate audio from an SSMD Document.
@@ -1872,7 +1877,9 @@ class Kokoro:
             voice: Voice name, style vector, or VoiceBlend
             speed: Speech speed (1.0 = normal)
             lang: Default language code (can be overridden in SSMD markup)
-            trim_silence: Whether to trim silence from segment boundaries
+            pause_mode: How to handle pauses:
+                - "tts" (default): TTS generates pauses naturally
+                - "manual": PyKokoro controls pauses with precision
 
         Returns:
             Tuple of (audio samples as numpy array, sample rate)
@@ -1901,7 +1908,7 @@ class Kokoro:
             voice=voice,
             speed=speed,
             lang=lang,
-            trim_silence=trim_silence,
+            pause_mode=pause_mode,
         )
 
     def phonemize(self, text: str, lang: str = "en-us") -> str:

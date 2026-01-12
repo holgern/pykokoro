@@ -185,8 +185,11 @@ German
 Long Text Processing
 --------------------
 
-With Sentence Splitting
-~~~~~~~~~~~~~~~~~~~~~~~
+Basic Usage
+~~~~~~~~~~~
+
+For most use cases, simply pass your text to ``create()`` - PyKokoro handles
+everything automatically using TTS-native pauses:
 
 .. code-block:: python
 
@@ -194,23 +197,22 @@ With Sentence Splitting
    import soundfile as sf
 
    long_text = """
-   This is a long passage of text that demonstrates sentence splitting.
+   This is a long passage of text that demonstrates automatic processing.
    Each sentence will be processed separately for better quality.
 
    This is a new paragraph. It will also be handled efficiently.
-   The split_mode parameter controls how text is divided.
+   PyKokoro automatically handles text splitting internally.
    """
 
    with Kokoro() as kokoro:
        audio, sr = kokoro.create(
            long_text,
-           voice="af_bella",
-           split_mode="sentence"
+           voice="af_bella"
        )
        sf.write("long_text.wav", audio, sr)
 
-With Pause Markers and Splitting
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+With Pause Markers
+~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -220,7 +222,7 @@ With Pause Markers and Splitting
    text = """
    Welcome to this demonstration ...s
 
-   This text uses both pause markers and sentence splitting ...c
+   This text uses pause markers for explicit control ...c
    The combination creates very natural-sounding speech ...s
 
    Try it yourself!
@@ -229,15 +231,14 @@ With Pause Markers and Splitting
    with Kokoro() as kokoro:
        audio, sr = kokoro.create(
            text,
-           voice="af_bella",
-           split_mode="sentence"
+           voice="af_bella"
        )
        sf.write("combined_demo.wav", audio, sr)
 
-Automatic Natural Pauses (NEW!)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Manual Pause Control
+~~~~~~~~~~~~~~~~~~~~
 
-For the most natural-sounding speech, use automatic pause insertion:
+For precise control over pause timing, use ``pause_mode="manual"``:
 
 .. code-block:: python
 
@@ -257,15 +258,14 @@ For the most natural-sounding speech, use automatic pause insertion:
        audio, sr = kokoro.create(
            text,
            voice="af_sarah",
-           split_mode="clause",      # Split on commas and sentences
-           trim_silence=True,        # Enable automatic pauses
-           pause_clause=0.25,         # Clause pauses
+           pause_mode="manual",        # PyKokoro controls pauses precisely
+           pause_clause=0.25,          # Clause pauses
            pause_sentence=0.5,         # Sentence pauses
-           pause_paragraph=1.0,           # Paragraph pauses
-           pause_variance=0.05,      # Natural variance
-           random_seed=42            # For reproducibility
+           pause_paragraph=1.0,        # Paragraph pauses
+           pause_variance=0.05,        # Natural variance
+           random_seed=42              # For reproducibility
        )
-       sf.write("automatic_pauses.wav", audio, sr)
+       sf.write("manual_pauses.wav", audio, sr)
 
 **Key Benefits:**
 
@@ -570,11 +570,11 @@ Custom Phoneme Sequences
        )
        sf.write("custom_phonemes.wav", audio, sr)
 
-Advanced Text Splitting
-~~~~~~~~~~~~~~~~~~~~~~~~
+Advanced Text Splitting (Legacy API)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The ``split_and_phonemize_text`` function provides fine-grained control over
-how text is segmented for TTS processing. This is useful for:
+how text is segmented for TTS processing. This legacy API is useful for:
 
 - Long-form content (audiobooks, articles, podcasts)
 - Controlling prosody and natural pauses
@@ -661,22 +661,21 @@ Chapter Processing
    output_dir.mkdir(exist_ok=True)
 
    with Kokoro() as kokoro:
-       for i, (title, text) in enumerate(chapters.items(), 1):
-           print(f"Processing {title}...")
+        for i, (title, text) in enumerate(chapters.items(), 1):
+            print(f"Processing {title}...")
 
-           # Add chapter announcement
-           full_text = f"{title}. (...) {text}"
+            # Add chapter announcement
+            full_text = f"{title}. (...) {text}"
 
-           audio, sr = kokoro.create(
-               full_text,
-               voice="af_bella",
-               speed=1.0,
-               split_mode="sentence"
-           )
+            audio, sr = kokoro.create(
+                full_text,
+                voice="af_bella",
+                speed=1.0
+            )
 
-           output_file = output_dir / f"chapter_{i:02d}.wav"
-           sf.write(output_file, audio, sr)
-           print(f"  Saved to {output_file}")
+            output_file = output_dir / f"chapter_{i:02d}.wav"
+            sf.write(output_file, audio, sr)
+            print(f"  Saved to {output_file}")
 
 Real-Time Streaming (Conceptual)
 ---------------------------------

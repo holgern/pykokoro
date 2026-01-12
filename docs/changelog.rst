@@ -17,6 +17,7 @@ Version 0.0.4 (TBD)
 * Removed deprecated functions: ``download_model_hf_v11zh()``, ``download_voices_hf_v11zh()``, ``download_all_models_hf_v11zh()``
 * Function signatures updated: ``download_model()``, ``download_voice()``, ``download_all_voices()``, and ``download_all_models()`` now require ``variant`` parameter
 * Path helper functions ``get_model_dir()`` and ``get_voices_dir()`` now require ``source`` and ``variant`` parameters
+* **API Simplification:** Replaced ``split_mode`` and ``trim_silence`` parameters with single ``pause_mode`` parameter in ``Kokoro.create()``
 
 **Migration Guide:**
 
@@ -35,6 +36,36 @@ For users upgrading from v0.0.3:
     )
     download_model(variant="v1.1-zh", quality="fp16")
 
+    # Old pause control (v0.3.x) - NO LONGER WORKS
+    audio, sr = kokoro.create(
+        text,
+        voice="af_bella",
+        split_mode="clause",
+        trim_silence=True,
+        pause_clause=0.25
+    )
+
+    # New pause control (v0.4.0+)
+    # Default: TTS controls pauses naturally
+    audio, sr = kokoro.create(text, voice="af_bella")
+
+    # Manual pause control
+    audio, sr = kokoro.create(
+        text,
+        voice="af_bella",
+        pause_mode="manual",  # PyKokoro controls pauses precisely
+        pause_clause=0.25,
+        pause_sentence=0.5,
+        pause_paragraph=1.0
+    )
+
+**pause_mode Parameter:**
+
+The new ``pause_mode`` parameter simplifies pause control:
+
+* ``pause_mode="tts"`` (default): TTS generates pauses naturally. Best for most content.
+* ``pause_mode="manual"``: PyKokoro controls pauses precisely. Best for podcasts, voice switching, and precise timing.
+
 **Improvements:**
 
 * Unified path structure across all model sources and variants
@@ -42,6 +73,7 @@ For users upgrading from v0.0.3:
 * Shared configuration files between HuggingFace and GitHub sources
 * Improved code maintainability with consistent path handling
 * All quantization levels supported for v1.1-zh: fp32, fp16, q8, q8f16, q4, q4f16, uint8, uint8f16
+* Simplified API with clearer parameter semantics
 
 **New Features:**
 
@@ -49,12 +81,14 @@ For users upgrading from v0.0.3:
 * Added 103 voices for v1.1-zh variant
 * Voice files automatically combined into efficient .npz format
 * Progress callbacks for voice downloads
+* Added ``pause_mode`` parameter for simplified pause control
 
 **Documentation:**
 
 * Updated advanced features guide with unified variant usage
 * Updated ``examples/hf_v11zh_demo.py`` demonstration script
 * Added migration guide for v0.4.0 breaking changes
+* Updated all documentation to use new ``pause_mode`` API
 
 Version 0.0.3 (2026-01-07)
 --------------------------
@@ -112,8 +146,8 @@ Version 0.0.1 (2025-01-06)
 * Added ``enable_pauses`` parameter to ``create()`` method for pause marker support
 * Added pause markers: ``(.)``, ``(..)``, ``(...)`` for controlling speech pauses (DEPRECATED - use SSMD break syntax instead: ``...c``, ``...s``, ``...p``)
 * Added ``pause_short``, ``pause_medium``, ``pause_long`` parameters for custom pause durations
-* Added ``split_mode`` parameter to ``create()`` for intelligent text splitting
-* Added ``trim_silence`` parameter for removing silence between segments
+* Added ``split_mode`` parameter to ``create()`` for intelligent text splitting (DEPRECATED in v0.4.0 - use ``pause_mode`` instead)
+* Added ``trim_silence`` parameter for removing silence between segments (DEPRECATED in v0.4.0 - use ``pause_mode="manual"`` instead)
 * Added ``pause_after`` field to ``PhonemeSegment`` class
 
 **Improvements:**

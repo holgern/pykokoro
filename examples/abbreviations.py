@@ -121,14 +121,13 @@ def main():
         print(f"  - {abbr}")
     print()
 
-    print("Generating audio with automatic splitting...")
+    print("Generating audio...")
     samples, sample_rate = kokoro.create(
         TEXT,
         voice=VOICE,
         speed=1.0,
         lang=LANG,
-        trim_silence=True,
-        split_mode="sentence",
+        # Use default pause_mode="tts" for natural prosody
     )
 
     output_file = "abbreviations_demo.wav"

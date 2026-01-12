@@ -108,7 +108,7 @@ def main():
         voice="af_sarah",  # Default voice (fallback if segment has no annotation)
         speed=1.0,
         lang="en-us",
-        trim_silence=True,
+        pause_mode="manual",  # PyKokoro controls pauses precisely
     )
 
     # Save to file

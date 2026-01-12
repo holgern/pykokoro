@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Demonstrate automatic pause insertion with trim_silence and split_mode.
+Demonstrate automatic pause insertion with pause_mode="manual".
 
-This example shows how trim_silence combined with split_mode automatically
-adds natural pauses between clauses, sentences, and paragraphs for more
-natural-sounding speech without manual pause markers.
+This example shows how pause_mode="manual" automatically adds natural pauses
+between clauses, sentences, and paragraphs for more natural-sounding speech
+without manual pause markers.
 
 Usage:
     python examples/automatic_pauses_demo.py
@@ -44,11 +44,10 @@ def main():
     """
 
     print("=" * 70)
-    print("Generating with AUTOMATIC pauses (trim_silence + split_mode)")
+    print("Generating with AUTOMATIC pauses (pause_mode='manual')")
     print("=" * 70)
     print("\nKey features:")
-    print("  • trim_silence=True - Removes silence from segment boundaries")
-    print("  • split_mode='clause' - Splits on commas and sentences")
+    print("  • pause_mode='manual' - PyKokoro controls all pauses precisely")
     print("  • Automatic pause insertion:")
     print("    - Short pauses after clauses (within sentence)")
     print("    - Medium pauses after sentences (within paragraph)")
@@ -66,8 +65,7 @@ def main():
         text,
         voice="af_sarah",
         lang="en-us",
-        split_mode="clause",  # Split on commas and sentences
-        trim_silence=True,  # Enable automatic pause insertion
+        pause_mode="manual",  # PyKokoro controls pauses precisely
         pause_clause=0.25,  # Clause pauses (commas)
         pause_sentence=0.5,  # Sentence pauses
         pause_paragraph=1.0,  # Paragraph pauses
@@ -93,29 +91,23 @@ def main():
 
     print("Comparison with other approaches:")
     print()
-    print("1. NO pauses (default):")
+    print("1. TTS-controlled pauses (default):")
     print("   kokoro.create(text, voice='af_sarah')")
-    print("   → Fast, continuous speech without breaks")
+    print("   → TTS generates natural pauses automatically")
     print()
-    print("2. SSMD break markers (automatically detected):")
+    print("2. SSMD break markers:")
     print("   text = 'Hello ...c world ...s How are you?'")
     print("   kokoro.create(text, voice='af_sarah')")
     print("   → SSMD breaks automatically detected and processed")
     print()
-    print("3. Automatic pauses (this example):")
-    print("   kokoro.create(text, voice='af_sarah',")
-    print("                 split_mode='clause', trim_silence=True)")
-    print("   → Natural pauses automatically added at linguistic boundaries")
-    print()
-    print("4. Combined approach:")
-    print("   Use SSMD breaks AND split_mode + trim_silence together")
-    print("   → SSMD markers for special emphasis + automatic natural pauses")
+    print("3. Manual pause control (this example):")
+    print("   kokoro.create(text, voice='af_sarah', pause_mode='manual')")
+    print("   → PyKokoro controls pauses precisely at linguistic boundaries")
     print()
 
     print("Tips for best results:")
-    print("  • Use split_mode='clause' for the most natural pauses")
-    print("  • Use split_mode='sentence' for fewer, longer pauses")
-    print("  • Use split_mode='paragraph' for minimal pauses")
+    print("  • Use pause_mode='manual' for precise control over all pauses")
+    print("  • Use pause_mode='tts' (default) to let TTS handle pauses naturally")
     print("  • Adjust pause_clause/sentence/paragraph to match your content style")
     print("  • Set pause_variance=0.0 for consistent timing (e.g., training data)")
     print("  • Set random_seed for reproducible output")

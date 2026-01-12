@@ -80,10 +80,31 @@ class TestSSMDSegmentConversion:
             tokenizer=tokenizer,
         )
 
+        # SSMD splits on emphasis markers, creating segments for each part
+        assert len(segments) == 3
+        # First segment: text before emphasis
+        assert segments[0].text == "This is"
+        # Second segment: emphasized text (markup stripped)
+        assert segments[1].text == "important"
+        assert "*" not in segments[1].text  # Markup removed
+        # Third segment: text after pause
+        assert "Really!" in segments[2].text
+
+    def test_parse_ssmd_to_segments_without_markup(self):
+        """Test SSMD parsing strips markup from text."""
+        from pykokoro.ssmd_parser import parse_ssmd_to_segments
+        from pykokoro.tokenizer import create_tokenizer
+
+        tokenizer = create_tokenizer()
+        initial, segments = parse_ssmd_to_segments(
+            "Hello this is great. Really!",
+            tokenizer=tokenizer,
+        )
+
         assert len(segments) == 2
         # Markup should be stripped from text
-        assert "important" in segments[0].text
-        assert "*" not in segments[0].text  # Markup removed
+        assert "Hello this is great." in segments[0].text
+        assert "Really!" in segments[1].text
 
     def test_ssmd_segments_to_phoneme_segments(self):
         """Test converting SSMD segments to phoneme segments."""

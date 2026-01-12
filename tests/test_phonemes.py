@@ -1192,7 +1192,7 @@ class TestTextToPhonemeSegmentsWithOptimalLength:
             text=text,
             tokenizer=kokoro.tokenizer,
             lang="en-us",
-            split_mode="sentence",
+            pause_mode="tts",
             optimal_phoneme_length=None,
         )
 
@@ -1201,7 +1201,7 @@ class TestTextToPhonemeSegmentsWithOptimalLength:
             text=text,
             tokenizer=kokoro.tokenizer,
             lang="en-us",
-            split_mode="sentence",
+            pause_mode="tts",
             optimal_phoneme_length=50,
         )
 
@@ -1225,7 +1225,7 @@ class TestTextToPhonemeSegmentsWithOptimalLength:
             text,
             voice="af_bella",
             lang="en-us",
-            split_mode="sentence",
+            pause_mode="manual",
             optimal_phoneme_length=50,
         )
 

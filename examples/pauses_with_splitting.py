@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Demonstrate SSMD break markers combined with text splitting modes.
+Demonstrate SSMD break markers combined with pause_mode="manual".
 
-This example shows how to use SSMD break markers together with automatic
-text splitting for better prosody in long texts.
+This example shows how to use SSMD break markers together with manual
+pause control for better prosody in long texts.
 
 Usage:
     python examples/pauses_with_splitting.py
@@ -42,10 +42,10 @@ def main():
     """
 
     print("=" * 70)
-    print("Generating with sentence-level splitting and SSMD pauses...")
+    print("Generating with manual pause control and SSMD pauses...")
     print("=" * 70)
     print("\nThis combines:")
-    print("  • Smart text splitting (split_mode='sentence')")
+    print("  • pause_mode='manual' - PyKokoro controls pauses precisely")
     print("  • Explicit pause control using SSMD breaks (...c, ...s, ...p)")
     print("  • Automatic handling of long sentences")
     print("  • Natural pause variance for more human-like speech")
@@ -59,11 +59,10 @@ def main():
         text,
         voice="af_sarah",
         lang="en-us",
-        split_mode="sentence",  # Smart sentence splitting
+        pause_mode="manual",  # PyKokoro controls pauses precisely
         pause_clause=0.3,
         pause_sentence=0.6,
         pause_paragraph=1.2,
-        trim_silence=True,
         pause_variance=0.05,  # Add natural variance (±100ms at 95% confidence)
         random_seed=42,  # For reproducible results
     )
@@ -117,17 +116,9 @@ def main():
 
     kokoro.close()
 
-    print("Benefits of combining SSMD pauses with split_mode:")
-    print("  ✓ Natural sentence boundaries preserved")
-    print("  ✓ Explicit pause control at important points")
-    print("  ✓ Automatic handling of phoneme length limits")
-    print("  ✓ Natural variance prevents robotic timing")
-    print("  ✓ Better overall prosody and naturalness")
-    print()
-    print("Try experimenting with different split_modes:")
-    print("  • split_mode='paragraph' - Split on double newlines")
-    print("  • split_mode='sentence' - Split on sentences (requires spaCy)")
-    print("  • split_mode='clause' - Split on commas too (requires spaCy)")
+    print("Pause modes:")
+    print("  • pause_mode='tts' (default) - TTS generates pauses naturally")
+    print("  • pause_mode='manual' - PyKokoro controls pauses with precision")
     print()
     print("SSMD break markers:")
     print("  • ...n - No pause (0ms)")

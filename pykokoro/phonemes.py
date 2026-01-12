@@ -6,14 +6,17 @@ phoneme segments for TTS generation.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 if TYPE_CHECKING:
     from .tokenizer import Tokenizer
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -273,6 +276,167 @@ def batch_chunks_by_optimal_length(
     return batched_chunks
 
 
+def batch_phoneme_segments(
+    segments: list[PhonemeSegment],
+    tokenizer: Tokenizer,
+    optimal_lengths: list[int],
+    max_phoneme_length: int,
+) -> list[PhonemeSegment]:
+    """Batch PhonemeSegment instances to reach optimal phoneme length.
+
+    Uses conservative batching strategy with overshoot tolerance.
+    Preserves SSMD metadata and pause_after from last segment in each batch.
+
+    This function combines consecutive short segments to achieve target
+    phoneme lengths, improving audio quality for very short segments.
+    It uses a greedy conservative approach:
+    - Merges segments toward highest target in optimal_lengths
+    - Stops when reaching any target AND adding next would significantly overshoot
+    - Respects max_phoneme_length limit (won't batch if it would exceed 510)
+    - Single segments exceeding max are passed through (handled by cascade later)
+
+    Args:
+        segments: List of PhonemeSegment instances to batch
+        tokenizer: Tokenizer instance (for re-phonemizing batched text)
+        optimal_lengths: Target phoneme lengths (e.g., [30, 50, 70])
+        max_phoneme_length: Maximum allowed phonemes (510 for Kokoro)
+
+    Returns:
+        List of batched PhonemeSegment instances with preserved metadata
+    """
+    if not segments or not optimal_lengths:
+        return segments
+
+    # Ensure optimal_lengths is sorted ascending
+    targets = sorted(optimal_lengths)
+    highest_target = targets[-1]
+    overshoot_tolerance = 0.3  # 30% tolerance for overshooting
+
+    batched_segments: list[PhonemeSegment] = []
+    current_batch_segments: list[PhonemeSegment] = []
+    current_batch_phoneme_length = 0
+
+    def flush_batch() -> None:
+        """Flush current batch to output."""
+        nonlocal current_batch_segments, current_batch_phoneme_length
+
+        if not current_batch_segments:
+            return
+
+        # Combine text from all segments
+        combined_text = " ".join(seg.text for seg in current_batch_segments)
+
+        # Re-phonemize combined text (use language from first segment)
+        lang = current_batch_segments[0].lang
+        combined_phonemes = tokenizer.phonemize(combined_text, lang=lang)
+        combined_tokens = tokenizer.tokenize(combined_phonemes)
+
+        # Determine paragraph/sentence metadata
+        first_seg = current_batch_segments[0]
+        last_seg = current_batch_segments[-1]
+
+        if first_seg.sentence is None or last_seg.sentence is None:
+            sentence_metadata: int | str | None = None
+        elif first_seg.sentence == last_seg.sentence:
+            sentence_metadata = first_seg.sentence
+        else:
+            # Multiple sentences - use range format
+            sentence_metadata = f"{first_seg.sentence}-{last_seg.sentence}"
+
+        # Create batched segment
+        # Preserve pause_after and ssmd_metadata from LAST segment
+        batched_seg = PhonemeSegment(
+            text=combined_text,
+            phonemes=combined_phonemes,
+            tokens=combined_tokens,
+            lang=lang,
+            paragraph=first_seg.paragraph,
+            sentence=sentence_metadata,
+            pause_after=last_seg.pause_after,  # Preserve from last
+            ssmd_metadata=last_seg.ssmd_metadata,  # Preserve from last
+        )
+
+        batched_segments.append(batched_seg)
+
+        # Reset batch
+        current_batch_segments = []
+        current_batch_phoneme_length = 0
+
+    for segment in segments:
+        # Skip empty segments (but preserve them as-is)
+        if not segment.text.strip():
+            # Flush current batch first
+            if current_batch_segments:
+                flush_batch()
+            # Add empty segment as-is (preserves pause-only segments)
+            batched_segments.append(segment)
+            continue
+
+        segment_length = len(segment.phonemes)
+
+        # If this single segment already exceeds max, add it as-is
+        if segment_length > max_phoneme_length:
+            # Flush any current batch first
+            if current_batch_segments:
+                flush_batch()
+            # Add oversized segment alone (will be cascaded later)
+            batched_segments.append(segment)
+            continue
+
+        # If this is the first segment in batch, start accumulating
+        if not current_batch_segments:
+            current_batch_segments.append(segment)
+            current_batch_phoneme_length = segment_length
+            continue
+
+        # Calculate potential length if we add this segment
+        potential_length = current_batch_phoneme_length + segment_length
+
+        # Check if adding would exceed max
+        if potential_length > max_phoneme_length:
+            # Flush current batch and start new one
+            flush_batch()
+            current_batch_segments.append(segment)
+            current_batch_phoneme_length = segment_length
+            continue
+
+        # Conservative stopping logic (same as batch_chunks_by_optimal_length)
+        current_at_target = any(current_batch_phoneme_length >= t for t in targets)
+
+        if current_at_target:
+            # Find next higher target
+            next_higher_target = None
+            for t in targets:
+                if t > current_batch_phoneme_length:
+                    next_higher_target = t
+                    break
+
+            if next_higher_target is None:
+                next_higher_target = highest_target
+
+            # Check if adding would overshoot by more than tolerance
+            overshoot_amount = potential_length - next_higher_target
+            overshoot_ratio = (
+                overshoot_amount / next_higher_target if next_higher_target > 0 else 0
+            )
+
+            if overshoot_ratio > overshoot_tolerance:
+                # Stop merging - flush current and start new batch
+                flush_batch()
+                current_batch_segments.append(segment)
+                current_batch_phoneme_length = segment_length
+                continue
+
+        # Otherwise, add to current batch (greedy merging toward highest target)
+        current_batch_segments.append(segment)
+        current_batch_phoneme_length = potential_length
+
+    # Flush final batch
+    flush_batch()
+
+    return batched_segments
+
+
 def _split_text_with_mode(
     text: str,
     mode: str,
@@ -284,28 +448,34 @@ def _split_text_with_mode(
 
     Args:
         text: Text to split
-        mode: Split mode (paragraph, sentence, clause, word)
-        language_model: spaCy model name for sentence/clause modes
+        mode: Split mode ('paragraph', 'sentence', 'clause', or 'word')
+        language_model: spaCy model name (used for sentence/clause mode)
         paragraph_idx: Paragraph index to assign to segments
         sentence_idx: Sentence index to assign to segments
 
     Returns:
         List of tuples: (text_chunk, paragraph_idx, sentence_idx)
+
+    Raises:
+        ValueError: If an unsupported mode is provided
     """
     if mode == "word":
         # Word-level splitting: split on whitespace
         words = text.split()
         return [(word, paragraph_idx, sentence_idx) for word in words]
-    else:
-        # Use phrasplit for paragraph/sentence/clause
+    elif mode == "paragraph":
+        # Split on double newlines
+        paragraphs = text.split("\n\n")
+        return [(p.strip(), i, 0) for i, p in enumerate(paragraphs) if p.strip()]
+    elif mode == "sentence":
+        # Use phrasplit for sentence splitting
         from phrasplit import split_text
 
         segments = split_text(
             text,
-            mode=mode,
+            mode="sentence",
             language_model=language_model,
             apply_corrections=True,
-            split_on_colon=True,
         )
 
         # Convert phrasplit.Segment to our tuple format
@@ -314,6 +484,30 @@ def _split_text_with_mode(
             for seg in segments
             if seg.text.strip()
         ]
+    elif mode == "clause":
+        # Use phrasplit for clause splitting (commas, semicolons)
+        from phrasplit import split_text
+
+        segments = split_text(
+            text,
+            mode="clause",
+            language_model=language_model,
+            apply_corrections=True,
+            split_on_colon=True,
+        )
+
+        # Convert phrasplit.Segment to our tuple format
+        # Keep paragraph_idx from caller, use sentence from phrasplit
+        return [
+            (seg.text.strip(), paragraph_idx, sentence_idx)
+            for seg in segments
+            if seg.text.strip()
+        ]
+    else:
+        # Unsupported mode
+        raise ValueError(
+            f"Unsupported split mode: {mode}. Expected 'paragraph', 'sentence', 'clause', or 'word'."
+        )
 
 
 def split_and_phonemize_text(
@@ -695,21 +889,21 @@ def text_to_phoneme_segments(
     text: str,
     tokenizer: Tokenizer,
     lang: str = "en-us",
-    split_mode: str | None = None,
+    pause_mode: Literal["tts", "manual"] = "tts",
     pause_clause: float = 0.3,
     pause_sentence: float = 0.6,
     pause_paragraph: float = 1.0,
     pause_variance: float = 0.05,
-    trim_silence: bool = False,
     optimal_phoneme_length: int | list[int] | None = None,
     rng: np.random.Generator | None = None,
 ) -> list[PhonemeSegment]:
     """Convert text to list of PhonemeSegment with pauses populated.
 
-    Unified function that handles all text-to-segment conversion:
-    - SSMD markup (automatically detected: ...c, ...s, ...p, ...500ms, *emphasis*, etc.)
-    - Automatic pauses (split_mode with trim_silence)
-    - Combination of both
+    Simplified unified function that:
+    1. Always parses text through SSMD (with sentence detection)
+    2. Optionally batches short segments to reach optimal phoneme length
+    3. Handles phoneme overflow via cascade (sentence → clause → word)
+    4. Applies pause handling based on pause_mode
 
     SSMD markup in text is automatically detected and processed. Supported features:
     - Breaks: ...n, ...w, ...c, ...s, ...p, ...500ms, ...2s
@@ -720,25 +914,22 @@ def text_to_phoneme_segments(
     - Substitution: [H2O](sub: water) replaces text before phonemization
     - Markers: @name (stored in metadata)
 
-    Note: Old pause markers (.), (..), (...) are NO LONGER SUPPORTED.
-    Use SSMD break syntax instead: ...c, ...s, ...p
-
     Args:
-        text: Input text (SSMD markup automatically detected)
+        text: Input text (SSMD markup automatically detected and processed)
         tokenizer: Tokenizer instance for phonemization
         lang: Default language code (can be overridden per-segment with SSMD)
-        split_mode: Optional split mode ('paragraph', 'sentence', 'clause')
-        pause_short: Duration for SSMD ...c (comma/clause) pauses
-        pause_medium: Duration for SSMD ...s (sentence) pauses
-        pause_long: Duration for SSMD ...p (paragraph) pauses
-        pause_clause: Duration for automatic clause boundary pauses
-        pause_sentence: Duration for automatic sentence boundary pauses
-        pause_paragraph: Duration for automatic paragraph boundary pauses
-        pause_variance: Standard deviation for Gaussian pause variance
-        trim_silence: Whether automatic pauses should be added with split_mode
+        pause_mode: Pause handling mode:
+            - "tts" (default): TTS generates pauses naturally at sentence boundaries.
+              SSMD pauses are preserved. trim_silence=False during audio generation.
+            - "manual": PyKokoro controls pauses with precision. Automatic pauses
+              are added between segments. trim_silence=True during audio generation.
+        pause_clause: Duration for SSMD ...c and automatic clause boundary pauses
+        pause_sentence: Duration for SSMD ...s and automatic sentence boundary pauses
+        pause_paragraph: Duration for SSMD ...p and automatic paragraph boundary pauses
+        pause_variance: Standard deviation for Gaussian pause variance (only used
+            when pause_mode="manual")
         optimal_phoneme_length: Optional target length(s) for batching segments.
-            Only applies when split_mode is set. Merges short segments to reach
-            optimal length for better audio quality.
+            Merges short segments to reach optimal length for better audio quality.
             - None (default): No batching
             - int: Single target (e.g., 50 merges until ~50 phonemes)
             - list[int]: Multiple targets (e.g., [30, 50, 70] tries to reach 70,
@@ -748,192 +939,254 @@ def text_to_phoneme_segments(
     Returns:
         List of PhonemeSegment instances with pause_after populated
 
-    Raises:
-        ImportError: If spaCy is required but not installed
-
     Example:
-        Basic usage with SSMD breaks (automatically detected):
+        Basic usage (TTS handles pauses):
 
         >>> from pykokoro import Tokenizer, text_to_phoneme_segments
         >>> tokenizer = Tokenizer()
         >>> segments = text_to_phoneme_segments(
-        ...     "Hello ...c World ...p End",
+        ...     "Hello. World.",
         ...     tokenizer=tokenizer
         ... )
-        >>> # Automatically detects SSMD breaks
-        >>> # Returns segments with pause_after: [0.3, 1.0, 0.0]
+        >>> # Sentences split, TTS generates natural pauses
 
-        SSMD with custom time:
+        With SSMD breaks:
 
         >>> segments = text_to_phoneme_segments(
-        ...     "Wait ...500ms then continue.",
+        ...     "Hello ...500ms World.",
         ...     tokenizer=tokenizer
         ... )
-        >>> # Returns segment with 0.5s pause
+        >>> # SSMD pause preserved in segment
 
-        Automatic pauses with sentence splitting:
+        Manual pause control:
 
         >>> segments = text_to_phoneme_segments(
         ...     "First sentence. Second sentence.",
         ...     tokenizer=tokenizer,
-        ...     split_mode="sentence",
-        ...     trim_silence=True
+        ...     pause_mode="manual"
         ... )
-        >>> # Automatically adds pauses between sentences
+        >>> # Automatic pauses added between sentences (with trim_silence)
 
-        Combination of SSMD and automatic pauses:
+        With optimal batching:
 
         >>> segments = text_to_phoneme_segments(
-        ...     "First part ...p Second sentence. Third sentence.",
+        ...     '"Why?" "Do?" "Go!"',
         ...     tokenizer=tokenizer,
-        ...     split_mode="sentence",
-        ...     trim_silence=True
+        ...     optimal_phoneme_length=50
         ... )
-        >>> # SSMD pause after "First part", automatic pauses between sentences
+        >>> # Short sentences batched together for better prosody
     """
+    from .tokenizer import MAX_PHONEME_LENGTH
+
     # Create RNG if not provided
     if rng is None:
         rng = np.random.default_rng()
 
-    # Validate spaCy requirement for sentence/clause modes
-    if split_mode in ["sentence", "clause"]:
-        try:
-            import spacy  # noqa: F401
-        except ImportError as err:
-            raise ImportError(
-                f"spaCy is required for split_mode='{split_mode}'. "
-                "Install with: pip install spacy && "
-                "python -m spacy download en_core_web_sm"
-            ) from err
+    # Step 1: ALWAYS parse through SSMD (with sentence detection)
+    initial_pause, ssmd_segments = parse_ssmd_to_segments(
+        text,
+        tokenizer,
+        lang=lang,
+        pause_none=0.0,
+        pause_weak=0.15,
+        pause_clause=pause_clause,
+        pause_sentence=pause_sentence,
+        pause_paragraph=pause_paragraph,
+    )
 
-    # Auto-detect SSMD markup in text (replaces old pause marker detection)
-    has_ssmd = has_ssmd_markup(text)
+    # Step 2: Convert SSMD segments to phoneme segments
+    phoneme_segments = ssmd_segments_to_phoneme_segments(
+        ssmd_segments,
+        initial_pause,
+        tokenizer,
+        default_lang=lang,
+        paragraph=0,
+        sentence_start=0,
+    )
 
-    # Case 1: Text contains SSMD markup (breaks, emphasis, etc.)
-    if has_ssmd:
-        # Parse SSMD markup from text
-        initial_pause, ssmd_segments = parse_ssmd_to_segments(
-            text,
-            tokenizer,
-            lang=lang,
-            pause_none=0.0,
-            pause_weak=0.15,
-            pause_clause=pause_clause,
-            pause_sentence=pause_sentence,
-            pause_paragraph=pause_paragraph,
-        )
-
-        # Convert SSMD segments to phoneme segments
-        phoneme_segments = ssmd_segments_to_phoneme_segments(
-            ssmd_segments,
-            initial_pause,
-            tokenizer,
-            default_lang=lang,
-            paragraph=0,
-            sentence_start=0,
-        )
-
-        # If split_mode is also enabled, process each SSMD segment with splitting
-        if split_mode is not None:
-            all_segments: list[PhonemeSegment] = []
-
-            # Process each SSMD-parsed segment
-            for segment in phoneme_segments:
-                if segment.text.strip():
-                    # Split this segment using split_mode
-                    sub_segments = split_and_phonemize_text(
-                        segment.text,
-                        tokenizer=tokenizer,
-                        lang=segment.lang,  # Use segment's language
-                        split_mode=split_mode,
-                        optimal_phoneme_length=optimal_phoneme_length,
-                    )
-
-                    # Add automatic pauses between sub-segments if trim_silence
-                    if trim_silence and len(sub_segments) > 0:
-                        populate_segment_pauses(
-                            sub_segments,
-                            pause_clause,
-                            pause_sentence,
-                            pause_paragraph,
-                            pause_variance,
-                            rng,
-                        )
-
-                    # Override last sub-segment's pause with SSMD pause_after
-                    if sub_segments:
-                        sub_segments[-1].pause_after += segment.pause_after
-
-                    all_segments.extend(sub_segments)
-                else:
-                    # Empty text segment (just a pause), preserve it
-                    all_segments.append(segment)
-
-            return all_segments
+    # Step 3: PHONEME BATCHING (before cascade!)
+    if optimal_phoneme_length is not None:
+        # Normalize to list
+        if isinstance(optimal_phoneme_length, int):
+            optimal_lengths = [optimal_phoneme_length]
         else:
-            # No split_mode, return SSMD segments directly
-            return phoneme_segments
+            optimal_lengths = list(optimal_phoneme_length)
 
-    # Case 2: Automatic splitting with split_mode
-    elif split_mode is not None:
-        # Split text into segments
-        segments = split_and_phonemize_text(
-            text,
-            tokenizer=tokenizer,
-            lang=lang,
-            split_mode=split_mode,
-            optimal_phoneme_length=optimal_phoneme_length,
+        # Batch segments using conservative strategy
+        phoneme_segments = batch_phoneme_segments(
+            phoneme_segments,
+            tokenizer,
+            optimal_lengths,
+            MAX_PHONEME_LENGTH,
         )
 
-        # Add automatic pauses if trim_silence enabled
-        if trim_silence:
-            populate_segment_pauses(
-                segments,
-                pause_clause,
-                pause_sentence,
-                pause_paragraph,
-                pause_variance,
-                rng,
-            )
+    # Step 4: CASCADE (handle overflow for segments exceeding max_phoneme_length)
+    final_segments: list[PhonemeSegment] = []
+    for segment in phoneme_segments:
+        if not segment.text.strip():
+            # Empty segment (just pause), preserve as-is
+            final_segments.append(segment)
+            continue
 
-        return segments
+        if len(segment.phonemes) <= MAX_PHONEME_LENGTH:
+            # Segment fits, no cascade needed
+            final_segments.append(segment)
+            continue
 
-    # Case 3: No pauses, no splitting - automatic phoneme-based splitting
-    else:
-        # Phonemize the entire text
-        phonemes = tokenizer.phonemize(text, lang=lang)
+        # Segment too long - cascade from sentence level
+        sub_segments = _cascade_split_segment(
+            segment,
+            tokenizer,
+            MAX_PHONEME_LENGTH,
+        )
+        final_segments.extend(sub_segments)
 
-        # Check if phonemes exceed the limit and need splitting
-        from .tokenizer import MAX_PHONEME_LENGTH
+    # Step 5: PAUSE HANDLING (based on pause_mode)
+    if pause_mode == "manual":
+        # Add automatic pauses between segments
+        # Note: This ADDS to existing SSMD pauses in pause_after
+        populate_segment_pauses(
+            final_segments,
+            pause_clause,
+            pause_sentence,
+            pause_paragraph,
+            pause_variance,
+            rng,
+        )
+    # else: pause_mode == "tts", segments keep SSMD pauses, TTS handles rest
 
-        if len(phonemes) > MAX_PHONEME_LENGTH:
-            # Need to split - use split_and_phonemize_text
-            # Try sentence mode first, fall back to word mode if spaCy unavailable
-            try:
-                segments = split_and_phonemize_text(
-                    text,
-                    tokenizer=tokenizer,
-                    lang=lang,
-                    split_mode="sentence",
-                )
-            except ImportError:
-                # spaCy not available, fall back to word-level splitting
-                segments = split_and_phonemize_text(
-                    text,
-                    tokenizer=tokenizer,
-                    lang=lang,
-                    split_mode="word",
-                )
-            return segments
-        else:
-            # Single segment is fine
+    return final_segments
+
+
+def _cascade_split_segment(
+    segment: PhonemeSegment,
+    tokenizer: Tokenizer,
+    max_phoneme_length: int,
+    language_model: str = "en_core_web_sm",
+) -> list[PhonemeSegment]:
+    """Split a segment using cascade logic (sentence → clause → word).
+
+    Preserves SSMD metadata and pause on the last sub-segment.
+
+    Args:
+        segment: PhonemeSegment that exceeds max_phoneme_length
+        tokenizer: Tokenizer instance
+        max_phoneme_length: Maximum phonemes per segment
+        language_model: spaCy model name for clause splitting
+
+    Returns:
+        List of PhonemeSegment instances, each within max_phoneme_length
+    """
+
+    def process_chunk_with_cascade(
+        chunk_text: str,
+        current_mode: str,
+        paragraph_idx: int,
+        sentence_idx: int | str | None,
+    ) -> list[PhonemeSegment]:
+        """Process a text chunk, cascading to finer split modes if needed."""
+        chunk_text = chunk_text.strip()
+        if not chunk_text:
+            return []
+
+        # Phonemize this chunk
+        phonemes = tokenizer.phonemize(chunk_text, lang=segment.lang)
+
+        # Check if phonemes fit within limit
+        if len(phonemes) <= max_phoneme_length:
+            # Success! Create the segment
             tokens = tokenizer.tokenize(phonemes)
             return [
                 PhonemeSegment(
-                    text=text,
+                    text=chunk_text,
                     phonemes=phonemes,
                     tokens=tokens,
-                    lang=lang,
-                    pause_after=0.0,
+                    lang=segment.lang,
+                    paragraph=paragraph_idx,
+                    sentence=sentence_idx,
                 )
             ]
+
+        # Phonemes are too long - need to cascade to finer split mode
+        next_mode = _get_next_split_mode(current_mode)
+
+        if next_mode is None:
+            # Already at word level, can't split more - truncate and warn
+            logger.warning(
+                f"Segment phonemes ({len(phonemes)}) exceed max ({max_phoneme_length}) "
+                f"even at word level. Truncating. Text: '{chunk_text[:50]}...'"
+            )
+            phonemes = phonemes[:max_phoneme_length]
+            tokens = tokenizer.tokenize(phonemes)
+            return [
+                PhonemeSegment(
+                    text=chunk_text,
+                    phonemes=phonemes,
+                    tokens=tokens,
+                    lang=segment.lang,
+                    paragraph=paragraph_idx,
+                    sentence=sentence_idx,
+                )
+            ]
+
+        # Cascade to next finer split mode
+        try:
+            cascade_sentence_idx = (
+                sentence_idx if isinstance(sentence_idx, int) else None
+            )
+
+            sub_chunks = _split_text_with_mode(
+                chunk_text,
+                next_mode,
+                language_model,
+                paragraph_idx,
+                cascade_sentence_idx,
+            )
+        except ImportError:
+            # spaCy not installed - fall back to word splitting
+            if next_mode == "clause":
+                logger.warning(
+                    f"spaCy required for clause splitting but not installed. "
+                    f"Falling back to word-level splitting."
+                )
+                cascade_sentence_idx = (
+                    sentence_idx if isinstance(sentence_idx, int) else None
+                )
+                sub_chunks = _split_text_with_mode(
+                    chunk_text,
+                    "word",
+                    language_model,
+                    paragraph_idx,
+                    cascade_sentence_idx,
+                )
+            else:
+                raise
+
+        # Recursively process each sub-chunk
+        results = []
+        for sub_text, sub_para, sub_sent in sub_chunks:
+            sub_segments = process_chunk_with_cascade(
+                sub_text,
+                next_mode,
+                sub_para,
+                sub_sent,
+            )
+            results.extend(sub_segments)
+
+        return results
+
+    # Start cascade from "sentence" level (since input comes from SSMD parsing)
+    sub_segments = process_chunk_with_cascade(
+        segment.text,
+        "sentence",
+        segment.paragraph,
+        segment.sentence,
+    )
+
+    # Preserve SSMD metadata and pause on last sub-segment
+    if sub_segments:
+        sub_segments[-1].pause_after += segment.pause_after
+        if segment.ssmd_metadata:
+            sub_segments[-1].ssmd_metadata = segment.ssmd_metadata
+
+    return sub_segments

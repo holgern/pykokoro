@@ -30,17 +30,17 @@ Chapter One: The Meeting ...p
 'I don't like you,' a man told me once, standing in the doorway of an old café.
 His words hung in the air like smoke...
 
-"I can't... or shouldn't," I replied, confused by his hostility. 'We've never even met before!'
+"I can't... or shouldn't," I replied, confused by his hostility. "We've never even met before!"
 
-'That's exactly the point!' he said, leaning against the frame. "You're the type who wouldn't
+"That's exactly the point!" he said, leaning against the frame. "You're the type who wouldn't
 understand. You'll never get it, no matter how hard you'll try!"
 
-I felt my face flush. 'I'll have you know that's completely unfair! You don't know anything about me!'
+I felt my face flush. "I'll have you know that's completely unfair! You don't know anything about me!"
 
-"Don't I?" He smirked. 'I'd've thought you'd've figured it out by now... People like you—you're
-all the same. You won't listen, you can't comprehend, and you shouldn't even bother trying!'
+"Don't I?" He smirked. "I'd've thought you'd've figured it out by now... People like you—you're
+all the same. You won't listen, you can't comprehend, and you shouldn't even bother trying!"
 
-'That's ridiculous!' I protested. "I'm not gonna stand here and let you insult me! What's your
+"That's ridiculous!" I protested. "I'm not gonna stand here and let you insult me! What's your
 problem anyway?"
 
 He laughed bitterly. 'What's my problem? You're asking what's my problem? I'll tell you what's
@@ -50,22 +50,22 @@ an excuse, isn't it?'
 
 Chapter Two: The Argument ...p
 
-"Look..." I said, trying to stay calm, 'I don't know what happened to you, but you shouldn't
-take it out on strangers! That's not fair, and it won't make you feel better.'
+"Look..." I said, trying to stay calm, "I don't know what happened to you, but you shouldn't
+take it out on strangers! That's not fair, and it won't make you feel better."
 
-'Won't it?' he challenged. "You're telling me what'll make me feel better? That's rich,
+"Won't it?" he challenged. "You're telling me what'll make me feel better? That's rich,
 coming from someone who doesn't know me!"
 
-'You're right—I don't know you!' I admitted. "But I'd've listened if you'd've given me a chance...
+"You're right—I don't know you!" I admitted. "But I'd've listened if you'd've given me a chance...
 I would've understood if you'd've explained. But you're not gonna do that, are you?"
 
 He shook his head. 'Why should I? You'll just say what everyone says: "It's gonna be okay!"
 or "You've gotta stay positive!" or "Things'll get better!" But they won't, and you can't
 promise that they will!'
 
-"I wasn't gonna say that..." I said quietly. 'I was gonna say that I'm sorry you're hurting.'
+"I wasn't gonna say that..." I said quietly. "I was gonna say that I'm sorry you're hurting."
 
-That stopped him. His expression softened slightly. 'You're... what?'
+That stopped him. His expression softened slightly. "You're... what?"
 
 "I'm sorry..." I repeated. 'I don't know what happened, and I won't pretend I do. But I can
 see you're in pain, and that's real. Your feelings're valid, even if I don't understand them yet.'
@@ -339,8 +339,8 @@ def main():
             voice=VOICE,
             speed=1.0,
             lang=LANG,
-            trim_silence=True,
-            split_mode="paragraph",  # Split by paragraphs for better pacing
+            # Use default pause_mode="tts" to let TTS generate natural prosody
+            # The SSMD pause markers (...p, ...s) in the text will still be honored
         )
 
         output_file = "contractions_advanced_demo.wav"
