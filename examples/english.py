@@ -31,6 +31,7 @@ import pykokoro
 TEXT = (
     "The best way to predict the future is to create it. "
     "Technology is nothing without the imagination to use it wisely. "
+    "[tomato](ph: təˈmeɪtoʊ)[tomato](ph: ………………)"
     "Every great innovation begins with a simple question: what if?"
 )
 

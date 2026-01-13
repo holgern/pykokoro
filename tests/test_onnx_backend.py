@@ -723,3 +723,127 @@ class TestChineseLanguageDetection:
         assert is_chinese_language("ja") is False
         assert is_chinese_language("ko") is False
         assert is_chinese_language("de") is False
+
+
+class TestGenerationConfigIntegration:
+    """Integration tests for GenerationConfig with Kokoro.create()."""
+
+    def test_create_with_config(self):
+        """Test that create() works with GenerationConfig."""
+        import numpy as np
+
+        from pykokoro import GenerationConfig, Kokoro
+
+        kokoro = Kokoro()
+        config = GenerationConfig(speed=1.2, lang="en-us", pause_mode="manual")
+        audio, sample_rate = kokoro.create(
+            text="Hello world",
+            voice="af_sarah",
+            config=config,
+        )
+
+        assert isinstance(audio, np.ndarray)
+        assert sample_rate == 24000
+        assert len(audio) > 0
+
+    def test_create_config_override_speed(self):
+        """Test that kwargs override config values."""
+
+        from pykokoro import GenerationConfig, Kokoro
+
+        kokoro = Kokoro()
+        config = GenerationConfig(speed=1.0)
+        # Config says speed=1.0, but we override to 1.5
+        audio1, sr1 = kokoro.create(
+            text="Test", voice="af_sarah", config=config, speed=1.5
+        )
+        # Pure config with speed=1.0
+        audio2, sr2 = kokoro.create(text="Test", voice="af_sarah", config=config)
+
+        # Different speeds should produce different length audio
+        # (faster speech = shorter audio for same text)
+        assert len(audio1) != len(audio2)
+
+    def test_create_backward_compat_no_config(self):
+        """Test that old API (no config) still works."""
+        import numpy as np
+
+        from pykokoro import Kokoro
+
+        kokoro = Kokoro()
+        audio, sample_rate = kokoro.create(
+            text="Backward compatible",
+            voice="af_sarah",
+            speed=1.2,
+            lang="en-us",
+            pause_mode="manual",
+        )
+
+        assert isinstance(audio, np.ndarray)
+        assert sample_rate == 24000
+        assert len(audio) > 0
+
+    def test_create_from_phonemes_with_config(self):
+        """Test that create_from_phonemes() works with GenerationConfig."""
+        import numpy as np
+
+        from pykokoro import GenerationConfig, Kokoro
+
+        kokoro = Kokoro()
+        phonemes = "həlˈoʊ wˈɜːld"
+        config = GenerationConfig(speed=1.5)
+
+        audio, sample_rate = kokoro.create_from_phonemes(
+            phonemes=phonemes,
+            voice="af_sarah",
+            config=config,
+        )
+
+        assert isinstance(audio, np.ndarray)
+        assert sample_rate == 24000
+        assert len(audio) > 0
+
+    def test_create_config_with_pause_settings(self):
+        """Test config with custom pause settings."""
+        import numpy as np
+
+        from pykokoro import GenerationConfig, Kokoro
+
+        kokoro = Kokoro()
+        config = GenerationConfig(
+            pause_mode="manual",
+            pause_clause=0.25,
+            pause_sentence=0.5,
+            pause_paragraph=1.0,
+            random_seed=42,
+        )
+
+        audio, sample_rate = kokoro.create(
+            text="First sentence. Second sentence.",
+            voice="af_sarah",
+            config=config,
+        )
+
+        assert isinstance(audio, np.ndarray)
+        assert len(audio) > 0
+
+    def test_config_reproducibility_with_random_seed(self):
+        """Test that random_seed in config makes pauses reproducible."""
+        import numpy as np
+
+        from pykokoro import GenerationConfig, Kokoro
+
+        kokoro = Kokoro()
+        text = "First sentence. Second sentence."
+        config = GenerationConfig(
+            pause_mode="manual",
+            pause_variance=0.05,
+            random_seed=42,
+        )
+
+        # Generate twice with same seed
+        audio1, _ = kokoro.create(text=text, voice="af_sarah", config=config)
+        audio2, _ = kokoro.create(text=text, voice="af_sarah", config=config)
+
+        # Should be identical
+        np.testing.assert_array_equal(audio1, audio2)

@@ -27,6 +27,7 @@ from .voice_manager import VoiceBlend, VoiceManager, slerp_voices
 if TYPE_CHECKING:
     from ssmd import Document
 
+    from .generation_config import GenerationConfig
     from .short_sentence_handler import ShortSentenceConfig
 
 # Logger for debugging
@@ -1543,14 +1544,15 @@ class Kokoro:
         self,
         text: str,
         voice: str | np.ndarray | VoiceBlend,
-        speed: float = 1.0,
-        lang: str = "en-us",
-        is_phonemes: bool = False,
-        pause_mode: Literal["tts", "manual"] = "tts",
-        pause_clause: float = 0.3,
-        pause_sentence: float = 0.6,
-        pause_paragraph: float = 1.0,
-        pause_variance: float = 0.05,
+        config: "GenerationConfig | None" = None,
+        speed: float | None = None,
+        lang: str | None = None,
+        is_phonemes: bool | None = None,
+        pause_mode: Literal["tts", "manual"] | None = None,
+        pause_clause: float | None = None,
+        pause_sentence: float | None = None,
+        pause_paragraph: float | None = None,
+        pause_variance: float | None = None,
         random_seed: int | None = None,
         enable_short_sentence: bool | None = None,
     ) -> tuple[np.ndarray, int]:
@@ -1578,28 +1580,39 @@ class Kokoro:
             text: Text to synthesize (or phonemes if is_phonemes=True). SSMD
                 markup is automatically detected and processed.
             voice: Voice name, style vector, or VoiceBlend
-            speed: Speech speed (1.0 = normal)
+            config: Optional GenerationConfig object containing generation
+                parameters. If provided, parameters are taken from config unless
+                overridden by individual kwargs. See GenerationConfig for details.
+            speed: Speech speed (1.0 = normal). Overrides config if provided.
+                Default: 1.0
             lang: Default language code (e.g., 'en-us', 'en-gb', 'es', 'fr').
                 Can be overridden per-segment with SSMD [text](lang) syntax.
-            is_phonemes: If True, treat 'text' as phonemes instead of text
-            pause_mode: Pause handling mode:
+                Overrides config if provided. Default: "en-us"
+            is_phonemes: If True, treat 'text' as phonemes instead of text.
+                Overrides config if provided. Default: False
+            pause_mode: Pause handling mode (overrides config if provided):
                 - "tts" (default): TTS generates pauses naturally at sentence
                   boundaries. SSMD pauses are preserved. Best for natural speech.
                 - "manual": PyKokoro controls pauses with precision. Silence is
                   trimmed from segment boundaries and automatic pauses are added
                   between segments. Best for precise timing control.
             pause_clause: Duration for SSMD ...c (comma) breaks and automatic
-                clause boundary pauses when pause_mode="manual". Default: 0.3s
+                clause boundary pauses when pause_mode="manual". Overrides config
+                if provided. Default: 0.3s
             pause_sentence: Duration for SSMD ...s (sentence) breaks and automatic
-                sentence boundary pauses when pause_mode="manual". Default: 0.6s
+                sentence boundary pauses when pause_mode="manual". Overrides config
+                if provided. Default: 0.6s
             pause_paragraph: Duration for SSMD ...p (paragraph) breaks and automatic
-                paragraph boundary pauses when pause_mode="manual". Default: 1.0s
+                paragraph boundary pauses when pause_mode="manual". Overrides config
+                if provided. Default: 1.0s
             pause_variance: Standard deviation for Gaussian variance added to
                 automatic pauses (in seconds). Only applies when pause_mode="manual".
-                Default 0.05 (±100ms at 95% confidence). Set to 0.0 to disable variance.
+                Overrides config if provided. Default 0.05 (±100ms at 95% confidence).
+                Set to 0.0 to disable variance.
             random_seed: Optional random seed for reproducible pause variance.
-                If None, pauses will vary between runs.
+                If None, pauses will vary between runs. Overrides config if provided.
             enable_short_sentence: Override short sentence handling for this call.
+                Overrides config if provided.
                 None (default): Use config setting from Kokoro initialization
                 True: Force enable short sentence handling (repeat-and-cut)
                 False: Force disable short sentence handling
@@ -1647,8 +1660,68 @@ class Kokoro:
         """
         self._init_kokoro()
 
+        # Merge config with kwargs (kwargs take priority)
+        # Priority: kwargs > config > defaults
+
+        # Resolve actual parameter values
+        actual_speed: float
+        actual_lang: str
+        actual_is_phonemes: bool
+        actual_pause_mode: Literal["tts", "manual"]
+        actual_pause_clause: float
+        actual_pause_sentence: float
+        actual_pause_paragraph: float
+        actual_pause_variance: float
+        actual_random_seed: int | None
+        actual_enable_short_sentence: bool | None
+
+        if config is not None:
+            # Start with config values
+            merged = config.merge_with_kwargs(
+                speed=speed,
+                lang=lang,
+                is_phonemes=is_phonemes,
+                pause_mode=pause_mode,
+                pause_clause=pause_clause,
+                pause_sentence=pause_sentence,
+                pause_paragraph=pause_paragraph,
+                pause_variance=pause_variance,
+                random_seed=random_seed,
+                enable_short_sentence=enable_short_sentence,
+            )
+            # Extract merged values (kwargs override config)
+            # Type assertions needed because dict access loses type information
+            actual_speed = float(merged["speed"])
+            actual_lang = str(merged["lang"])
+            actual_is_phonemes = bool(merged["is_phonemes"])
+            actual_pause_mode = merged["pause_mode"]  # type: ignore[assignment]
+            actual_pause_clause = float(merged["pause_clause"])
+            actual_pause_sentence = float(merged["pause_sentence"])
+            actual_pause_paragraph = float(merged["pause_paragraph"])
+            actual_pause_variance = float(merged["pause_variance"])
+            actual_random_seed = merged["random_seed"]  # type: ignore[assignment]
+            actual_enable_short_sentence = merged["enable_short_sentence"]  # type: ignore[assignment]
+        else:
+            # No config provided, use defaults for any None kwargs
+            actual_speed = speed if speed is not None else 1.0
+            actual_lang = lang if lang is not None else "en-us"
+            actual_is_phonemes = is_phonemes if is_phonemes is not None else False
+            actual_pause_mode = pause_mode if pause_mode is not None else "tts"
+            actual_pause_clause = pause_clause if pause_clause is not None else 0.3
+            actual_pause_sentence = (
+                pause_sentence if pause_sentence is not None else 0.6
+            )
+            actual_pause_paragraph = (
+                pause_paragraph if pause_paragraph is not None else 1.0
+            )
+            actual_pause_variance = (
+                pause_variance if pause_variance is not None else 0.05
+            )
+            actual_random_seed = random_seed
+            actual_enable_short_sentence = enable_short_sentence
+
         # Auto-detect and switch variant if needed (e.g., for Chinese)
-        resolved_variant = self._resolve_model_variant(lang)
+        resolved_variant = self._resolve_model_variant(actual_lang)
 
         # If variant changed, we need to reinitialize
         if resolved_variant != self._model_variant:
@@ -1694,11 +1767,11 @@ class Kokoro:
 
             logger.info(
                 f"Switched from variant '{old_variant}' to '{resolved_variant}' "
-                f"for language '{lang}'"
+                f"for language '{actual_lang}'"
             )
 
         # Initialize random generator for reproducible variance
-        rng = np.random.default_rng(random_seed)
+        rng = np.random.default_rng(actual_random_seed)
 
         # Resolve voice to style vector
         if isinstance(voice, VoiceBlend):
@@ -1716,14 +1789,14 @@ class Kokoro:
         # Derive trim_silence from pause_mode
         # "manual" mode trims silence so PyKokoro can control pauses precisely
         # "tts" mode lets TTS generate natural pauses
-        trim_silence = pause_mode == "manual"
+        trim_silence = actual_pause_mode == "manual"
 
         # If already phonemes, use directly
-        if is_phonemes:
+        if actual_is_phonemes:
             phonemes = text
             batches = self._split_phonemes(phonemes)
             return self._generate_from_phoneme_batches(
-                batches, voice_style, speed, trim_silence
+                batches, voice_style, actual_speed, trim_silence
             ), SAMPLE_RATE
 
         # Unified flow: text → segments → audio
@@ -1733,18 +1806,22 @@ class Kokoro:
         segments = text_to_phoneme_segments(
             text=text,
             tokenizer=self.tokenizer,
-            lang=lang,
-            pause_mode=pause_mode,
-            pause_clause=pause_clause,
-            pause_sentence=pause_sentence,
-            pause_paragraph=pause_paragraph,
-            pause_variance=pause_variance,
+            lang=actual_lang,
+            pause_mode=actual_pause_mode,
+            pause_clause=actual_pause_clause,
+            pause_sentence=actual_pause_sentence,
+            pause_paragraph=actual_pause_paragraph,
+            pause_variance=actual_pause_variance,
             rng=rng,
         )
 
         # Generate audio from segments
         audio = self._generate_from_segments(
-            segments, voice_style, speed, trim_silence, enable_short_sentence
+            segments,
+            voice_style,
+            actual_speed,
+            trim_silence,
+            actual_enable_short_sentence,
         )
 
         return audio, SAMPLE_RATE
@@ -1753,7 +1830,8 @@ class Kokoro:
         self,
         phonemes: str,
         voice: str | np.ndarray | VoiceBlend,
-        speed: float = 1.0,
+        config: "GenerationConfig | None" = None,
+        speed: float | None = None,
     ) -> tuple[np.ndarray, int]:
         """
         Generate audio from phonemes directly.
@@ -1764,12 +1842,25 @@ class Kokoro:
         Args:
             phonemes: IPA phoneme string
             voice: Voice name, style vector, or VoiceBlend
-            speed: Speech speed (1.0 = normal)
+            config: Optional GenerationConfig object. Only the `speed`
+                parameter is used from the config.
+            speed: Speech speed (1.0 = normal). Overrides config if provided.
+                Default: 1.0
 
         Returns:
             Tuple of (audio samples as numpy array, sample rate)
         """
         self._init_kokoro()
+
+        # Resolve speed parameter
+
+        actual_speed: float
+        if config is not None:
+            # Use config speed unless overridden by kwarg
+            actual_speed = speed if speed is not None else config.speed
+        else:
+            # No config, use kwarg or default
+            actual_speed = speed if speed is not None else 1.0
 
         # Resolve voice to style vector if needed
         if isinstance(voice, VoiceBlend):
@@ -1793,7 +1884,7 @@ class Kokoro:
             logger.info(f"Phonemes: {phonemes}")
             logger.info(f"Tokens: {tokens}")
 
-        return self.create_from_tokens(tokens, voice_style, speed)
+        return self.create_from_tokens(tokens, voice_style, actual_speed)
 
     def create_from_tokens(
         self,
@@ -1884,13 +1975,15 @@ class Kokoro:
             audio, sample_rate = self.create_from_tokens(segment.tokens, voice, speed)
         elif segment.phonemes:
             audio, sample_rate = self.create_from_phonemes(
-                segment.phonemes, voice, speed
+                phonemes=segment.phonemes, voice=voice, speed=speed
             )
         else:
             # Fall back to text
             # Use lang override if provided, otherwise use segment's lang
             effective_lang = lang if lang is not None else segment.lang
-            audio, sample_rate = self.create(segment.text, voice, speed, effective_lang)
+            audio, sample_rate = self.create(
+                text=segment.text, voice=voice, speed=speed, lang=effective_lang
+            )
         if trim_silence:
             audio, _ = trim_audio(audio)
         # Add pause after segment if specified
