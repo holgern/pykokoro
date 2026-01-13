@@ -269,6 +269,7 @@ class AudioGenerator:
         voice_style: np.ndarray,
         speed: float,
         trim_silence: bool,
+        enable_short_sentence_override: bool | None = None,
     ) -> list[np.ndarray]:
         """Generate audio for a single segment with phonemes.
 
@@ -280,6 +281,10 @@ class AudioGenerator:
             voice_style: Voice style to use
             speed: Speech speed multiplier
             trim_silence: Whether to trim silence from segment boundaries
+            enable_short_sentence_override: Override short sentence handling.
+                None (default): Use config setting
+                True: Force enable short sentence handling
+                False: Force disable short sentence handling
 
         Returns:
             List of audio arrays (may be multiple if phonemes were split)
@@ -296,17 +301,40 @@ class AudioGenerator:
         if not segment.phonemes.strip():
             return audio_parts
 
-        # Get short sentence config (use stored or create default)
-        config = self._short_sentence_config or ShortSentenceConfig()
+        # Determine effective short sentence config with override support
+        import dataclasses
+
+        effective_config = self._short_sentence_config
+
+        if enable_short_sentence_override is not None:
+            # Override requested
+            if enable_short_sentence_override:
+                # Force enable: create config if None, or ensure enabled=True
+                if effective_config is None:
+                    effective_config = ShortSentenceConfig(enabled=True)
+                else:
+                    effective_config = dataclasses.replace(
+                        effective_config, enabled=True
+                    )
+            else:
+                # Force disable: ensure enabled=False if config exists
+                if effective_config is not None:
+                    effective_config = dataclasses.replace(
+                        effective_config, enabled=False
+                    )
+                # If config is None and override is False, keep it None
+        elif effective_config is None:
+            # No override, no config: use default
+            effective_config = ShortSentenceConfig()
 
         # Check if this is a short segment that should use repeat-and-cut
-        if is_segment_short(segment, config):
+        if effective_config and is_segment_short(segment, effective_config):
             audio = generate_short_sentence_audio(
                 segment=segment,
                 audio_generator=self,
                 voice_style=voice_style,
                 speed=speed,
-                config=config,
+                config=effective_config,
                 tokenizer=self._tokenizer,
             )
 
@@ -372,6 +400,7 @@ class AudioGenerator:
         speed: float,
         trim_silence: bool,
         voice_resolver: Callable[[str], np.ndarray] | None = None,
+        enable_short_sentence_override: bool | None = None,
     ) -> np.ndarray:
         """Generate audio from list of PhonemeSegment instances.
 
@@ -381,6 +410,7 @@ class AudioGenerator:
         - Pause insertion based on pause_after field
         - Per-segment voice switching via SSMD voice metadata
         - Optional silence trimming
+        - Per-call short sentence handling override
 
         Args:
             segments: List of PhonemeSegment instances
@@ -390,6 +420,10 @@ class AudioGenerator:
             voice_resolver: Optional callback to resolve voice names to style vectors.
                 Takes voice name (str) and returns voice style array.
                 If provided and segment has voice metadata, uses per-segment voice.
+            enable_short_sentence_override: Override short sentence handling.
+                None (default): Use config setting
+                True: Force enable short sentence handling
+                False: Force disable short sentence handling
 
         Returns:
             Concatenated audio array
@@ -404,7 +438,11 @@ class AudioGenerator:
 
             # Generate audio for segment phonemes
             segment_audio = self._generate_single_segment_audio(
-                segment, segment_voice_style, speed, trim_silence
+                segment,
+                segment_voice_style,
+                speed,
+                trim_silence,
+                enable_short_sentence_override,
             )
             audio_parts.extend(segment_audio)
 

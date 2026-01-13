@@ -1552,6 +1552,7 @@ class Kokoro:
         pause_paragraph: float = 1.0,
         pause_variance: float = 0.05,
         random_seed: int | None = None,
+        enable_short_sentence: bool | None = None,
     ) -> tuple[np.ndarray, int]:
         """
         Generate audio from text or phonemes with SSMD markup support.
@@ -1598,6 +1599,10 @@ class Kokoro:
                 Default 0.05 (±100ms at 95% confidence). Set to 0.0 to disable variance.
             random_seed: Optional random seed for reproducible pause variance.
                 If None, pauses will vary between runs.
+            enable_short_sentence: Override short sentence handling for this call.
+                None (default): Use config setting from Kokoro initialization
+                True: Force enable short sentence handling (repeat-and-cut)
+                False: Force disable short sentence handling
 
         Returns:
             Tuple of (audio samples as numpy array, sample rate)
@@ -1738,7 +1743,9 @@ class Kokoro:
         )
 
         # Generate audio from segments
-        audio = self._generate_from_segments(segments, voice_style, speed, trim_silence)
+        audio = self._generate_from_segments(
+            segments, voice_style, speed, trim_silence, enable_short_sentence
+        )
 
         return audio, SAMPLE_RATE
 
@@ -2346,6 +2353,7 @@ class Kokoro:
         voice_style: np.ndarray,
         speed: float,
         trim_silence: bool,
+        enable_short_sentence_override: bool | None = None,
     ) -> np.ndarray:
         """Delegate to AudioGenerator with voice resolution support.
 
@@ -2360,7 +2368,12 @@ class Kokoro:
             return self.get_voice_style(voice_name)
 
         return self._audio_generator.generate_from_segments(
-            segments, voice_style, speed, trim_silence, voice_resolver=voice_resolver
+            segments,
+            voice_style,
+            speed,
+            trim_silence,
+            voice_resolver=voice_resolver,
+            enable_short_sentence_override=enable_short_sentence_override,
         )
 
     def close(self) -> None:

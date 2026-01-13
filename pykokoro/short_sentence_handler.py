@@ -37,7 +37,7 @@ logger.setLevel(logging.DEBUG)
 # Default thresholds for short sentence handling
 DEFAULT_MIN_PHONEME_LENGTH = 5  # Sentences with fewer phonemes are "short"
 DEFAULT_CUT_OFFSET_MS = (
-    -2  # Milliseconds offset to preserve more audio (negative = cut later)
+    -10  # Milliseconds offset to preserve more audio (negative = cut later)
 )
 
 
@@ -94,6 +94,14 @@ class ShortSentenceConfig:
             Default: 0.333 (equal weighting).
         flux_weight: Weight for spectral flux in boundary detection (0.0-1.0).
             Default: 0.334 (equal weighting).
+        skip_start_ms: Skip valleys in first N milliseconds after speech start
+            to avoid detecting valleys within the context word.
+            Default: 120ms. Increase for longer context sentences.
+        early_search_window_ms: Look for first valley within N milliseconds
+            of speech start. Default: 400ms. Prevents selecting valleys too late.
+        depth_threshold: Valleys deeper than this (lower value) are preferred.
+            Range: 0.0-1.0. Lower = more selective. Default: 0.80.
+            For voices with shallow boundaries, try 0.65-0.75.
         enabled: Whether short sentence handling is enabled. Default: True.
 
     Note: Weights should sum to ~1.0.
@@ -110,6 +118,9 @@ class ShortSentenceConfig:
     energy_weight: float = 0.333
     zcr_weight: float = 0.333
     flux_weight: float = 0.334
+    skip_start_ms: int = 120
+    early_search_window_ms: int = 400
+    depth_threshold: float = 0.80
     enabled: bool = True
 
     def should_use_context_prepending(self, phoneme_length: int, text: str) -> bool:
@@ -394,9 +405,12 @@ def find_boundary_valley(
     frame_ms: int = 20,
     hop_ms: int = 10,
     cut_offset_ms: int = -10,
-    energy_weight: float = 0.6,
-    zcr_weight: float = 0.2,
-    flux_weight: float = 0.2,
+    energy_weight: float = 0.333,
+    zcr_weight: float = 0.333,
+    flux_weight: float = 0.334,
+    skip_start_ms: int = 120,
+    early_search_window_ms: int = 400,
+    depth_threshold: float = 0.80,
 ) -> int:
     """Find boundary between context and target word.
 
@@ -423,10 +437,16 @@ def find_boundary_valley(
         hop_ms: Hop size in milliseconds (default: 10ms)
         cut_offset_ms: Milliseconds to adjust cut point
             (default: -10ms to preserve more audio)
-        energy_weight: Weight for energy feature (default: 0.6).
+        energy_weight: Weight for energy feature (default: 0.333).
             Higher = more emphasis on energy.
-        zcr_weight: Weight for ZCR feature (default: 0.2)
-        flux_weight: Weight for flux feature (default: 0.2)
+        zcr_weight: Weight for ZCR feature (default: 0.333)
+        flux_weight: Weight for flux feature (default: 0.334)
+        skip_start_ms: Skip valleys in first N ms after speech start
+            (default: 120ms). Avoids detecting valleys within context word.
+        early_search_window_ms: Look for first valley within N ms
+            (default: 400ms). Prevents selecting valleys too late.
+        depth_threshold: Prefer valleys deeper than this
+            (default: 0.80). Lower = more selective.
 
     Returns:
         Sample index where to cut the audio
@@ -537,24 +557,21 @@ def find_boundary_valley(
     # Find the FIRST DEEP valley after speech start
     # This is our boundary region indicator
     # Fine-tune by searching in a small window AFTER it for the best boundary
-    # Strategy: Look for valley with depth < 0.80 in first 400ms
-    # If not found, use deepest valley in first 400ms (prevents cutting too late)
+    # Strategy: Look for valley with depth < depth_threshold in first N ms
+    # If not found, use deepest valley in first N ms (prevents cutting too late)
     first_valley_frame = None
     first_valley_time = None
     first_valley_depth = None
-    depth_threshold = 0.80  # Prefer valleys deeper than this
-    early_search_window_ms = 400  # Look for valleys in first 400ms of speech
     early_search_end_frames = int(
         early_search_window_ms / hop_ms
     )  # Convert ms to frame count
     early_search_end = speech_start_frame + early_search_end_frames
     deepest_early_valley = None  # Track deepest valley in early window
 
-    # Skip valleys within first 120ms of speech start
+    # Skip valleys within first skip_start_ms of speech start
     # to avoid detecting valleys in "Good."
     # This ensures we find the boundary BETWEEN "Good." and the target word,
     # not within "Good."
-    skip_start_ms = 120
     skip_start_frames = int(skip_start_ms / hop_ms)
 
     logger.debug(
@@ -903,6 +920,9 @@ def generate_short_sentence_audio(
             energy_weight=config.energy_weight,
             zcr_weight=config.zcr_weight,
             flux_weight=config.flux_weight,
+            skip_start_ms=config.skip_start_ms,
+            early_search_window_ms=config.early_search_window_ms,
+            depth_threshold=config.depth_threshold,
         )
         logger.debug(
             f"Boundary detected at sample {cut_sample} "
