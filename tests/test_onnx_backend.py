@@ -579,7 +579,8 @@ class TestCreateWithPauses:
                 voice_style,
                 speed,
                 trim_silence,
-                voice_resolver=None: __import__("numpy").array(
+                voice_resolver=None,
+                enable_short_sentence_override=None: __import__("numpy").array(
                     [0.0], dtype=__import__("numpy").float32
                 )
             )
@@ -636,7 +637,8 @@ class TestCreateWithPauses:
                 voice_style,
                 speed,
                 trim_silence,
-                voice_resolver=None: __import__("numpy").array(
+                voice_resolver=None,
+                enable_short_sentence_override=None: __import__("numpy").array(
                     [0.0], dtype=__import__("numpy").float32
                 )
             )

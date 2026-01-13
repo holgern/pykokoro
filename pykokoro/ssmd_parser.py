@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from ssmd import parse_sentences
+from ssmd import TTSCapabilities, parse_sentences
 
 if TYPE_CHECKING:
     from ssmd import SSMDSegment as SSMDParserSegment
@@ -96,11 +96,13 @@ class SSMDSegment:
 
     Attributes:
         text: Processed text (after substitutions, stripped of markup)
+        pause_before: Pause duration before this segment in seconds (e.g., for headings)
         pause_after: Pause duration after this segment in seconds
         metadata: SSMD metadata (emphasis, prosody, etc.)
     """
 
     text: str
+    pause_before: float = 0.0
     pause_after: float = 0.0
     metadata: SSMDMetadata = field(default_factory=SSMDMetadata)
 
@@ -306,11 +308,16 @@ def parse_ssmd_to_segments(
         ... )
     """
     # Use SSMD's parse_sentences to get structured data
+    # Enable heading detection for markdown-style headings (# ## ###)
+    caps = TTSCapabilities()
+    caps.heading_emphasis = True
+
     sentences = parse_sentences(
         text,
         sentence_detection=True,
         include_default_voice=True,
         language=lang,
+        capabilities=caps,
     )
 
     if not sentences:
@@ -346,6 +353,23 @@ def parse_ssmd_to_segments(
                 metadata.voice_gender = voice_metadata.voice_gender
                 metadata.voice_variant = voice_metadata.voice_variant
 
+            # Calculate pause before this segment (for headings)
+            pause_before = 0.0
+
+            # Check for breaks before this segment
+            if ssmd_seg.breaks_before:
+                # Use the last break if multiple
+                last_break = ssmd_seg.breaks_before[-1]
+                pause_before = _convert_break_strength_to_duration(
+                    last_break.strength,
+                    last_break.time,
+                    pause_none=pause_none,
+                    pause_weak=pause_weak,
+                    pause_clause=pause_clause,
+                    pause_sentence=pause_sentence,
+                    pause_paragraph=pause_paragraph,
+                )
+
             # Calculate pause after this segment
             pause_after = 0.0
 
@@ -379,7 +403,12 @@ def parse_ssmd_to_segments(
 
             # Create PyKokoro SSMDSegment
             pykokoro_segments.append(
-                SSMDSegment(text=seg_text, pause_after=pause_after, metadata=metadata)
+                SSMDSegment(
+                    text=seg_text,
+                    pause_before=pause_before,
+                    pause_after=pause_after,
+                    metadata=metadata,
+                )
             )
 
     return initial_pause, pykokoro_segments
@@ -447,6 +476,7 @@ def ssmd_segments_to_phoneme_segments(
             lang=lang,
             paragraph=paragraph,
             sentence=sentence_start + i,
+            pause_before=ssmd_seg.pause_before,
             pause_after=ssmd_seg.pause_after,
         )
 

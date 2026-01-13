@@ -407,7 +407,7 @@ class AudioGenerator:
         Unified audio generation method that handles:
         - Segments with phonemes (generate speech)
         - Empty segments (skip, only use pause_after)
-        - Pause insertion based on pause_after field
+        - Pause insertion based on pause_before and pause_after fields
         - Per-segment voice switching via SSMD voice metadata
         - Optional silence trimming
         - Per-call short sentence handling override
@@ -431,6 +431,10 @@ class AudioGenerator:
         audio_parts = []
 
         for segment in segments:
+            # Add pause before segment (if specified) - used for headings
+            if segment.pause_before > 0:
+                audio_parts.append(generate_silence(segment.pause_before, SAMPLE_RATE))
+
             # Resolve voice style for this segment (may use SSMD metadata)
             segment_voice_style = self._resolve_segment_voice(
                 segment, voice_style, voice_resolver

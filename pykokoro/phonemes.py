@@ -30,6 +30,7 @@ class PhonemeSegment:
         lang: Language code used for phonemization
         paragraph: Paragraph index (0-based) for pause calculation
         sentence: Sentence index (int), sentence range ("0-2"), or None
+        pause_before: Duration of pause before this segment in seconds
         pause_after: Duration of pause after this segment in seconds
         ssmd_metadata: Optional SSMD metadata (emphasis, prosody, markers, etc.)
     """
@@ -40,6 +41,7 @@ class PhonemeSegment:
     lang: str = "en-us"
     paragraph: int = 0
     sentence: int | str | None = None
+    pause_before: float = 0.0
     pause_after: float = 0.0
     ssmd_metadata: dict[str, Any] | None = field(default=None, repr=False)
 
@@ -52,6 +54,7 @@ class PhonemeSegment:
             "lang": self.lang,
             "paragraph": self.paragraph,
             "sentence": self.sentence,
+            "pause_before": self.pause_before,
             "pause_after": self.pause_after,
         }
         if self.ssmd_metadata is not None:
@@ -68,6 +71,7 @@ class PhonemeSegment:
             lang=data.get("lang", "en-us"),
             paragraph=data.get("paragraph", 0),
             sentence=data.get("sentence"),
+            pause_before=data.get("pause_before", 0.0),
             pause_after=data.get("pause_after", 0.0),
             ssmd_metadata=data.get("ssmd_metadata"),
         )
@@ -690,7 +694,7 @@ def text_to_phoneme_segments(
     return final_segments
 
 
-def _merge_segments_for_tts(
+def _merge_segments_for_tts(  # noqa: C901
     segments: list[PhonemeSegment],
     tokenizer: Tokenizer,
     max_phoneme_length: int,
