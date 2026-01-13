@@ -2,18 +2,19 @@
 """
 Short Sentence Handler Demonstration.
 
-This example demonstrates the context-prepending technique used by PyKokoro
+This example demonstrates the cross-correlation extraction technique used by PyKokoro
 to improve audio quality for very short sentences.
 
 The short sentence handler:
 1. Detects sentences with fewer phonemes than a threshold (default: 10)
-2. Prepends a context sentence before the short sentence
-3. Generates TTS for the combined text (better quality with more context)
-4. Detects the silence gap between context and target
-5. Extracts audio from after the gap to get only the target sentence
+2. Generates the short sentence alone (poor quality, but needed for pattern)
+3. Generates context + short sentence together (good quality with natural prosody)
+4. Uses cross-correlation to find where the short sentence appears in combined audio
+5. Extracts that portion from the combined audio (maintains high quality)
 
 This produces higher-quality audio because neural TTS models typically need
 more context to produce natural-sounding speech with proper prosody and intonation.
+The cross-correlation approach is robust and doesn't depend on silence gap detection.
 
 Usage:
     python examples/short_sentence_demo.py
@@ -29,26 +30,31 @@ import soundfile as sf
 import pykokoro
 from pykokoro.short_sentence_handler import ShortSentenceConfig
 
+# Enable debug logging to see detailed processing information
+# logging.basicConfig(
+#    level=logging.DEBUG, format="%(levelname)s [%(name)s] - %(message)s"
+# )
+
 # Test sentences of varying lengths
 TEST_SENTENCES = [
     # Very short (will trigger repeat-and-cut)
     "Hi!",
     "Why?",
     "No.",
+    "No!",
     "Yes!",
     "Help!",
-    # Short but complete (might trigger depending on phoneme count)
-    "Hello there.",
-    "Good morning.",
-    "Thank you.",
-    "I agree.",
-    # Normal length (won't trigger)
-    "This is a normal sentence.",
-    "The quick brown fox jumps over the lazy dog.",
+    "Oh!",
+    "Stop!",
+    "What?",
+    "Don't!",
 ]
 
 # Voice to use
-VOICE = "af_bella"
+# Note: Different voices may produce slightly different durations due to varying
+# speaking rates. af_sarah is recommended for testing the short sentence handler.
+VOICE = "af_sarah"  # Changed from af_bella for better short sentence results
+VOICE = "af_heart"  # Changed from af_bella for better short sentence results
 LANG = "en-us"
 
 
@@ -92,9 +98,11 @@ def main():
     print_separator("SHORT SENTENCE HANDLER DEMONSTRATION")
 
     print("\nThis demo shows how PyKokoro improves audio quality for short sentences")
-    print("using the 'repeat-and-cut' technique.")
+    print("using cross-correlation extraction with context.")
     print(f"\nVoice: {VOICE}")
     print(f"Language: {LANG}")
+    print("\nNOTE: Audio duration will be similar, but QUALITY will be better")
+    print("      with context-prepending. Listen to the generated files to compare!")
 
     # Initialize with default config
     print_separator("Testing Individual Sentences")
@@ -134,9 +142,8 @@ def main():
 
         # Add: intro + enabled version + pause + disabled version + pause
         pause = np.zeros(int(sr * 0.5), dtype=np.float32)
-        all_samples.extend(
-            [samples_enabled, pause, samples_disabled, pause]
-        )
+        all_samples.extend([samples_enabled, pause, samples_disabled, pause])
+        # all_samples.extend([samples_enabled, pause])
 
     # Configuration comparison
     print_separator("Configuration Comparison")
@@ -201,7 +208,8 @@ def main():
     print("\nUsage:")
     print("  # Custom configuration")
     print(
-        "  config = ShortSentenceConfig(min_phoneme_length=15, target_phoneme_length=40)"
+        "  config = ShortSentenceConfig("
+        "min_phoneme_length=15, target_phoneme_length=40)"
     )
     print("  kokoro = Kokoro(short_sentence_config=config)")
     print()

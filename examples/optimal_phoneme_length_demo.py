@@ -24,11 +24,9 @@ Output:
     Detailed console output showing how short sentences are processed
 """
 
-import numpy as np
 import soundfile as sf
 
 import pykokoro
-from pykokoro.short_sentence_handler import ShortSentenceConfig
 
 # Dialogue with mix of very short and normal sentences
 DIALOGUE_TEXT = """
@@ -130,9 +128,9 @@ def main():
     print_separator("Creating Kokoro Instance")
     kokoro = pykokoro.Kokoro()
     print("Kokoro created with default ShortSentenceConfig:")
-    print(f"  min_phoneme_length: 30 (segments below this use repeat-and-cut)")
-    print(f"  target_phoneme_length: 100 (target length for repeated text)")
-    print(f"  max_repetitions: 5 (maximum times to repeat)")
+    print("  min_phoneme_length: 30 (segments below this use repeat-and-cut)")
+    print("  target_phoneme_length: 100 (target length for repeated text)")
+    print("  max_repetitions: 5 (maximum times to repeat)")
 
     # Analyze the text to show which segments are short
     print_separator("Analyzing Text Segments")
@@ -155,7 +153,7 @@ def main():
     )
 
     duration = len(samples) / sample_rate
-    print(f"\nAudio generated successfully!")
+    print("\nAudio generated successfully!")
     print(f"  Duration: {duration:.2f} seconds")
     print(f"  Sample rate: {sample_rate} Hz")
 

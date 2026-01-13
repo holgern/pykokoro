@@ -166,7 +166,8 @@ def _split_text_with_mode(
     else:
         # Unsupported mode
         raise ValueError(
-            f"Unsupported split mode: {mode}. Expected 'paragraph', 'sentence', 'clause', or 'word'."
+            f"Unsupported split mode: {mode}. "
+            f"Expected 'paragraph', 'sentence', 'clause', or 'word'."
         )
 
 
@@ -520,7 +521,6 @@ def convert_pause_segments_to_phoneme_segments(
 # SSMD Integration: Import break parsing from ssmd_parser module
 # Old pause markers (.), (..), (...) have been removed in favor of SSMD syntax
 from .ssmd_parser import (  # noqa: E402
-    has_ssmd_markup,
     parse_ssmd_to_segments,
     ssmd_segments_to_phoneme_segments,
 )
@@ -966,8 +966,8 @@ def _cascade_split_segment(
             # spaCy not installed - fall back to word splitting
             if next_mode == "clause":
                 logger.warning(
-                    f"spaCy required for clause splitting but not installed. "
-                    f"Falling back to word-level splitting."
+                    "spaCy required for clause splitting but not installed. "
+                    "Falling back to word-level splitting."
                 )
                 cascade_sentence_idx = (
                     sentence_idx if isinstance(sentence_idx, int) else None

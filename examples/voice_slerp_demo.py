@@ -95,17 +95,19 @@ def main():
         weight_b = t
 
         print(
-            f"\n--- Interpolation t={t} ({weight_a * 100:.0f}% A, {weight_b * 100:.0f}% B) ---"
+            f"\n--- Interpolation t={t} "
+            f"({weight_a * 100:.0f}% A, {weight_b * 100:.0f}% B) ---"
         )
 
         # LINEAR INTERPOLATION
-        print(f"  Linear interpolation...")
+        print("  Linear interpolation...")
         blend_linear = VoiceBlend(
             voices=[(VOICE_A, weight_a), (VOICE_B, weight_b)], interpolation="linear"
         )
         samples_linear, _ = kokoro.create(TEST_TEXT, voice=blend_linear, lang=LANG)
         print(
-            f"    Generated {len(samples_linear)} samples ({len(samples_linear) / sr:.2f}s)"
+            f"    Generated {len(samples_linear)} samples "
+            f"({len(samples_linear) / sr:.2f}s)"
         )
 
         # Announcement
@@ -115,13 +117,14 @@ def main():
         all_samples.append(pause)
 
         # SLERP INTERPOLATION
-        print(f"  SLERP interpolation...")
+        print("  SLERP interpolation...")
         blend_slerp = VoiceBlend(
             voices=[(VOICE_A, weight_a), (VOICE_B, weight_b)], interpolation="slerp"
         )
         samples_slerp, _ = kokoro.create(TEST_TEXT, voice=blend_slerp, lang=LANG)
         print(
-            f"    Generated {len(samples_slerp)} samples ({len(samples_slerp) / sr:.2f}s)"
+            f"    Generated {len(samples_slerp)} samples "
+            f"({len(samples_slerp) / sr:.2f}s)"
         )
 
         # Announcement
@@ -173,7 +176,8 @@ def main():
     print("\nUsage examples:")
     print("  # VoiceBlend object with SLERP")
     print(
-        "  blend = VoiceBlend([('af_bella', 0.5), ('am_adam', 0.5)], interpolation='slerp')"
+        "  blend = VoiceBlend("
+        "[('af_bella', 0.5), ('am_adam', 0.5)], interpolation='slerp')"
     )
     print("  samples, sr = kokoro.create(text, voice=blend)")
     print()

@@ -23,7 +23,7 @@ import numpy as np
 import soundfile as sf
 
 import pykokoro
-from pykokoro.short_sentence_handler import energy_based_vad, find_silence_gap
+from pykokoro.short_sentence_handler import energy_based_vad
 
 
 def find_all_gaps(
@@ -252,9 +252,10 @@ def analyze_voice_activity(
         f"  Speech frames: {speech_frames} ({speech_frames / total_frames * 100:.1f}%)"
     )
     print(
-        f"  Silence frames: {silence_frames} ({silence_frames / total_frames * 100:.1f}%)"
+        f"  Silence frames: {silence_frames} "
+        f"({silence_frames / total_frames * 100:.1f}%)"
     )
-    print(f"  Frame duration: 20ms")
+    print("  Frame duration: 20ms")
     print(f"  Total duration: {total_frames * 20 / 1000:.3f}s")
 
 

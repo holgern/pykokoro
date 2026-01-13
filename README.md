@@ -398,9 +398,9 @@ See `examples/say_as_demo.py` for comprehensive examples.
 
 #### 4. Automatic Short Sentence Handling
 
-When processing text, very short sentences (like "Why?" or "Go!") can produce
-poor audio quality when processed individually (only 3-8 phonemes each). Pykokoro
-automatically handles this using a "repeat-and-cut" technique:
+When processing text, very short sentences (like "Why?" or "Go!") can produce poor audio
+quality when processed individually (only 3-8 phonemes each). Pykokoro automatically
+handles this using a "repeat-and-cut" technique:
 
 **How It Works:**
 

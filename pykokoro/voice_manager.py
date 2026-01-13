@@ -67,7 +67,8 @@ def slerp_voices(
     a_norm = a / (mag_a + 1e-10)  # Add epsilon to avoid division by zero
     b_norm = b / (mag_b + 1e-10)
 
-    # Compute dot product along the last dimension (cosine of angle between normalized vectors)
+    # Compute dot product along the last dimension
+    # (cosine of angle between normalized vectors)
     dot = np.sum(a_norm * b_norm, axis=-1, keepdims=True)
     dot = np.clip(dot, -1.0, 1.0)  # Ensure within [-1, 1]
 
@@ -125,7 +126,8 @@ class VoiceBlend:
         # SLERP only supports exactly 2 voices
         if self.interpolation == "slerp" and len(self.voices) != 2:
             raise ValueError(
-                f"SLERP interpolation requires exactly 2 voices, got {len(self.voices)}. "
+                f"SLERP interpolation requires exactly 2 voices, "
+                f"got {len(self.voices)}. "
                 f"Use interpolation='linear' for blending more than 2 voices."
             )
 
@@ -283,7 +285,8 @@ class VoiceManager:
         along the surface of a hypersphere rather than through its interior.
 
         Args:
-            blend: VoiceBlend object specifying voices, weights, and interpolation method
+            blend: VoiceBlend object specifying voices, weights,
+                and interpolation method
 
         Returns:
             Numpy array representing the blended voice style
@@ -298,7 +301,10 @@ class VoiceManager:
             >>> voice = vm.create_blended_voice(blend)
             >>>
             >>> # SLERP blend
-            >>> blend = VoiceBlend([("af_bella", 0.5), ("am_adam", 0.5)], interpolation="slerp")
+            >>> blend = VoiceBlend(
+            ...     [("af_bella", 0.5), ("am_adam", 0.5)],
+            ...     interpolation="slerp"
+            ... )
             >>> voice = vm.create_blended_voice(blend)
         """
         if self._voices_data is None:

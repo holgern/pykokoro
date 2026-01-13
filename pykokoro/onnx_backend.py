@@ -1504,7 +1504,8 @@ class Kokoro:
         - slerp: Spherical linear interpolation (requires exactly 2 voices)
 
         Args:
-            blend: VoiceBlend object specifying voices, weights, and interpolation method
+            blend: VoiceBlend object specifying voices, weights,
+                and interpolation method
 
         Returns:
             Numpy array representing the blended voice style
