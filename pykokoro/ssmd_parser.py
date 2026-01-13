@@ -225,12 +225,17 @@ def _map_ssmd_segment_to_metadata(
         text = ssmd_seg.substitution
         metadata.substitution = ssmd_seg.substitution
     elif ssmd_seg.phoneme:
-        metadata.phonemes = ssmd_seg.phoneme
+        # Access the phoneme string from PhonemeAttrs object
+        # ssmd_seg.phoneme has .ph (phoneme string) and .alphabet ("ipa" or "x-sampa")
+        metadata.phonemes = ssmd_seg.phoneme.ph
         # Keep original text for display, phoneme will override during synthesis
 
-    # Emphasis
+    # Emphasis - SSMD supports: True, "moderate", "strong", "reduced", "none"
     if ssmd_seg.emphasis:
-        metadata.emphasis = "moderate"  # SSMD uses boolean, map to PyKokoro's string
+        if isinstance(ssmd_seg.emphasis, bool):
+            metadata.emphasis = "moderate"  # True maps to moderate (default)
+        elif isinstance(ssmd_seg.emphasis, str):
+            metadata.emphasis = ssmd_seg.emphasis  # Use explicit level
 
     # Language
     if ssmd_seg.language:

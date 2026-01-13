@@ -1,9 +1,11 @@
 """Audio generation for PyKokoro."""
 
+from __future__ import annotations
+
 import logging
 import re
 from collections.abc import Callable
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import onnxruntime as rt
@@ -13,6 +15,9 @@ from .prosody import apply_prosody
 from .tokenizer import Tokenizer
 from .trim import trim as trim_audio
 from .utils import generate_silence
+
+if TYPE_CHECKING:
+    from .short_sentence_handler import ShortSentenceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +40,13 @@ class AudioGenerator:
     - Batch generation from phoneme lists
     - Segment-based generation with pause support
     - Token-to-audio generation
+    - Short sentence handling via repeat-and-cut
 
     Args:
         session: ONNX Runtime inference session
         tokenizer: Tokenizer for phoneme<->token conversion
         model_source: Model source ('huggingface' or 'github')
+        short_sentence_config: Configuration for short sentence handling
     """
 
     def __init__(
@@ -47,11 +54,13 @@ class AudioGenerator:
         session: rt.InferenceSession,
         tokenizer: Tokenizer,
         model_source: ModelSource = "huggingface",
+        short_sentence_config: ShortSentenceConfig | None = None,
     ):
         """Initialize the audio generator."""
         self._session = session
         self._tokenizer = tokenizer
         self._model_source = model_source
+        self._short_sentence_config = short_sentence_config
 
     def generate_from_phonemes(
         self,
@@ -263,7 +272,8 @@ class AudioGenerator:
     ) -> list[np.ndarray]:
         """Generate audio for a single segment with phonemes.
 
-        Handles splitting long phonemes and applying prosody modifications.
+        Handles splitting long phonemes, applying prosody modifications,
+        and using repeat-and-cut for short sentences.
 
         Args:
             segment: Phoneme segment to process
@@ -274,10 +284,37 @@ class AudioGenerator:
         Returns:
             List of audio arrays (may be multiple if phonemes were split)
         """
+        from .short_sentence_handler import (
+            ShortSentenceConfig,
+            generate_short_sentence_audio,
+            is_segment_short,
+        )
+
         audio_parts = []
 
         # Skip empty phoneme segments
         if not segment.phonemes.strip():
+            return audio_parts
+
+        # Get short sentence config (use stored or create default)
+        config = self._short_sentence_config or ShortSentenceConfig()
+
+        # Check if this is a short segment that should use repeat-and-cut
+        if is_segment_short(segment, config):
+            audio = generate_short_sentence_audio(
+                segment=segment,
+                audio_generator=self,
+                voice_style=voice_style,
+                speed=speed,
+                config=config,
+                tokenizer=self._tokenizer,
+            )
+
+            # Apply prosody modifications if present
+            audio = self._apply_segment_prosody(audio, segment)
+
+            # Note: repeat-and-cut already trims, so no additional trim needed
+            audio_parts.append(audio)
             return audio_parts
 
         # Handle long phonemes by splitting

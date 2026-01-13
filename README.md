@@ -396,74 +396,53 @@ text = "The winner is *[1](as: ordinal)*!"
 
 See `examples/say_as_demo.py` for comprehensive examples.
 
-#### 4. Optimal Phoneme Length for Better Quality
+#### 4. Automatic Short Sentence Handling
 
-When using sentence splitting, very short sentences (like "Why?" or "Go!") can produce
-poor audio quality when processed individually (only 3-8 phonemes each). The
-`optimal_phoneme_length` parameter batches these short segments together to provide more
-context for natural prosody:
-
-```python
-# Dialogue with many short sentences
-dialogue = '"Why?" she asked. "Do it!" he said. "Go!" they shouted.'
-
-# Without batching: Each sentence separate (poor quality for short ones)
-audio1, sr = tts.create(
-    dialogue,
-    voice="af_bella",
-    split_mode="sentence"
-)
-
-# With batching: Short sentences merged for better quality
-audio2, sr = tts.create(
-    dialogue,
-    voice="af_bella",
-    split_mode="sentence",
-    optimal_phoneme_length=50  # Batch until ~50 phonemes
-)
-```
-
-**Usage Modes:**
-
-**Single Target:**
-
-```python
-# Batch segments until reaching ~50 phonemes
-optimal_phoneme_length=50
-```
-
-**Array Targets (Flexible):**
-
-```python
-# Try to reach 70 phonemes (ideal)
-# Fall back to 50 (good) or 30 (acceptable) if needed
-optimal_phoneme_length=[30, 50, 70]
-```
+When processing text, very short sentences (like "Why?" or "Go!") can produce
+poor audio quality when processed individually (only 3-8 phonemes each). Pykokoro
+automatically handles this using a "repeat-and-cut" technique:
 
 **How It Works:**
 
-- Merges consecutive short segments (sentences/clauses/paragraphs)
-- Stops when reaching target length OR adding next would overshoot significantly (~30%
-  tolerance)
-- Never exceeds `max_phoneme_length` (510)
-- Preserves semantic boundaries when specified
+1. Short segments are detected based on phoneme length (default: <30 phonemes)
+2. The sentence is repeated: "Why?" → "Why? Why? Why?"
+3. TTS generates audio with more context (better prosody)
+4. Audio is trimmed to extract only the first instance
 
-**When to Use:**
+This happens automatically during `kokoro.create()` - no configuration needed!
 
-- ✅ Dialogue-heavy text with short sentences: `optimal_phoneme_length=50`
-- ✅ Mixed content (short + long sentences): `optimal_phoneme_length=[30, 50]`
-- ✅ Script/screenplay with terse dialogue: `optimal_phoneme_length=[40, 60]`
-- ❌ Already long sentences (no batching needed)
-- ❌ When you need exact sentence-by-sentence control
+**Customizing the Behavior:**
 
-**Segment Metadata:**
+You can customize the thresholds using `ShortSentenceConfig`:
 
-Batched segments use range format for `sentence` field:
+```python
+from pykokoro import Kokoro
+from pykokoro.short_sentence_handler import ShortSentenceConfig
 
-- Single sentence: `sentence=0` (int)
-- Batched sentences: `sentence="0-2"` (string indicating sentences 0, 1, 2 were merged)
+# More aggressive short sentence handling
+config = ShortSentenceConfig(
+    min_phoneme_length=50,    # Treat segments <50 phonemes as short
+    target_phoneme_length=150, # Repeat until ~150 phonemes
+    max_repetitions=7,         # Allow up to 7 repetitions
+)
 
-See `examples/optimal_phoneme_length_demo.py` for a complete comparison.
+tts = Kokoro(short_sentence_config=config)
+```
+
+**Default Configuration:**
+
+- `min_phoneme_length=30`: Segments below this use repeat-and-cut
+- `target_phoneme_length=100`: Target length for repeated text
+- `max_repetitions=5`: Maximum times to repeat
+
+**Disabling Short Sentence Handling:**
+
+```python
+config = ShortSentenceConfig(min_phoneme_length=0)  # No segment is "short"
+tts = Kokoro(short_sentence_config=config)
+```
+
+See `examples/optimal_phoneme_length_demo.py` for a demonstration.
 
 ## Available Voices
 

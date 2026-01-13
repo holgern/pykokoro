@@ -22,10 +22,12 @@ from .provider_config import ProviderConfigManager
 from .tokenizer import EspeakConfig, Tokenizer, TokenizerConfig
 from .trim import trim as trim_audio
 from .utils import get_user_cache_path
-from .voice_manager import VoiceBlend, VoiceManager
+from .voice_manager import VoiceBlend, VoiceManager, slerp_voices
 
 if TYPE_CHECKING:
     from ssmd import Document
+
+    from .short_sentence_handler import ShortSentenceConfig
 
 # Logger for debugging
 logger = logging.getLogger(__name__)
@@ -1082,6 +1084,7 @@ class Kokoro:
         model_quality: ModelQuality | None = None,
         model_source: ModelSource = DEFAULT_MODEL_SOURCE,
         model_variant: ModelVariant = DEFAULT_MODEL_VARIANT,
+        short_sentence_config: "ShortSentenceConfig | None" = None,
     ) -> None:
         """
         Initialize the Kokoro ONNX backend.
@@ -1145,6 +1148,19 @@ class Kokoro:
             model_quality: Model quality/quantization level (default from config)
             model_source: Model source ("huggingface" or "github")
             model_variant: Model variant ("v1.0", "v1.1-zh")
+            short_sentence_config: Configuration for short sentence handling using
+                the repeat-and-cut technique. This improves audio quality for short
+                sentences (like "Why?" or "Go!") by generating them with repeated
+                context. If None, uses default thresholds (min_phoneme_length=30,
+                target_phoneme_length=100). Set enabled=False to disable.
+                Example:
+                    from pykokoro.short_sentence_handler import ShortSentenceConfig
+                    config = ShortSentenceConfig(
+                        min_phoneme_length=20,  # Treat < 20 phonemes as short
+                        target_phoneme_length=80,  # Target length for repeats
+                        enabled=True
+                    )
+                    tts = Kokoro(short_sentence_config=config)
         """
         self._session: rt.InferenceSession | None = None
         self._voices_data: dict[str, np.ndarray] | None = None
@@ -1248,6 +1264,9 @@ class Kokoro:
         self._vocab_version = self._model_variant
         self._espeak_config = espeak_config
         self._tokenizer_config = tokenizer_config
+
+        # Short sentence handling configuration
+        self._short_sentence_config = short_sentence_config
 
     def _get_vocabulary(self) -> dict[str, int]:
         """Get vocabulary for the current model variant.
@@ -1453,6 +1472,7 @@ class Kokoro:
             session=self._session,
             tokenizer=self.tokenizer,
             model_source=self._model_source,
+            short_sentence_config=self._short_sentence_config,
         )
 
     def get_voices(self) -> list[str]:
@@ -1479,19 +1499,32 @@ class Kokoro:
         """
         Create a blended voice from multiple voices.
 
+        Supports two interpolation methods:
+        - linear: Weighted average of voice embeddings (works with any number of voices)
+        - slerp: Spherical linear interpolation (requires exactly 2 voices)
+
         Args:
-            blend: VoiceBlend object specifying voices and weights
+            blend: VoiceBlend object specifying voices, weights, and interpolation method
 
         Returns:
             Numpy array representing the blended voice style
         """
         self._init_kokoro()
 
+        # Optimize: single voice doesn't need blending
         if len(blend.voices) == 1:
             voice_name, _ = blend.voices[0]
             return self.get_voice_style(voice_name)
 
-        # Get style vectors and blend them
+        # SLERP interpolation (exactly 2 voices)
+        if blend.interpolation == "slerp":
+            (voice_a_name, weight_a), (voice_b_name, weight_b) = blend.voices
+            style_a = self.get_voice_style(voice_a_name)
+            style_b = self.get_voice_style(voice_b_name)
+            # Use weight_b as t parameter: t=0 -> voice_a, t=1 -> voice_b
+            return slerp_voices(style_a, style_b, t=weight_b)
+
+        # Linear interpolation (weighted sum) - works with any number of voices
         blended: np.ndarray | None = None
         for voice_name, weight in blend.voices:
             style = self.get_voice_style(voice_name)
@@ -1516,7 +1549,6 @@ class Kokoro:
         pause_clause: float = 0.3,
         pause_sentence: float = 0.6,
         pause_paragraph: float = 1.0,
-        optimal_phoneme_length: int | list[int] | None = None,
         pause_variance: float = 0.05,
         random_seed: int | None = None,
     ) -> tuple[np.ndarray, int]:
@@ -1533,6 +1565,12 @@ class Kokoro:
         - Phonemes: [tomato](ph: təˈmeɪtoʊ) uses explicit phonemes
         - Substitution: [H2O](sub: water) replaces text before phonemization
         - Markers: @name (stored in metadata)
+
+        Short sentences (like "Why?" or "Go!") are automatically handled using
+        the repeat-and-cut technique for improved prosody. This generates the
+        sentence with repeated context and cuts to the original length, producing
+        better quality than processing short sentences individually. Configure via
+        Kokoro(short_sentence_config=...) or set_short_sentence_config().
 
         Args:
             text: Text to synthesize (or phonemes if is_phonemes=True). SSMD
@@ -1554,18 +1592,6 @@ class Kokoro:
                 sentence boundary pauses when pause_mode="manual". Default: 0.6s
             pause_paragraph: Duration for SSMD ...p (paragraph) breaks and automatic
                 paragraph boundary pauses when pause_mode="manual". Default: 1.0s
-            optimal_phoneme_length: Optional target phoneme length(s) for batching.
-                Prevents very short segments (like "Why?") from being processed
-                individually, improving audio quality and prosody.
-                - None (default): No batching
-                - int: Single target (e.g., 50 = merge until reaching ~50 phonemes)
-                - list[int]: Multiple targets in ascending order (e.g., [30, 50, 70]):
-                    * Tries to reach highest target (70)
-                    * Falls back to lower targets if needed (50, then 30)
-                    * Stops merging when reaching a target or when adding next
-                      segment would significantly overshoot (~30% tolerance)
-                Never exceeds max_phoneme_length (510).
-                Recommended: 50 or [30, 50] for dialogue-heavy text.
             pause_variance: Standard deviation for Gaussian variance added to
                 automatic pauses (in seconds). Only applies when pause_mode="manual".
                 Default 0.05 (±100ms at 95% confidence). Set to 0.0 to disable variance.
@@ -1599,13 +1625,12 @@ class Kokoro:
             ...     pause_mode="manual"
             ... )
 
-            Batching short sentences for better prosody:
+            Short sentences handled automatically with repeat-and-cut:
 
             >>> audio, sr = tts.create(
             ...     '"Why?" "Do?" "Go!"',
-            ...     voice="af_sarah",
-            ...     optimal_phoneme_length=50
-            ... )
+            ...     voice="af_sarah"
+            ... )  # Each short sentence processed with improved prosody
 
             Language switching:
 
@@ -1673,7 +1698,12 @@ class Kokoro:
         if isinstance(voice, VoiceBlend):
             voice_style = self.create_blended_voice(voice)
         elif isinstance(voice, str):
-            voice_style = self.get_voice_style(voice)
+            # Check if it's a blend string (contains : or ,)
+            if ":" in voice or "," in voice:
+                blend = VoiceBlend.parse(voice)
+                voice_style = self.create_blended_voice(blend)
+            else:
+                voice_style = self.get_voice_style(voice)
         else:
             voice_style = voice
 
@@ -1703,7 +1733,6 @@ class Kokoro:
             pause_sentence=pause_sentence,
             pause_paragraph=pause_paragraph,
             pause_variance=pause_variance,
-            optimal_phoneme_length=optimal_phoneme_length,
             rng=rng,
         )
 
@@ -1738,7 +1767,12 @@ class Kokoro:
         if isinstance(voice, VoiceBlend):
             voice_style = self.create_blended_voice(voice)
         elif isinstance(voice, str):
-            voice_style = self.get_voice_style(voice)
+            # Check if it's a blend string (contains : or ,)
+            if ":" in voice or "," in voice:
+                blend = VoiceBlend.parse(voice)
+                voice_style = self.create_blended_voice(blend)
+            else:
+                voice_style = self.get_voice_style(voice)
         else:
             voice_style = voice
 
@@ -1987,11 +2021,16 @@ class Kokoro:
         """
         self._init_kokoro()
 
-        # Resolve voice once
+        # Resolve voice to style vector
         if isinstance(voice, VoiceBlend):
             voice_style = self.create_blended_voice(voice)
         elif isinstance(voice, str):
-            voice_style = self.get_voice_style(voice)
+            # Check if it's a blend string (contains : or ,)
+            if ":" in voice or "," in voice:
+                blend = VoiceBlend.parse(voice)
+                voice_style = self.create_blended_voice(blend)
+            else:
+                voice_style = self.get_voice_style(voice)
         else:
             voice_style = voice
 

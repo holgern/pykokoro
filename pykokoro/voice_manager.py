@@ -13,15 +13,105 @@ logger = logging.getLogger(__name__)
 ModelSource = Literal["huggingface", "github"]
 
 
+def slerp_voices(
+    a: np.ndarray,
+    b: np.ndarray,
+    t: float,
+    epsilon: float = 1e-6,
+) -> np.ndarray:
+    """
+    Spherical linear interpolation (SLERP) between two voice embeddings.
+
+    SLERP interpolates along the shortest arc on a hypersphere, which can
+    produce smoother, more natural voice transitions than linear interpolation.
+    This is particularly effective for voice blending as it preserves the
+    "direction" of the embedding vectors.
+
+    Based on the standard SLERP formula:
+        slerp(a, b, t) = sin((1-t)θ)/sin(θ) * a + sin(tθ)/sin(θ) * b
+    where θ is the angle between vectors a and b.
+
+    Args:
+        a: First voice embedding. Shape: (510, 1, 256) for Kokoro voice embeddings.
+           Will be normalized internally along the last dimension.
+        b: Second voice embedding (same shape as a).
+           Will be normalized internally along the last dimension.
+        t: Interpolation parameter in [0, 1].
+           t=0 returns voice a, t=1 returns voice b.
+        epsilon: Threshold for falling back to linear interpolation when
+                 vectors are nearly parallel (sin(θ) ≈ 0).
+
+    Returns:
+        Interpolated voice embedding with same shape and dtype as inputs.
+        The output magnitude is preserved (interpolates between input magnitudes).
+
+    Raises:
+        ValueError: If input arrays have different shapes.
+
+    Example:
+        >>> voice_a = voice_manager.get_voice_style("af_bella")
+        >>> voice_b = voice_manager.get_voice_style("am_adam")
+        >>> blended = slerp_voices(voice_a, voice_b, t=0.5)
+    """
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+
+    if a.shape != b.shape:
+        raise ValueError(f"Arrays must have same shape: {a.shape} vs {b.shape}")
+
+    # Store original magnitudes to preserve them in output
+    mag_a = np.linalg.norm(a, axis=-1, keepdims=True)
+    mag_b = np.linalg.norm(b, axis=-1, keepdims=True)
+
+    # Normalize vectors for SLERP calculation
+    a_norm = a / (mag_a + 1e-10)  # Add epsilon to avoid division by zero
+    b_norm = b / (mag_b + 1e-10)
+
+    # Compute dot product along the last dimension (cosine of angle between normalized vectors)
+    dot = np.sum(a_norm * b_norm, axis=-1, keepdims=True)
+    dot = np.clip(dot, -1.0, 1.0)  # Ensure within [-1, 1]
+
+    # Compute the angle theta between vectors
+    theta = np.arccos(dot)
+
+    # Compute sine of theta
+    sin_theta = np.sin(theta)
+
+    # If sin_theta is near zero, vectors are nearly parallel
+    # Fall back to linear interpolation
+    if np.max(np.abs(sin_theta)) < epsilon:
+        result = (1 - t) * a + t * b
+    else:
+        # Compute SLERP using the spherical interpolation formula
+        sin_t_theta = np.sin(t * theta)
+        sin_one_minus_t_theta = np.sin((1 - t) * theta)
+
+        # SLERP on normalized vectors
+        result_norm = (sin_one_minus_t_theta / sin_theta) * a_norm + (
+            sin_t_theta / sin_theta
+        ) * b_norm
+
+        # Interpolate the magnitudes linearly and apply to result
+        mag_interp = (1 - t) * mag_a + t * mag_b
+        result = result_norm * mag_interp
+
+    # Return with original dtype (float32)
+    return result.astype(a.dtype if a.dtype == np.float32 else np.float32)
+
+
 @dataclass
 class VoiceBlend:
     """Configuration for blending multiple voices.
 
     Args:
         voices: List of (voice_name, weight) tuples
+        interpolation: Interpolation method - "linear" (weighted average) or
+                      "slerp" (spherical linear interpolation). SLERP requires
+                      exactly 2 voices and produces smoother transitions.
     """
 
     voices: list[tuple[str, float]]
+    interpolation: Literal["linear", "slerp"] = "linear"
 
     def __post_init__(self):
         """Validate voice blend configuration."""
@@ -32,14 +122,25 @@ class VoiceBlend:
         if not 0.99 <= total_weight <= 1.01:  # Allow small floating point errors
             raise ValueError(f"Voice blend weights must sum to 1.0, got {total_weight}")
 
+        # SLERP only supports exactly 2 voices
+        if self.interpolation == "slerp" and len(self.voices) != 2:
+            raise ValueError(
+                f"SLERP interpolation requires exactly 2 voices, got {len(self.voices)}. "
+                f"Use interpolation='linear' for blending more than 2 voices."
+            )
+
     @classmethod
     def parse(cls, blend_str: str) -> "VoiceBlend":
         """Parse a voice blend string.
 
         Format: "voice1:weight1,voice2:weight2" or "voice1:50,voice2:50"
         Weights should sum to 100 (percentages).
+        Optionally append "@slerp" for spherical interpolation.
 
-        Example: "af_nicole:50,am_michael:50"
+        Examples:
+            "af_bella:50,am_adam:50"        # Linear interpolation (default)
+            "af_bella:50,am_adam:50@slerp"  # Spherical interpolation
+            "af_bella:30,af_nicole:70"      # 30/70 linear blend
 
         Args:
             blend_str: String representation of voice blend
@@ -47,6 +148,12 @@ class VoiceBlend:
         Returns:
             VoiceBlend instance
         """
+        # Check for interpolation method suffix
+        interpolation = "linear"
+        if blend_str.endswith("@slerp"):
+            interpolation = "slerp"
+            blend_str = blend_str[:-6]  # Remove "@slerp" suffix
+
         voices = []
         for part in blend_str.split(","):
             part = part.strip()
@@ -63,7 +170,7 @@ class VoiceBlend:
         if total_weight > 0 and abs(total_weight - 1.0) > 0.01:
             voices = [(v, w / total_weight) for v, w in voices]
 
-        return cls(voices=voices)
+        return cls(voices=voices, interpolation=interpolation)
 
 
 class VoiceManager:
@@ -168,8 +275,15 @@ class VoiceManager:
     def create_blended_voice(self, blend: VoiceBlend) -> np.ndarray:
         """Create a blended voice from multiple voices.
 
+        Supports two interpolation methods:
+        - linear: Weighted average of voice embeddings (works with any number of voices)
+        - slerp: Spherical linear interpolation (requires exactly 2 voices)
+
+        SLERP produces smoother, more natural voice transitions by interpolating
+        along the surface of a hypersphere rather than through its interior.
+
         Args:
-            blend: VoiceBlend object specifying voices and weights
+            blend: VoiceBlend object specifying voices, weights, and interpolation method
 
         Returns:
             Numpy array representing the blended voice style
@@ -177,6 +291,15 @@ class VoiceManager:
         Raises:
             RuntimeError: If voices have not been loaded yet
             KeyError: If any voice in the blend is not found
+
+        Example:
+            >>> # Linear blend (default)
+            >>> blend = VoiceBlend([("af_bella", 0.5), ("am_adam", 0.5)])
+            >>> voice = vm.create_blended_voice(blend)
+            >>>
+            >>> # SLERP blend
+            >>> blend = VoiceBlend([("af_bella", 0.5), ("am_adam", 0.5)], interpolation="slerp")
+            >>> voice = vm.create_blended_voice(blend)
         """
         if self._voices_data is None:
             raise RuntimeError("Voices not loaded. Call load_voices() first.")
@@ -186,7 +309,15 @@ class VoiceManager:
             voice_name, _ = blend.voices[0]
             return self.get_voice_style(voice_name)
 
-        # Get style vectors and blend them
+        # SLERP interpolation (exactly 2 voices)
+        if blend.interpolation == "slerp":
+            (voice_a_name, weight_a), (voice_b_name, weight_b) = blend.voices
+            style_a = self.get_voice_style(voice_a_name)
+            style_b = self.get_voice_style(voice_b_name)
+            # Use weight_b as t parameter: t=0 -> voice_a, t=1 -> voice_b
+            return slerp_voices(style_a, style_b, t=weight_b)
+
+        # Linear interpolation (weighted sum) - works with any number of voices
         blended: np.ndarray | None = None
         for voice_name, weight in blend.voices:
             style = self.get_voice_style(voice_name)

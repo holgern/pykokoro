@@ -339,6 +339,7 @@ def main():
             voice=VOICE,
             speed=1.0,
             lang=LANG,
+            pause_mode="tts",
             # Use default pause_mode="tts" to let TTS generate natural prosody
             # The SSMD pause markers (...p, ...s) in the text will still be honored
         )
