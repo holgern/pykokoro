@@ -753,8 +753,22 @@ def _merge_segments_for_tts(  # noqa: C901
             lang = current_batch[0].lang
             paragraph = current_batch[0].paragraph
 
-            # Re-phonemize the merged text for accurate phonemes
-            merged_phonemes = tokenizer.phonemize(merged_text, lang=lang)
+            # Check if any segment has phoneme overrides via SSMD
+            has_phoneme_overrides = any(
+                seg.ssmd_metadata and seg.ssmd_metadata.get("phonemes")
+                for seg in current_batch
+            )
+
+            if has_phoneme_overrides:
+                # Preserve phoneme overrides - concatenate phonemes directly
+                # This prevents re-phonemization which would lose the overrides
+                merged_phonemes = " ".join(
+                    seg.phonemes for seg in current_batch if seg.phonemes.strip()
+                )
+            else:
+                # Re-phonemize the merged text for accurate phonemes
+                # This gives better results when there are no explicit overrides
+                merged_phonemes = tokenizer.phonemize(merged_text, lang=lang)
 
             # Check if merged result exceeds limit
             if len(merged_phonemes) > max_phoneme_length:
@@ -849,6 +863,8 @@ def _merge_segments_for_tts(  # noqa: C901
                 for k in ["prosody_volume", "prosody_pitch", "prosody_rate"]
             ):
                 return True
+            # Phoneme overrides should NOT automatically create boundaries
+            # They can be merged with other phoneme-override segments
 
         return False
 
