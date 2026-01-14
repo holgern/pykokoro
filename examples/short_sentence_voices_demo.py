@@ -136,11 +136,11 @@ def main():
 
     pause = np.zeros(int(sample_rate * 0.5), dtype=np.float32)
     # Add announcement and samples to output
-    announcement = f"With pretexting"
+    announcement = "With pretexting"
     intro, _ = kokoro.create(announcement, voice=VOICE, lang=LANG)
     all_samples.extend([intro, pause])
     # Add announcement and samples to output
-    announcement = f"Without pretexting"
+    announcement = "Without pretexting"
     intro2, _ = kokoro.create(announcement, voice=VOICE, lang=LANG)
     all_samples2.extend([pause, intro2, pause])
 
@@ -173,7 +173,6 @@ def main():
         # all_samples.extend([samples_enabled, pause, samples_disabled, pause])
         all_samples.extend([samples_enabled, pause])
         all_samples2.extend([samples_disabled, pause])
-
 
     # Save combined audio
     print_separator("Saving Combined Audio")

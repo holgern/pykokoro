@@ -395,3 +395,232 @@ def trim(
 
     # Slice the buffer and return the corresponding interval
     return y[..., start:end], np.asarray([start, end])
+
+
+def energy_based_vad(
+    audio: np.ndarray,
+    sample_rate: int,
+    frame_duration_ms: int = 5,
+    energy_threshold: float = 0.02,
+) -> np.ndarray:
+    """Simple energy-based voice activity detection.
+
+    Args:
+        audio: Audio signal as numpy array
+        sample_rate: Sample rate of audio
+        frame_duration_ms: Frame size in milliseconds (default: 5ms for high resolution)
+        energy_threshold: Energy threshold (0.0-1.0) - lower = more sensitive
+
+    Returns:
+        Boolean array indicating speech/silence for each frame
+    """
+    audio = audio.astype(np.float32)
+
+    # Frame parameters
+    frame_length = int(sample_rate * frame_duration_ms / 1000)
+    n_frames = len(audio) // frame_length
+
+    # Compute short-time energy for each frame
+    energy = np.zeros(n_frames)
+    for i in range(n_frames):
+        frame = audio[i * frame_length : (i + 1) * frame_length]
+        energy[i] = np.sqrt(np.sum(frame**2) / len(frame))
+
+    # Normalize energy
+    energy_norm = (energy - energy.min()) / (energy.max() - energy.min() + 1e-8)
+
+    # Apply threshold to detect speech
+    voice_activity = energy_norm > energy_threshold
+
+    return voice_activity
+
+
+def find_speech_start(
+    audio: np.ndarray,
+    sample_rate: int,
+    energy_threshold: float = 0.05,
+    frame_duration_ms: int = 5,
+) -> int:
+    """Find where speech starts in audio (end of initial silence).
+
+    Args:
+        audio: Audio signal to analyze
+        sample_rate: Sample rate of audio
+        energy_threshold: Energy threshold for VAD (0.0-1.0)
+        frame_duration_ms: Frame duration in milliseconds
+
+    Returns:
+        Sample index where speech starts (0 if no silence detected)
+    """
+    voice_activity = energy_based_vad(
+        audio,
+        sample_rate,
+        frame_duration_ms=frame_duration_ms,
+        energy_threshold=energy_threshold,
+    )
+
+    samples_per_frame = int(sample_rate * frame_duration_ms / 1000)
+
+    # Find first speech frame
+    for i, is_speech in enumerate(voice_activity):
+        if is_speech:
+            speech_start_sample = i * samples_per_frame
+            return speech_start_sample
+
+    # No speech found, return 0
+    return 0
+
+
+def frame_signal(
+    audio: np.ndarray,
+    sample_rate: int,
+    frame_ms: int = 20,
+    hop_ms: int = 10,
+) -> np.ndarray:
+    """Split audio signal into overlapping frames.
+
+    Args:
+        audio: Audio signal as numpy array
+        sample_rate: Sample rate of audio
+        frame_ms: Frame size in milliseconds (default: 20ms)
+        hop_ms: Hop size in milliseconds (default: 10ms)
+
+    Returns:
+        2D array of frames (n_frames × frame_length)
+    """
+    frame_length = int(sample_rate * frame_ms / 1000)
+    hop_length = int(sample_rate * hop_ms / 1000)
+
+    # Calculate number of frames
+    n_frames = (len(audio) - frame_length) // hop_length + 1
+
+    # Create frames array
+    frames = np.zeros((n_frames, frame_length), dtype=audio.dtype)
+
+    for i in range(n_frames):
+        start = i * hop_length
+        end = start + frame_length
+        frames[i] = audio[start:end]
+
+    return frames
+
+
+def short_time_energy(frames: np.ndarray) -> np.ndarray:
+    """Calculate short-time energy for each frame.
+
+    Args:
+        frames: 2D array of frames (n_frames × frame_length)
+
+    Returns:
+        1D array of normalized energy values (0-1) per frame
+    """
+    # Calculate RMS energy for each frame
+    energy = np.sqrt(np.mean(frames**2, axis=1))
+
+    # Normalize to [0, 1] range
+    energy_min = energy.min()
+    energy_max = energy.max()
+    if energy_max > energy_min:
+        energy_norm = (energy - energy_min) / (energy_max - energy_min)
+    else:
+        energy_norm = np.zeros_like(energy)
+
+    return energy_norm
+
+
+def zero_crossing_rate(frames: np.ndarray) -> np.ndarray:
+    """Calculate zero crossing rate for each frame.
+
+    Zero crossing rate indicates voiced (low ZCR) vs unvoiced (high ZCR) speech.
+
+    Args:
+        frames: 2D array of frames (n_frames × frame_length)
+
+    Returns:
+        1D array of normalized ZCR values (0-1) per frame
+    """
+    # Count sign changes in each frame
+    # Sign change occurs when adjacent samples have opposite signs
+    signs = np.sign(frames)
+    sign_changes = np.abs(np.diff(signs, axis=1))
+    zcr = np.sum(sign_changes > 0, axis=1) / frames.shape[1]
+
+    # Normalize to [0, 1] range
+    zcr_min = zcr.min()
+    zcr_max = zcr.max()
+    if zcr_max > zcr_min:
+        zcr_norm = (zcr - zcr_min) / (zcr_max - zcr_min)
+    else:
+        zcr_norm = np.zeros_like(zcr)
+
+    return zcr_norm
+
+
+def spectral_flux(frames: np.ndarray, sample_rate: int) -> np.ndarray:
+    """Calculate spectral flux for each frame using pure NumPy FFT.
+
+    Spectral flux measures the rate of change in the power spectrum.
+    High flux indicates transitions between different sounds.
+
+    Args:
+        frames: 2D array of frames (n_frames × frame_length)
+        sample_rate: Sample rate of audio
+
+    Returns:
+        1D array of normalized spectral flux values (0-1) per frame
+    """
+    n_frames, frame_length = frames.shape
+
+    # Apply Hamming window to each frame
+    window = np.hamming(frame_length)
+    windowed_frames = frames * window
+
+    # Compute FFT for each frame
+    # Use rfft for real-valued signals (more efficient)
+    fft_frames = np.fft.rfft(windowed_frames, axis=1)
+    magnitude_spectra = np.abs(fft_frames)
+
+    # Calculate spectral flux (sum of positive differences from previous frame)
+    flux = np.zeros(n_frames)
+    for i in range(1, n_frames):
+        diff = magnitude_spectra[i] - magnitude_spectra[i - 1]
+        # Only count positive differences (increases in magnitude)
+        flux[i] = np.sum(diff[diff > 0])
+
+    # First frame has no previous frame, so flux = 0
+
+    # Normalize to [0, 1] range
+    flux_min = flux.min()
+    flux_max = flux.max()
+    if flux_max > flux_min:
+        flux_norm = (flux - flux_min) / (flux_max - flux_min)
+    else:
+        flux_norm = np.zeros_like(flux)
+
+    return flux_norm
+
+
+def median_filter_numpy(data: np.ndarray, window_size: int = 5) -> np.ndarray:
+    """Apply median filter using pure NumPy (manual sliding window).
+
+    Args:
+        data: 1D array to filter
+        window_size: Window size for median filter (default: 5)
+
+    Returns:
+        Filtered 1D array (same length as input)
+    """
+    n = len(data)
+    filtered = np.zeros(n)
+    half_window = window_size // 2
+
+    for i in range(n):
+        # Determine window bounds
+        start = max(0, i - half_window)
+        end = min(n, i + half_window + 1)
+
+        # Extract window and compute median
+        window = data[start:end]
+        filtered[i] = np.median(window)
+
+    return filtered

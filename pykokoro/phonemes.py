@@ -852,6 +852,10 @@ def _merge_segments_for_tts(  # noqa: C901
         if last_seg.pause_after > 0:
             return True
 
+        # Say-as segments should remain isolated for proper metadata
+        if last_seg.ssmd_metadata and last_seg.ssmd_metadata.get("say_as_interpret"):
+            return True
+
         # Break if segment has special SSMD metadata that shouldn't be merged
         if segment.ssmd_metadata:
             # Voice changes should create boundaries
@@ -862,6 +866,9 @@ def _merge_segments_for_tts(  # noqa: C901
                 segment.ssmd_metadata.get(k)
                 for k in ["prosody_volume", "prosody_pitch", "prosody_rate"]
             ):
+                return True
+            # Say-as segments should remain isolated for proper metadata
+            if segment.ssmd_metadata.get("say_as_interpret"):
                 return True
             # Phoneme overrides should NOT automatically create boundaries
             # They can be merged with other phoneme-override segments

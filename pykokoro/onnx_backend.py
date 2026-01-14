@@ -1146,14 +1146,15 @@ class Kokoro:
             model_variant: Model variant ("v1.0", "v1.1-zh")
             short_sentence_config: Configuration for short sentence handling using
                 the repeat-and-cut technique. This improves audio quality for short
-                sentences (like "Why?" or "Go!") by generating them with repeated
-                context. If None, uses default thresholds (min_phoneme_length=30,
-                target_phoneme_length=100). Set enabled=False to disable.
+                sentences (like "Why?" or "Go!") by generating them with
+                phoneme context. If None, uses default thresholds
+                (min_phoneme_length=30). Set enabled=False to disable.
                 Example:
                     from pykokoro.short_sentence_handler import ShortSentenceConfig
                     config = ShortSentenceConfig(
                         min_phoneme_length=20,  # Treat < 20 phonemes as short
-                        enabled=True
+                        enabled=True,
+                        phoneme_pretext="—"
                     )
                     tts = Kokoro(short_sentence_config=config)
         """

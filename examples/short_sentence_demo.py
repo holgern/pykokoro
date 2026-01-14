@@ -133,7 +133,6 @@ def main():
         # Test with context-prepending enabled (default)
         config_enabled = ShortSentenceConfig(
             min_phoneme_length=10,
-            disable_cutoff_detection=False,
             enabled=True,
         )
 

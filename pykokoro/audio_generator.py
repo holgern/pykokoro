@@ -287,6 +287,7 @@ class AudioGenerator:
         from .short_sentence_handler import (
             ShortSentenceConfig,
             generate_short_sentence_audio,
+            is_segment_empty,
             is_segment_short,
         )
 
@@ -321,6 +322,10 @@ class AudioGenerator:
         elif effective_config is None:
             # No override, no config: use default
             effective_config = ShortSentenceConfig()
+
+        if effective_config and is_segment_empty(segment, effective_config):
+            logger.debug(f"Skipping phoneme segment: '{segment.text[:50]}'")
+            return audio_parts
 
         # Check if this is a short segment that should use repeat-and-cut
         if effective_config and is_segment_short(segment, effective_config):

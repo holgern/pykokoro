@@ -612,6 +612,20 @@ Trim Silence from Audio
    print(f"Trimmed: {len(trimmed_audio)} samples")
    print(f"Trim info: {trim_info}")
 
+Short Sentence Handling
+-----------------------
+
+PyKokoro improves short, single-word sentences by surrounding the word with a
+pause marker. You can tune settins via ``ShortSentenceConfig``:
+
+.. code-block:: python
+
+   from pykokoro.short_sentence_handler import ShortSentenceConfig
+
+   short_config = ShortSentenceConfig(
+       phoneme_pretext="…",
+   )
+
 Configuration Management
 ------------------------
 
