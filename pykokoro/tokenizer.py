@@ -238,7 +238,7 @@ class Tokenizer:
                 "EspeakConfig is deprecated. kokorog2p manages espeak internally."
             )
 
-    def __getattribute__(self, name: str):
+    def __getattribute__(self, name: str) -> object:
         """Override to warn about deprecated attributes.
 
         This method intercepts attribute access to provide deprecation warnings

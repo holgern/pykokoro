@@ -5,7 +5,7 @@ audio generation parameters in Kokoro.create() and create_from_phonemes().
 """
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 
 @dataclass(frozen=True)
@@ -156,7 +156,7 @@ class GenerationConfig:
         if not self.lang or not isinstance(self.lang, str):
             raise ValueError(f"lang must be a non-empty string, got {self.lang!r}")
 
-    def merge_with_kwargs(self, **kwargs) -> dict:
+    def merge_with_kwargs(self, **kwargs: Any) -> dict[str, Any]:
         """Merge config with kwargs, with kwargs taking priority.
 
         This is used internally by Kokoro.create() to merge the config

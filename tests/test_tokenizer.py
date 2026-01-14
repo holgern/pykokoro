@@ -3,6 +3,7 @@
 import pytest
 
 from pykokoro.constants import MAX_PHONEME_LENGTH, SAMPLE_RATE, SUPPORTED_LANGUAGES
+from pykokoro.mixed_language_handler import MixedLanguageHandler
 from pykokoro.tokenizer import (
     EspeakConfig,
     PhonemeResult,
@@ -397,6 +398,11 @@ class TestKokorog2pIntegration:
 
 class TestMixedLanguageSupport:
     """Tests for mixed-language phonemization support."""
+
+    def test_mixed_language_handler_type_hint(self):
+        """Test MixedLanguageHandler uses TokenizerConfig in annotations."""
+        annotation = MixedLanguageHandler.__init__.__annotations__.get("config")
+        assert annotation == "TokenizerConfig"
 
     def test_mixed_language_config_defaults(self):
         """Test that mixed-language config has correct defaults."""

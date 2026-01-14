@@ -33,6 +33,10 @@ class PhonemeSegment:
         pause_before: Duration of pause before this segment in seconds
         pause_after: Duration of pause after this segment in seconds
         ssmd_metadata: Optional SSMD metadata (emphasis, prosody, markers, etc.)
+        voice_name: Optional voice name override for the segment
+        voice_language: Optional voice language override
+        voice_gender: Optional voice gender override
+        voice_variant: Optional voice variant override
     """
 
     text: str
@@ -44,6 +48,10 @@ class PhonemeSegment:
     pause_before: float = 0.0
     pause_after: float = 0.0
     ssmd_metadata: dict[str, Any] | None = field(default=None, repr=False)
+    voice_name: str | None = None
+    voice_language: str | None = None
+    voice_gender: str | None = None
+    voice_variant: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

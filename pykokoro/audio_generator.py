@@ -291,7 +291,7 @@ class AudioGenerator:
             is_segment_short,
         )
 
-        audio_parts = []
+        audio_parts: list[np.ndarray] = []
 
         # Skip empty phoneme segments
         if not segment.phonemes.strip():

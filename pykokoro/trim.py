@@ -26,10 +26,25 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable
+from typing import Literal
 
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
 from numpy.typing import NDArray
+
+PadMode = Literal[
+    "constant",
+    "edge",
+    "linear_ramp",
+    "maximum",
+    "mean",
+    "median",
+    "minimum",
+    "reflect",
+    "symmetric",
+    "wrap",
+    "empty",
+]
 
 
 class TrimError(Exception):
@@ -46,7 +61,7 @@ class ParameterError(TrimError):
 
 def _cabs2(x: np.ndarray) -> np.ndarray:
     """Efficiently compute abs2 on complex inputs."""
-    return x.real**2 + x.imag**2  # type: ignore[union-attr]
+    return x.real**2 + x.imag**2
 
 
 def abs2(x: np.ndarray, dtype: np.dtype | None = None) -> np.ndarray:
@@ -254,8 +269,8 @@ def rms(
     frame_length: int = 2048,
     hop_length: int = 512,
     center: bool = True,
-    pad_mode: str = "constant",
-    dtype: type = np.float32,
+    pad_mode: PadMode = "constant",
+    dtype: np.dtype | type = np.float32,
 ) -> np.ndarray:
     """Compute root-mean-square (RMS) value for each frame.
 
@@ -271,16 +286,19 @@ def rms(
     Returns:
         RMS value for each frame
     """
+    resolved_dtype: np.dtype = np.dtype(dtype)
+
     if y is not None:
         if center:
             padding = [(0, 0) for _ in range(y.ndim)]
             padding[-1] = (int(frame_length // 2), int(frame_length // 2))
-            y = np.pad(y, padding, mode=pad_mode)  # type: ignore[arg-type]
+            y = np.pad(y, padding, mode=pad_mode)
 
-        x = frame(y, frame_length=frame_length, hop_length=hop_length)  # type: ignore[arg-type]
+        assert y is not None
+        x = frame(y, frame_length=frame_length, hop_length=hop_length)
 
         # Calculate power
-        power = np.mean(abs2(x, dtype=dtype), axis=-2, keepdims=True)  # type: ignore[arg-type]
+        power = np.mean(abs2(x, dtype=resolved_dtype), axis=-2, keepdims=True)
     elif S is not None:
         # Check the frame length
         if S.shape[-2] != frame_length // 2 + 1:
@@ -293,7 +311,7 @@ def rms(
             )
 
         # Power spectrogram
-        x = abs2(S, dtype=dtype)  # type: ignore[arg-type]
+        x = abs2(S, dtype=resolved_dtype)
 
         # Adjust the DC and sr/2 component
         x[..., 0, :] *= 0.5

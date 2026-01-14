@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -86,6 +87,7 @@ def normalize_cardinal(text: str, lang: str = "en-us", **kwargs: Any) -> str:
         Cardinal number as words
     """
     try:
+        num: float | int
         # Clean the text (remove commas, spaces)
         cleaned = text.replace(",", "").replace(" ", "").strip()
 
@@ -445,7 +447,7 @@ def normalize_fraction(text: str, lang: str = "en-us", **kwargs: Any) -> str:
 
 
 # Main normalization dispatcher
-NORMALIZERS = {
+NORMALIZERS: dict[str, Callable[..., str]] = {
     "cardinal": normalize_cardinal,
     "number": normalize_cardinal,  # alias
     "ordinal": normalize_ordinal,

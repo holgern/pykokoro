@@ -9,7 +9,7 @@ import sqlite3
 import urllib.request
 from collections.abc import AsyncGenerator, Callable, Generator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 import onnxruntime as rt
@@ -820,7 +820,7 @@ def download_all_voices(
     # Load and combine all voices into a single .npz file (voices.bin.npz)
     if downloaded_files:
         logger.info(f"Combining {len(downloaded_files)} voices into voices.bin.npz")
-        voices_data = {}
+        voices_data: dict[str, np.ndarray] = {}
 
         for voice_name in downloaded_files:
             voice_path = voices_dir / f"{voice_name}.bin"
@@ -835,7 +835,8 @@ def download_all_voices(
                 logger.warning(f"Failed to load {voice_name}.bin: {e}")
 
         if voices_data:
-            np.savez(str(voices_bin_path), **voices_data)
+            np_savez = cast(Any, np.savez)
+            np_savez(str(voices_bin_path), **voices_data)
             logger.info(
                 f"Created combined voices.bin.npz with {len(voices_data)} voices"
             )
@@ -1689,13 +1690,15 @@ class Kokoro:
             actual_speed = float(merged["speed"])
             actual_lang = str(merged["lang"])
             actual_is_phonemes = bool(merged["is_phonemes"])
-            actual_pause_mode = merged["pause_mode"]  # type: ignore[assignment]
+            actual_pause_mode = cast(Literal["tts", "manual"], merged["pause_mode"])
             actual_pause_clause = float(merged["pause_clause"])
             actual_pause_sentence = float(merged["pause_sentence"])
             actual_pause_paragraph = float(merged["pause_paragraph"])
             actual_pause_variance = float(merged["pause_variance"])
-            actual_random_seed = merged["random_seed"]  # type: ignore[assignment]
-            actual_enable_short_sentence = merged["enable_short_sentence"]  # type: ignore[assignment]
+            actual_random_seed = cast(int | None, merged["random_seed"])
+            actual_enable_short_sentence = cast(
+                bool | None, merged["enable_short_sentence"]
+            )
         else:
             # No config provided, use defaults for any None kwargs
             actual_speed = speed if speed is not None else 1.0

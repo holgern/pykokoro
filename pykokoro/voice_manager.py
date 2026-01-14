@@ -151,7 +151,7 @@ class VoiceBlend:
             VoiceBlend instance
         """
         # Check for interpolation method suffix
-        interpolation = "linear"
+        interpolation: Literal["linear", "slerp"] = "linear"
         if blend_str.endswith("@slerp"):
             interpolation = "slerp"
             blend_str = blend_str[:-6]  # Remove "@slerp" suffix

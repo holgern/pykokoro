@@ -15,7 +15,7 @@ from kokorog2p.mixed_language_g2p import MixedLanguageG2P
 from .constants import SUPPORTED_LANGUAGES
 
 if TYPE_CHECKING:
-    from .tokenizer import KokoroConfig
+    from .tokenizer import TokenizerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +29,11 @@ class MixedLanguageHandler:
     - Cache invalidation when configuration changes
     """
 
-    def __init__(self, config: KokoroConfig, kokorog2p_model: str | None = None):
+    def __init__(self, config: TokenizerConfig, kokorog2p_model: str | None = None):
         """Initialize mixed-language handler.
 
         Args:
-            config: KokoroConfig instance with mixed-language settings
+            config: TokenizerConfig instance with mixed-language settings
             kokorog2p_model: Optional kokorog2p model version (e.g., 'v0.1', 'v1.0')
         """
         self.config = config
