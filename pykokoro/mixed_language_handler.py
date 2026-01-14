@@ -12,28 +12,12 @@ from typing import TYPE_CHECKING
 from kokorog2p.base import G2PBase
 from kokorog2p.mixed_language_g2p import MixedLanguageG2P
 
+from .constants import SUPPORTED_LANGUAGES
+
 if TYPE_CHECKING:
     from .tokenizer import KokoroConfig
 
 logger = logging.getLogger(__name__)
-
-# Supported languages for phonemization
-# Format: language code -> kokorog2p language code
-SUPPORTED_LANGUAGES = {
-    "en-us": "en-us",
-    "en-gb": "en-gb",
-    "en": "en-us",  # Default English to US
-    "es": "es",
-    "fr-fr": "fr-fr",
-    "fr": "fr-fr",  # Accept both fr and fr-fr
-    "de": "de",
-    "it": "it",
-    "ja": "ja",
-    "pt-br": "pt-br",
-    "pt": "pt-br",
-    "hi": "hi",
-    "zh": "zh",
-}
 
 
 class MixedLanguageHandler:

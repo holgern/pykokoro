@@ -25,7 +25,7 @@ from kokorog2p import (
 )
 from kokorog2p.base import G2PBase
 
-from .constants import MAX_PHONEME_LENGTH, SAMPLE_RATE
+from .constants import MAX_PHONEME_LENGTH, SUPPORTED_LANGUAGES
 from .mixed_language_handler import MixedLanguageHandler
 from .phoneme_dictionary import PhonemeDictionary
 
@@ -33,28 +33,6 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
-
-# Supported languages for phonemization
-# Format: language code -> kokorog2p language code
-# All languages now fully supported by kokorog2p with dictionary + espeak fallback
-SUPPORTED_LANGUAGES = {
-    "en-us": "en-us",
-    "en-gb": "en-gb",
-    "en": "en-us",  # Default English to US
-    "es": "es",
-    "fr-fr": "fr-fr",
-    "fr": "fr-fr",  # Accept both fr and fr-fr
-    "de": "de",
-    "it": "it",
-    "pt": "pt",
-    "pl": "pl",
-    "tr": "tr",
-    "ru": "ru",
-    "ko": "ko",
-    "ja": "ja",
-    "zh": "zh",  # Mandarin Chinese
-    "cmn": "cmn",  # Accept both zh and cmn
-}
 
 
 @dataclass
@@ -325,7 +303,7 @@ class Tokenizer:
         # Standard single-language G2P
         if lang not in self._g2p_cache:
             # Map language to kokorog2p format
-            from .mixed_language_handler import SUPPORTED_LANGUAGES
+            from .constants import SUPPORTED_LANGUAGES
 
             kokorog2p_lang = SUPPORTED_LANGUAGES.get(lang, lang)
 

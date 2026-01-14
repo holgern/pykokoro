@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
+from pykokoro.constants import MAX_PHONEME_LENGTH
 from pykokoro.onnx_backend import (
     DEFAULT_MODEL_QUALITY,
     HF_REPO_V1_0,
     LANG_CODE_TO_ONNX,
-    MAX_PHONEME_LENGTH,
     MODEL_QUALITY_FILES_HF,
     VOICE_NAMES,
     VoiceBlend,

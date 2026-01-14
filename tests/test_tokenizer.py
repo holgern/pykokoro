@@ -2,10 +2,8 @@
 
 import pytest
 
+from pykokoro.constants import MAX_PHONEME_LENGTH, SAMPLE_RATE, SUPPORTED_LANGUAGES
 from pykokoro.tokenizer import (
-    MAX_PHONEME_LENGTH,
-    SAMPLE_RATE,
-    SUPPORTED_LANGUAGES,
     EspeakConfig,
     PhonemeResult,
     Tokenizer,

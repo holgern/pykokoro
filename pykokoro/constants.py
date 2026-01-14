@@ -18,3 +18,55 @@ DEFAULT_CONFIG = {
 # Model constants
 MAX_PHONEME_LENGTH = 510
 SAMPLE_RATE = 24000
+
+# Supported languages for phonemization
+# Format: language code -> kokorog2p language code
+# All languages now fully supported by kokorog2p with dictionary + espeak fallback
+SUPPORTED_LANGUAGES = {
+    "en-us": "en-us",
+    "en-gb": "en-gb",
+    "en": "en-us",  # Default English to US
+    "es": "es",
+    "fr-fr": "fr-fr",
+    "fr": "fr-fr",  # Accept both fr and fr-fr
+    "de": "de",
+    "it": "it",
+    "pt": "pt",
+    "pl": "pl",
+    "tr": "tr",
+    "ru": "ru",
+    "ko": "ko",
+    "ja": "ja",
+    "zh": "zh",  # Mandarin Chinese
+    "cmn": "cmn",  # Accept both zh and cmn
+}
+
+# SSML-based default mappings for absolute values
+# Reference: https://www.w3.org/TR/speech-synthesis11/#S3.2.4
+VOLUME_ABSOLUTE_MAP = {
+    "silent": -float("inf"),  # Complete silence
+    "x-soft": -12.0,  # dB
+    "soft": -6.0,  # dB
+    "medium": 0.0,  # dB (no change)
+    "loud": 6.0,  # dB
+    "x-loud": 12.0,  # dB
+    "default": 0.0,  # dB (no change)
+}
+
+RATE_ABSOLUTE_MAP = {
+    "x-slow": 0.5,  # 50% speed
+    "slow": 0.75,  # 75% speed
+    "medium": 1.0,  # Normal speed
+    "fast": 1.25,  # 125% speed
+    "x-fast": 1.5,  # 150% speed
+    "default": 1.0,  # Normal speed
+}
+
+PITCH_ABSOLUTE_MAP = {
+    "x-low": -4.0,  # semitones
+    "low": -2.0,  # semitones
+    "medium": 0.0,  # semitones (no change)
+    "high": 2.0,  # semitones
+    "x-high": 4.0,  # semitones
+    "default": 0.0,  # semitones (no change)
+}
