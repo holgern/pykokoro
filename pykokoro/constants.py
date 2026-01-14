@@ -14,3 +14,7 @@ DEFAULT_CONFIG = {
     # Vocabulary version
     "vocab_version": "v1.0",
 }
+
+# Model constants
+MAX_PHONEME_LENGTH = 510
+SAMPLE_RATE = 24000

@@ -44,9 +44,9 @@ class TestSSMDPhonemeOverride:
         phonemes_str = " ".join(seg.phonemes for seg in segments if seg.phonemes)
 
         # Should contain our overrides
-        assert "təˈmeɪtoʊ" in phonemes_str, (
-            f"Expected phoneme override, got: {phonemes_str}"
-        )
+        assert (
+            "təˈmeɪtoʊ" in phonemes_str
+        ), f"Expected phoneme override, got: {phonemes_str}"
         assert (
             "………………" in phonemes_str
             or len([s for s in segments if "pause" in s.text.lower()]) > 0
@@ -65,9 +65,9 @@ class TestSSMDPhonemeOverride:
         phonemes_str = " ".join(seg.phonemes for seg in segments if seg.phonemes)
 
         # Should contain our overrides
-        assert "təˈmeɪtoʊ" in phonemes_str, (
-            f"Expected phoneme override, got: {phonemes_str}"
-        )
+        assert (
+            "təˈmeɪtoʊ" in phonemes_str
+        ), f"Expected phoneme override, got: {phonemes_str}"
         kokoro.close()
 
     def test_mixed_normal_and_override(self):
@@ -82,9 +82,9 @@ class TestSSMDPhonemeOverride:
         phonemes_str = " ".join(seg.phonemes for seg in segments if seg.phonemes)
 
         # Should contain the override
-        assert "təˈmeɪtoʊ" in phonemes_str, (
-            f"Expected phoneme override, got: {phonemes_str}"
-        )
+        assert (
+            "təˈmeɪtoʊ" in phonemes_str
+        ), f"Expected phoneme override, got: {phonemes_str}"
         kokoro.close()
 
     def test_multiple_different_overrides(self):
@@ -117,9 +117,9 @@ class TestSSMDPhonemeOverride:
         phonemes_str = " ".join(seg.phonemes for seg in segments if seg.phonemes)
 
         # Even after merging, phonemes should be preserved
-        assert "təˈmeɪtoʊ" in phonemes_str, (
-            f"TTS mode lost phoneme override: {phonemes_str}"
-        )
+        assert (
+            "təˈmeɪtoʊ" in phonemes_str
+        ), f"TTS mode lost phoneme override: {phonemes_str}"
         kokoro.close()
 
     def test_manual_mode_preserves_phonemes(self):
@@ -134,9 +134,9 @@ class TestSSMDPhonemeOverride:
 
         phonemes_str = " ".join(seg.phonemes for seg in segments if seg.phonemes)
 
-        assert "təˈmeɪtoʊ" in phonemes_str, (
-            f"Manual mode lost phoneme override: {phonemes_str}"
-        )
+        assert (
+            "təˈmeɪtoʊ" in phonemes_str
+        ), f"Manual mode lost phoneme override: {phonemes_str}"
         kokoro.close()
 
     def test_audio_generation_with_phoneme_override(self):
@@ -162,9 +162,9 @@ class TestSSMDPhonemeOverride:
         # They should be similar length (both saying "one")
         # Allow 50% variation since phonemes might differ
         ratio = len(audio1) / len(audio2)
-        assert 0.5 < ratio < 2.0, (
-            f"Audio lengths too different: {len(audio1)} vs {len(audio2)}"
-        )
+        assert (
+            0.5 < ratio < 2.0
+        ), f"Audio lengths too different: {len(audio1)} vs {len(audio2)}"
 
         kokoro.close()
 

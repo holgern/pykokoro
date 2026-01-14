@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 import onnxruntime as rt
 
+from .constants import MAX_PHONEME_LENGTH, SAMPLE_RATE
 from .phonemes import PhonemeSegment
 from .prosody import apply_prosody
 from .tokenizer import Tokenizer
@@ -20,12 +21,6 @@ if TYPE_CHECKING:
     from .short_sentence_handler import ShortSentenceConfig
 
 logger = logging.getLogger(__name__)
-
-# Maximum phoneme length for a single inference
-MAX_PHONEME_LENGTH = 510
-
-# Sample rate for Kokoro models
-SAMPLE_RATE = 24000
 
 # Model source type
 ModelSource = Literal["huggingface", "github"]

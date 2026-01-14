@@ -25,6 +25,7 @@ from kokorog2p import (
 )
 from kokorog2p.base import G2PBase
 
+from .constants import MAX_PHONEME_LENGTH
 from .mixed_language_handler import MixedLanguageHandler
 from .phoneme_dictionary import PhonemeDictionary
 
@@ -32,10 +33,6 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
-
-# Constants
-MAX_PHONEME_LENGTH = 510
-SAMPLE_RATE = 24000
 
 # Supported languages for phonemization
 # Format: language code -> kokorog2p language code

@@ -4,10 +4,10 @@ This module provides functionality to improve audio quality for short, single-wo
 sentences by using a "context-prepending" technique:
 
 1. Only activates for short (<10 phonemes) AND single-word sentences (no spaces)
-2. Prepends simple context ". " before the target (e.g., "Good. Hi!")
-3. Generates TTS for combined text (better quality with context)
-4. Detects the ONE pause between "Good." and target using adaptive threshold
-5. Extracts audio from after the pause to get only the target sentence
+2. Duplicates the target word with a pause (e.g., "Hi ... Hi")
+3. Generates TTS for combined text to add context
+4. Detects a boundary near the midpoint between duplicates
+5. Extracts audio from after the boundary to get only the target sentence
 
 This approach produces better prosody and intonation compared to generating
 very short sentences directly, as neural TTS models typically need more context
@@ -36,9 +36,6 @@ logger.setLevel(logging.DEBUG)
 
 # Default thresholds for short sentence handling
 DEFAULT_MIN_PHONEME_LENGTH = 5  # Sentences with fewer phonemes are "short"
-DEFAULT_CUT_OFFSET_MS = (
-    -10  # Milliseconds offset to preserve more audio (negative = cut later)
-)
 
 
 def is_single_word(text: str) -> bool:
@@ -70,17 +67,15 @@ class ShortSentenceConfig:
     Short, single-word sentences (< 10 phonemes, no spaces) often sound robotic
     when generated alone. This module improves quality by:
     1. Checking sentence is both short AND single-word (no spaces)
-    2. Prepending context "Good. " before target (e.g., "Good. Hi!")
-    3. Detecting the ONE pause between context and target
-    4. Extracting from that pause to get clean target audio
+    2. Duplicating the target word with a pause (e.g., "Hi ... Hi")
+    3. Detecting a boundary near the midpoint between duplicates
+    4. Extracting from that boundary to get clean target audio
 
     Multi-word sentences or sentences with breaks will NOT use this handler.
 
     Attributes:
         min_phoneme_length: Threshold below which sentences are considered "short"
             and will use context extraction. Default: 10 phonemes.
-        context_sentence: Context to prepend. Should be a single word with period
-            and space. Default: "Good. " (creates one clear pause).
         cut_offset_ms: Milliseconds to cut earlier than detected pause point.
             Helps remove any trailing context sounds.
             Default: -10ms (preserves more audio).
@@ -94,14 +89,12 @@ class ShortSentenceConfig:
             Default: 0.333 (equal weighting).
         flux_weight: Weight for spectral flux in boundary detection (0.0-1.0).
             Default: 0.334 (equal weighting).
-        skip_start_ms: Skip valleys in first N milliseconds after speech start
-            to avoid detecting valleys within the context word.
-            Default: 120ms. Increase for longer context sentences.
-        early_search_window_ms: Look for first valley within N milliseconds
-            of speech start. Default: 400ms. Prevents selecting valleys too late.
-        depth_threshold: Valleys deeper than this (lower value) are preferred.
-            Range: 0.0-1.0. Lower = more selective. Default: 0.80.
-            For voices with shallow boundaries, try 0.65-0.75.
+        early_search_window_ms: Expanded search window around midpoint if needed.
+            Default: 400ms. Used when midpoint window yields no candidates.
+        midpoint_window_ms: Search window (± ms) around midpoint.
+            Default: 200ms. Used to bias boundary selection.
+        midpoint_bias_weight: Weight for midpoint distance penalty.
+            Higher values bias closer to midpoint. Default: 0.6.
         enabled: Whether short sentence handling is enabled. Default: True.
 
     Note: Weights should sum to ~1.0.
@@ -111,16 +104,16 @@ class ShortSentenceConfig:
     """
 
     min_phoneme_length: int = DEFAULT_MIN_PHONEME_LENGTH
-    context_sentence: str = "Good. "
-    cut_offset_ms: int = DEFAULT_CUT_OFFSET_MS
+    cut_offset_ms: int = 0
     frame_ms: int = 20
-    hop_ms: int = 10
-    energy_weight: float = 0.333
-    zcr_weight: float = 0.333
-    flux_weight: float = 0.334
-    skip_start_ms: int = 120
-    early_search_window_ms: int = 400
-    depth_threshold: float = 0.80
+    hop_ms: int = 5
+    energy_weight: float = 0.6
+    zcr_weight: float = 0.2
+    flux_weight: float = 0.2
+    early_search_window_ms: int = 200
+    midpoint_window_ms: int = 100
+    midpoint_bias_weight: float = 0.7
+    disable_cutoff_detection: bool = False
     enabled: bool = True
 
     def should_use_context_prepending(self, phoneme_length: int, text: str) -> bool:
@@ -139,31 +132,6 @@ class ShortSentenceConfig:
             and phoneme_length < self.min_phoneme_length
             and is_single_word(text)
         )
-
-
-def create_context_text(
-    text: str,
-    context_sentence: str,
-) -> str:
-    """Create text with context sentence prepended.
-
-    Ensures the context has a space separator for natural sentence boundary.
-
-    Args:
-        text: Original sentence text
-        context_sentence: Sentence to prepend for context (should end with space)
-
-    Returns:
-        Combined text string
-
-    Example:
-        >>> create_context_text("Hi!", "Good. ")
-        "Good. Hi!"
-    """
-    # Ensure context ends with space for natural boundary
-    if not context_sentence.endswith(" "):
-        context_sentence = context_sentence + " "
-    return context_sentence + text
 
 
 def energy_based_vad(
@@ -404,15 +372,15 @@ def find_boundary_valley(
     sample_rate: int,
     frame_ms: int = 20,
     hop_ms: int = 10,
-    cut_offset_ms: int = -10,
     energy_weight: float = 0.333,
     zcr_weight: float = 0.333,
     flux_weight: float = 0.334,
-    skip_start_ms: int = 120,
     early_search_window_ms: int = 400,
-    depth_threshold: float = 0.80,
+    midpoint_window_ms: int = 200,
+    midpoint_bias_weight: float = 0.6,
+    depth_threshold: float = 1.0,
 ) -> int:
-    """Find boundary between context and target word.
+    """Find boundary between duplicated word halves.
 
     Uses multi-feature valley detection.
 
@@ -427,32 +395,33 @@ def find_boundary_valley(
     3. Smooths features with median filter
     4. Combines features to find valleys (low combined value = boundary)
     5. Detects speech boundaries using energy
-    6. Finds deepest valley within speech range
+    6. Selects a valley near the midpoint (depth + distance scoring)
     7. Returns sample index to cut (with offset)
 
     Args:
-        audio: Audio signal containing "Good. {target}"
+        audio: Audio signal containing repeated word or context
+            (e.g., "word ... word" or "Good. word")
         sample_rate: Sample rate of audio
         frame_ms: Frame size in milliseconds (default: 20ms)
         hop_ms: Hop size in milliseconds (default: 10ms)
-        cut_offset_ms: Milliseconds to adjust cut point
-            (default: -10ms to preserve more audio)
         energy_weight: Weight for energy feature (default: 0.333).
             Higher = more emphasis on energy.
         zcr_weight: Weight for ZCR feature (default: 0.333)
         flux_weight: Weight for flux feature (default: 0.334)
-        skip_start_ms: Skip valleys in first N ms after speech start
-            (default: 120ms). Avoids detecting valleys within context word.
-        early_search_window_ms: Look for first valley within N ms
-            (default: 400ms). Prevents selecting valleys too late.
+        early_search_window_ms: Expanded search window around midpoint
+            (default: 400ms). Used if midpoint window is empty.
+        midpoint_window_ms: Search window (± ms) around midpoint.
+            (default: 200ms). Limits candidate valleys.
+        midpoint_bias_weight: Weight for midpoint distance penalty.
+            (default: 0.6). Higher biases closer to midpoint.
         depth_threshold: Prefer valleys deeper than this
-            (default: 0.80). Lower = more selective.
+            (default: 1.00). Lower = more selective.
 
     Returns:
         Sample index where to cut the audio
 
     Raises:
-        ValueError: If no boundary valley can be detected
+        ValueError: If speech boundaries cannot be detected
     """
     audio_duration = len(audio) / sample_rate
 
@@ -529,7 +498,7 @@ def find_boundary_valley(
             f"  Duration: {audio_duration:.3f}s, Frames: {n_frames}\n"
             f"  STE range: [{ste.min():.6f}, {ste.max():.6f}]\n"
             f"  Speech threshold: {speech_threshold}\n"
-            f"  Try adjusting audio or using different context word."
+            f"  Try adjusting audio or the duplicated word/pause marker."
         )
 
     speech_start_time = speech_start_frame * hop_ms / 1000.0
@@ -554,140 +523,79 @@ def find_boundary_valley(
 
     logger.debug(f"Total valleys found: {len(valleys)}")
 
-    # Find the FIRST DEEP valley after speech start
-    # This is our boundary region indicator
-    # Fine-tune by searching in a small window AFTER it for the best boundary
-    # Strategy: Look for valley with depth < depth_threshold in first N ms
-    # If not found, use deepest valley in first N ms (prevents cutting too late)
-    first_valley_frame = None
-    first_valley_time = None
-    first_valley_depth = None
-    early_search_end_frames = int(
-        early_search_window_ms / hop_ms
-    )  # Convert ms to frame count
-    early_search_end = speech_start_frame + early_search_end_frames
-    deepest_early_valley = None  # Track deepest valley in early window
-
-    # Skip valleys within first skip_start_ms of speech start
-    # to avoid detecting valleys in "Good."
-    # This ensures we find the boundary BETWEEN "Good." and the target word,
-    # not within "Good."
-    skip_start_frames = int(skip_start_ms / hop_ms)
+    midpoint_sample = len(audio) // 2
+    midpoint_frame = int(round(midpoint_sample / hop_length))
+    midpoint_window_frames = max(1, int(midpoint_window_ms / hop_ms))
 
     logger.debug(
-        f"Looking for first deep valley (depth < {depth_threshold}) "
-        f"in first {early_search_window_ms}ms "
-        f"after speech start (frame {speech_start_frame}):"
+        f"Midpoint target: frame {midpoint_frame} "
+        f"({midpoint_sample / sample_rate:.3f}s)"
+        f"\nMidpoint window: ±{midpoint_window_ms}ms "
+        f"({midpoint_window_frames} frames)"
     )
 
-    # First pass: look for deep valleys in early window
-    for frame, time, depth in valleys:
-        if (
-            frame > speech_start_frame + skip_start_frames
-        ):  # Skip valleys too close to speech start (50ms)
-            if frame <= early_search_end:
-                # Track the deepest valley in early window
-                if deepest_early_valley is None or depth < deepest_early_valley[2]:
-                    deepest_early_valley = (frame, time, depth)
+    def score_valley(frame: int, depth: float, distance_denominator: int) -> float:
+        distance = abs(frame - midpoint_frame) / max(1, distance_denominator)
+        return depth + midpoint_bias_weight * distance
 
-                # Prefer valleys deeper than threshold in early window
-                if depth < depth_threshold:
-                    first_valley_frame = frame
-                    first_valley_time = time
-                    first_valley_depth = depth
-                    logger.debug(
-                        f"  Found deep valley at frame {frame} "
-                        f"({time:.3f}s), depth {depth:.4f}"
-                    )
-                    break
-                else:
-                    logger.debug(
-                        f"  Skipping shallow valley at frame {frame} "
-                        f"({time:.3f}s), depth {depth:.4f}"
-                    )
-            else:
-                # Past early window, stop searching
-                break
-
-    # If no deep valley found in early window, use deepest one
-    if first_valley_frame is None and deepest_early_valley is not None:
-        first_valley_frame, first_valley_time, first_valley_depth = deepest_early_valley
-        logger.debug(
-            f"  No valley < {depth_threshold} "
-            f"in first {early_search_window_ms}ms, "
-            f"using deepest: frame {first_valley_frame} "
-            f"({first_valley_time:.3f}s), depth {first_valley_depth:.4f}"
+    def select_best_valley(
+        candidates: list[tuple[int, float, float]], distance_denominator: int
+    ) -> tuple[int, float, float] | None:
+        if not candidates:
+            return None
+        deep_candidates = [
+            candidate for candidate in candidates if candidate[2] < depth_threshold
+        ]
+        considered = deep_candidates or candidates
+        return min(
+            considered,
+            key=lambda candidate: score_valley(
+                candidate[0], candidate[2], distance_denominator
+            ),
         )
-    elif first_valley_frame is None:
-        logger.debug("  No suitable valley found, using full speech range")
 
-    # Fine-tuning: search in a narrow window around the first valley
-    # This allows selecting a nearby valley but prevents searching too far ahead
-    if first_valley_frame is not None:
-        # Search from 20ms before to 50ms after the first valley
-        # This small window refines the cut point without jumping to later valleys
-        search_start_offset = int(20 / hop_ms)  # 20ms in frames
-        search_end_offset = int(50 / hop_ms)  # 50ms in frames
-        search_start_frame = max(
-            speech_start_frame, first_valley_frame - search_start_offset
-        )
-        search_end_frame = min(speech_end_frame, first_valley_frame + search_end_offset)
-    else:
-        # Fallback: use full speech range
-        search_start_frame = speech_start_frame
-        search_end_frame = speech_end_frame
+    search_start_frame = midpoint_frame - midpoint_window_frames
+    search_end_frame = midpoint_frame + midpoint_window_frames
 
-    search_start_time = search_start_frame * hop_ms / 1000.0
-    search_end_time = search_end_frame * hop_ms / 1000.0
-
-    logger.debug(
-        f"Fine-tuning search (-20ms to +50ms around first valley): "
-        f"{search_start_time:.3f}s to {search_end_time:.3f}s "
-        f"(frames {search_start_frame}-{search_end_frame})"
-    )
-
-    valid_valleys = [
+    midpoint_candidates = [
         (frame, time, depth)
         for frame, time, depth in valleys
         if search_start_frame <= frame <= search_end_frame
     ]
 
-    logger.debug(f"Valleys in fine-tuning range: {len(valid_valleys)}")
+    selected_valley = select_best_valley(midpoint_candidates, midpoint_window_frames)
 
-    if not valid_valleys:
-        # No valleys found in search range
-        raise ValueError(
-            f"No boundary valleys found in search range.\n"
-            f"  Duration: {audio_duration:.3f}s, Frames: {n_frames}\n"
-            f"  Search range: {search_start_time:.3f}s to {search_end_time:.3f}s\n"
-            f"  Total valleys found: {len(valleys)}\n"
-            f"  Valleys in range: 0\n"
-            f"  Combined feature range: [{combined.min():.4f}, {combined.max():.4f}]"
+    if selected_valley is None and early_search_window_ms > midpoint_window_ms:
+        fallback_window_frames = max(
+            midpoint_window_frames, int(early_search_window_ms / hop_ms)
+        )
+        fallback_start_frame = midpoint_frame - fallback_window_frames
+        fallback_end_frame = midpoint_frame + fallback_window_frames
+        fallback_candidates = [
+            (frame, time, depth)
+            for frame, time, depth in valleys
+            if fallback_start_frame <= frame <= fallback_end_frame
+        ]
+        logger.debug("No valleys in midpoint window, expanding search around midpoint")
+        selected_valley = select_best_valley(
+            fallback_candidates, fallback_window_frames
         )
 
-    # Step 7: Select the DEEPEST valley (lowest combined value)
-    valid_valleys.sort(key=lambda x: x[2])  # Sort by depth (ascending)
-    selected_frame, selected_time, selected_depth = valid_valleys[0]
+    if selected_valley is None:
+        logger.debug("No valleys found; falling back to midpoint cut")
+        return midpoint_sample
 
-    # Log top 3 deepest valleys for debugging
-    logger.debug("Top 3 deepest valleys:")
-    for idx, (frame, time, depth) in enumerate(valid_valleys[:3], 1):
-        logger.debug(f"  #{idx}: frame {frame}, time {time:.3f}s, depth {depth:.4f}")
+    selected_frame, selected_time, selected_depth = selected_valley
 
     logger.debug(
-        f"Selected deepest valley: frame {selected_frame}, "
+        f"Selected valley: frame {selected_frame}, "
         f"time {selected_time:.3f}s, depth {selected_depth:.4f}"
     )
 
-    # Step 8: Convert frame to sample index and apply offset
+    # Step 8: Convert frame to sample index
     cut_sample = selected_frame * hop_length
-    cut_offset_samples = int(cut_offset_ms * sample_rate / 1000)
-    cut_sample = max(0, cut_sample - cut_offset_samples)
 
-    logger.debug(
-        f"Cut point: {cut_sample} samples ({cut_sample / sample_rate:.3f}s) "
-        f"[{cut_offset_ms}ms offset applied]"
-    )
+    logger.debug(f"Cut point: {cut_sample} samples ({cut_sample / sample_rate:.3f}s) ")
 
     return cut_sample
 
@@ -702,12 +610,11 @@ def generate_short_sentence_audio(
 ) -> np.ndarray:
     """Generate high-quality audio for short, single-word sentences using context.
 
-    This function uses the "Good. " context with local minimum detection:
+    This function duplicates the word with a pause and finds a midpoint boundary:
     1. Only activates for short (<10 phonemes) AND single-word sentences (no spaces)
-    2. Generates with context: "Good. {target}" (e.g., "Good. Hi!")
-    3. Finds the 5 deepest local energy minimums
-    4. Selects the earliest minimum not in final 20% as the pause point
-    5. Extracts from that pause point (with configurable offset) to get clean target
+    2. Generates "{word} ... {word}" to add context
+    3. Finds a boundary near the midpoint using valley detection
+    4. Extracts from that boundary (with configurable offset) to get clean target
 
     Multi-word sentences will NOT use this handler and generate normally.
 
@@ -754,11 +661,13 @@ def generate_short_sentence_audio(
         f"({phoneme_length} phonemes)"
     )
 
-    # Generate with context prepended
-    combined_text = create_context_text(segment.text, config.context_sentence)
-    logger.debug(f"Generating with context: '{combined_text[:80]}'")
-
-    combined_phonemes = tokenizer.phonemize(combined_text, lang=segment.lang)
+    phonemes = tokenizer.phonemize(segment.text, lang=segment.lang)
+    combined_phonemes = phonemes + ".….….….….….…. " + phonemes
+    combined_phonemes = phonemes + ".—.—.—.—.—.—.—. " + phonemes
+    combined_phonemes = phonemes + "........ " + phonemes
+    # combined_phonemes = ".. " + phonemes + ".. "
+    # combined_phonemes = "…" + phonemes + "…"
+    # combined_phonemes = "—" + phonemes + "—"
     combined_audio, sample_rate = audio_generator.generate_from_phonemes(
         combined_phonemes, voice_style, speed
     )
@@ -767,40 +676,50 @@ def generate_short_sentence_audio(
         f"Combined audio: {len(combined_audio)} samples "
         f"({len(combined_audio) / sample_rate:.3f}s)"
     )
+    if config.disable_cutoff_detection:
+        # Skip boundary detection, cut at midpoint
+        cut_sample = len(combined_audio) // 2
 
-    # Step 2: Use multi-feature boundary detection to find pause
-    # between "Good." and target
-    logger.debug("Step 2: Using multi-feature valley detection to find boundary")
-
-    try:
-        cut_sample = find_boundary_valley(
-            combined_audio,
-            sample_rate,
-            frame_ms=config.frame_ms,
-            hop_ms=config.hop_ms,
-            cut_offset_ms=config.cut_offset_ms,
-            energy_weight=config.energy_weight,
-            zcr_weight=config.zcr_weight,
-            flux_weight=config.flux_weight,
-            skip_start_ms=config.skip_start_ms,
-            early_search_window_ms=config.early_search_window_ms,
-            depth_threshold=config.depth_threshold,
-        )
         logger.debug(
-            f"Boundary detected at sample {cut_sample} "
+            f"Cutoff detection disabled; using midpoint cut at sample {cut_sample} "
             f"({cut_sample / sample_rate:.3f}s)"
         )
-    except ValueError as e:
-        logger.error(f"Boundary detection failed: {e}")
-        raise RuntimeError(
-            f"Failed to detect boundary between context and target word "
-            f"in '{segment.text}'. "
-            f"This may indicate an issue with TTS generation or audio quality. "
-            f"Audio duration: {len(combined_audio) / sample_rate:.3f}s"
-        ) from e
+    else:
+        # Step 2: Use multi-feature boundary detection to find midpoint cut
+        logger.debug("Step 2: Using multi-feature valley detection to find boundary")
+
+        try:
+            cut_sample = find_boundary_valley(
+                combined_audio,
+                sample_rate,
+                frame_ms=config.frame_ms,
+                hop_ms=config.hop_ms,
+                energy_weight=config.energy_weight,
+                zcr_weight=config.zcr_weight,
+                flux_weight=config.flux_weight,
+                early_search_window_ms=config.early_search_window_ms,
+                midpoint_window_ms=config.midpoint_window_ms,
+                midpoint_bias_weight=config.midpoint_bias_weight,
+            )
+            logger.debug(
+                f"Boundary detected at sample {cut_sample} "
+                f"({cut_sample / sample_rate:.3f}s)"
+            )
+        except ValueError as e:
+            logger.error(f"Boundary detection failed: {e}")
+            raise RuntimeError(
+                f"Failed to detect boundary between duplicated words "
+                f"in '{segment.text}'. "
+                f"This may indicate an issue with TTS generation or audio quality. "
+                f"Audio duration: {len(combined_audio) / sample_rate:.3f}s"
+            ) from e
+
+    cut_offset_samples = int(config.cut_offset_ms * sample_rate / 1000)
+    cut_sample = max(0, cut_sample - cut_offset_samples)
 
     # Extract audio from detected boundary
-    extracted_audio = combined_audio[cut_sample:]
+    # extracted_audio = combined_audio[cut_sample:]
+    extracted_audio = combined_audio[1:]
 
     logger.debug(
         f"Extracted: {len(extracted_audio)} samples "

@@ -16,6 +16,7 @@ import onnxruntime as rt
 from huggingface_hub import hf_hub_download
 
 from .audio_generator import AudioGenerator
+from .constants import SAMPLE_RATE
 from .onnx_session import OnnxSessionManager
 from .phonemes import PhonemeSegment
 from .provider_config import ProviderConfigManager
@@ -32,12 +33,6 @@ if TYPE_CHECKING:
 
 # Logger for debugging
 logger = logging.getLogger(__name__)
-
-# Maximum phoneme length for a single inference
-MAX_PHONEME_LENGTH = 510
-
-# Sample rate for Kokoro models
-SAMPLE_RATE = 24000
 
 # Model quality type
 ModelQuality = Literal[
@@ -1158,7 +1153,6 @@ class Kokoro:
                     from pykokoro.short_sentence_handler import ShortSentenceConfig
                     config = ShortSentenceConfig(
                         min_phoneme_length=20,  # Treat < 20 phonemes as short
-                        target_phoneme_length=80,  # Target length for repeats
                         enabled=True
                     )
                     tts = Kokoro(short_sentence_config=config)

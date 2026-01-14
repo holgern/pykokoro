@@ -49,13 +49,33 @@ TEST_SENTENCES = [
     "What?",
     "Don't!",
 ]
-
+TEST_SENTENCE = TEST_SENTENCES[2]
 # Voice to use
-# Note: Different voices may produce slightly different durations due to varying
-# speaking rates. af_sarah is recommended for testing the short sentence handler.
-VOICE = "af_bella"  # Changed from af_bella for better short sentence results
-#  VOICE = "af_sarah"  # Changed from af_bella for better short sentence results
-VOICE = "af_heart"  # Changed from af_bella for better short sentence results
+
+VOICES = [
+    "af_alloy",
+    "af_aoede",
+    "af_bella",
+    "af_heart",
+    "af_jessica",
+    "af_kore",
+    "af_nicole",
+    "af_nova",
+    "af_river",
+    "af_sarah",
+    "af_sky",
+    "am_adam",
+    "am_echo",
+    "am_eric",
+    "am_fenrir",
+    "am_liam",
+    "am_michael",
+    "am_onyx",
+    "am_puck",
+    "am_santa",
+]
+VOICE = "af_sarah"  # Changed from af_bella for better short sentence results
+
 LANG = "en-us"
 
 
@@ -68,7 +88,7 @@ def print_separator(title: str) -> None:
 
 def test_sentence_with_config(
     kokoro: pykokoro.Kokoro,
-    text: str,
+    voice: str,
     config: ShortSentenceConfig | None,
     config_name: str,
 ) -> tuple[np.ndarray, int]:
@@ -86,7 +106,7 @@ def test_sentence_with_config(
     # Create a new Kokoro instance with the config
     kokoro_test = pykokoro.Kokoro(short_sentence_config=config)
 
-    samples, sr = kokoro_test.create(text, voice=VOICE, lang=LANG)
+    samples, sr = kokoro_test.create(TEST_SENTENCE, voice=voice, lang=LANG)
 
     print(f"  {config_name:25} -> {len(samples):6} samples ({len(samples) / sr:.3f}s)")
 
@@ -100,7 +120,7 @@ def main():
 
     print("\nThis demo shows how PyKokoro improves audio quality for short sentences")
     print("using cross-correlation extraction with context.")
-    print(f"\nVoice: {VOICE}")
+    print(f"\nText: {TEST_SENTENCE}")
     print(f"Language: {LANG}")
     print("\nNOTE: Audio duration will be similar, but QUALITY will be better")
     print("      with context-prepending. Listen to the generated files to compare!")
@@ -116,24 +136,24 @@ def main():
 
     pause = np.zeros(int(sample_rate * 0.5), dtype=np.float32)
     # Add announcement and samples to output
-    announcement = "With pretexting"
+    announcement = f"With pretexting"
     intro, _ = kokoro.create(announcement, voice=VOICE, lang=LANG)
     all_samples.extend([intro, pause])
     # Add announcement and samples to output
-    announcement = "Without pretexting"
+    announcement = f"Without pretexting"
     intro2, _ = kokoro.create(announcement, voice=VOICE, lang=LANG)
     all_samples2.extend([pause, intro2, pause])
 
     # Test each sentence with different configurations
-    for text in TEST_SENTENCES:
-        phoneme_count = len(kokoro.tokenizer.phonemize(text, lang=LANG))
+    for voice in VOICES:
+        phoneme_count = len(kokoro.tokenizer.phonemize(TEST_SENTENCE, lang=LANG))
 
-        print(f"\nText: '{text}' ({phoneme_count} phonemes)")
+        print(f"\nVoice: '{voice}' ({phoneme_count} phonemes)")
 
         # Test with context-prepending enabled (default)
         config_enabled = ShortSentenceConfig(
             min_phoneme_length=10,
-            disable_cutoff_detection=False,
+            disable_cutoff_detection=True,
             enabled=True,
         )
 
@@ -142,11 +162,11 @@ def main():
 
         # Generate with both configs
         samples_enabled, sr = test_sentence_with_config(
-            kokoro, text, config_enabled, "With prepending"
+            kokoro, voice, config_enabled, "With prepending"
         )
 
         samples_disabled, sr = test_sentence_with_config(
-            kokoro, text, config_disabled, "Without prepending"
+            kokoro, voice, config_disabled, "Without prepending"
         )
         # Add: intro + enabled version + pause + disabled version + pause
         pause = np.zeros(int(sr * 0.1), dtype=np.float32)
@@ -154,22 +174,12 @@ def main():
         all_samples.extend([samples_enabled, pause])
         all_samples2.extend([samples_disabled, pause])
 
-    # Configuration comparison
-    print_separator("Configuration Comparison")
-
-    test_text = "Why?"
-    phonemes = kokoro.tokenizer.phonemize(test_text, lang=LANG)
-    phoneme_count = len(phonemes)
-
-    print(f"\nTest sentence: '{test_text}' ({phoneme_count} phonemes)")
-    print(f"Phonemes: {phonemes}")
-    print()
 
     # Save combined audio
     print_separator("Saving Combined Audio")
 
     combined_samples = np.concatenate(all_samples + all_samples2)
-    output_file = "short_sentence_demo.wav"
+    output_file = "short_sentence_voices_demo.wav"
     sf.write(output_file, combined_samples, sample_rate)
 
     total_duration = len(combined_samples) / sample_rate

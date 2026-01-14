@@ -616,7 +616,7 @@ def text_to_phoneme_segments(
         by the repeat-and-cut technique during audio generation for
         improved prosody.
     """
-    from .tokenizer import MAX_PHONEME_LENGTH
+    from .constants import MAX_PHONEME_LENGTH
 
     # Create RNG if not provided
     if rng is None:
