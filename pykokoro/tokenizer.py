@@ -25,7 +25,7 @@ from kokorog2p import (
 )
 from kokorog2p.base import G2PBase
 
-from .constants import MAX_PHONEME_LENGTH
+from .constants import MAX_PHONEME_LENGTH, SAMPLE_RATE
 from .mixed_language_handler import MixedLanguageHandler
 from .phoneme_dictionary import PhonemeDictionary
 

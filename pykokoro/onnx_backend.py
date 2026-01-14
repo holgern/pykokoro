@@ -16,7 +16,7 @@ import onnxruntime as rt
 from huggingface_hub import hf_hub_download
 
 from .audio_generator import AudioGenerator
-from .constants import SAMPLE_RATE
+from .constants import MAX_PHONEME_LENGTH, SAMPLE_RATE
 from .onnx_session import OnnxSessionManager
 from .phonemes import PhonemeSegment
 from .provider_config import ProviderConfigManager
