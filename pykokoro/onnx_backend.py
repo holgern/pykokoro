@@ -1,6 +1,7 @@
 """ONNX backend for pykokoro - native ONNX TTS without external dependencies."""
 
 import asyncio
+import dataclasses
 import io
 import logging
 import os
@@ -21,13 +22,12 @@ from .onnx_session import OnnxSessionManager
 from .phonemes import PhonemeSegment
 from .provider_config import ProviderConfigManager
 from .tokenizer import EspeakConfig, Tokenizer, TokenizerConfig
+from .transcript import TRANSCRIPT_VERSION, load_transcript, validate_transcript
 from .trim import trim as trim_audio
 from .utils import get_user_cache_path
 from .voice_manager import VoiceBlend, VoiceManager, slerp_voices
 
 if TYPE_CHECKING:
-    from ssmd import Document
-
     from .generation_config import GenerationConfig
     from .short_sentence_handler import ShortSentenceConfig
 
@@ -1161,6 +1161,7 @@ class Kokoro:
         """
         self._session: rt.InferenceSession | None = None
         self._voices_data: dict[str, np.ndarray] | None = None
+        self._audio_generator: AudioGenerator | None = None
         self._np = np
 
         # Deprecation warning for use_gpu
@@ -1479,34 +1480,19 @@ class Kokoro:
         return list(sorted(self._voices_data.keys()))
 
     def get_voice_style(self, voice_name: str) -> np.ndarray:
-        """
-        Get the style vector for a voice.
-
-        Args:
-            voice_name: Name of the voice
-
-        Returns:
-            Numpy array representing the voice style
-        """
+        """Get the style vector for a voice."""
         self._init_kokoro()
         assert self._voices_data is not None
+
+        if voice_name not in self._voices_data:
+            available = ", ".join(sorted(self._voices_data.keys()))
+            raise KeyError(
+                f"Voice '{voice_name}' not found. Available voices: {available}"
+            )
         return self._voices_data[voice_name]
 
     def create_blended_voice(self, blend: VoiceBlend) -> np.ndarray:
-        """
-        Create a blended voice from multiple voices.
-
-        Supports two interpolation methods:
-        - linear: Weighted average of voice embeddings (works with any number of voices)
-        - slerp: Spherical linear interpolation (requires exactly 2 voices)
-
-        Args:
-            blend: VoiceBlend object specifying voices, weights,
-                and interpolation method
-
-        Returns:
-            Numpy array representing the blended voice style
-        """
+        """Create a blended voice style vector from a VoiceBlend."""
         self._init_kokoro()
 
         # Optimize: single voice doesn't need blending
@@ -1519,7 +1505,6 @@ class Kokoro:
             (voice_a_name, weight_a), (voice_b_name, weight_b) = blend.voices
             style_a = self.get_voice_style(voice_a_name)
             style_b = self.get_voice_style(voice_b_name)
-            # Use weight_b as t parameter: t=0 -> voice_a, t=1 -> voice_b
             return slerp_voices(style_a, style_b, t=weight_b)
 
         # Linear interpolation (weighted sum) - works with any number of voices
@@ -1532,9 +1517,153 @@ class Kokoro:
             else:
                 blended = np.add(blended, weighted)
 
-        # This should never be None if blend.voices is not empty
         assert blended is not None, "No voices in blend"
         return blended
+
+    def _resolve_generation_params(
+        self,
+        *,
+        config: "GenerationConfig | None",
+        speed: float | None,
+        lang: str | None,
+        is_phonemes: bool | None,
+        pause_mode: Literal["tts", "manual"] | None,
+        pause_clause: float | None,
+        pause_sentence: float | None,
+        pause_paragraph: float | None,
+        pause_variance: float | None,
+        random_seed: int | None,
+        enable_short_sentence: bool | None,
+    ) -> dict[str, Any]:
+        """Resolve generation parameters with config/kwargs precedence."""
+        if config is not None:
+            merged = config.merge_with_kwargs(
+                speed=speed,
+                lang=lang,
+                is_phonemes=is_phonemes,
+                pause_mode=pause_mode,
+                pause_clause=pause_clause,
+                pause_sentence=pause_sentence,
+                pause_paragraph=pause_paragraph,
+                pause_variance=pause_variance,
+                random_seed=random_seed,
+                enable_short_sentence=enable_short_sentence,
+            )
+            return {
+                "speed": float(merged["speed"]),
+                "lang": str(merged["lang"]),
+                "is_phonemes": bool(merged["is_phonemes"]),
+                "pause_mode": cast(Literal["tts", "manual"], merged["pause_mode"]),
+                "pause_clause": float(merged["pause_clause"]),
+                "pause_sentence": float(merged["pause_sentence"]),
+                "pause_paragraph": float(merged["pause_paragraph"]),
+                "pause_variance": float(merged["pause_variance"]),
+                "random_seed": cast(int | None, merged["random_seed"]),
+                "enable_short_sentence": cast(
+                    bool | None, merged["enable_short_sentence"]
+                ),
+            }
+
+        return {
+            "speed": speed if speed is not None else 1.0,
+            "lang": lang if lang is not None else "en-us",
+            "is_phonemes": is_phonemes if is_phonemes is not None else False,
+            "pause_mode": pause_mode if pause_mode is not None else "tts",
+            "pause_clause": pause_clause if pause_clause is not None else 0.3,
+            "pause_sentence": pause_sentence if pause_sentence is not None else 0.6,
+            "pause_paragraph": pause_paragraph if pause_paragraph is not None else 1.0,
+            "pause_variance": pause_variance if pause_variance is not None else 0.05,
+            "random_seed": random_seed,
+            "enable_short_sentence": enable_short_sentence,
+        }
+
+    def _ensure_variant_for_language(
+        self, lang: str, *, ensure_models: bool = True
+    ) -> None:
+        """Ensure model variant and paths match the given language."""
+        resolved_variant = self._resolve_model_variant(lang)
+        if resolved_variant == self._model_variant:
+            if ensure_models:
+                self._ensure_models()
+            return
+
+        old_variant = self._model_variant
+        self._model_variant = resolved_variant
+        self._vocab_version = resolved_variant
+        self._tokenizer = None
+        self._session = None
+        self._voices_data = None
+        self._audio_generator = None
+
+        if self._model_source == "github":
+            model_dir = get_model_dir(source="github", variant=resolved_variant)
+            if resolved_variant == "v1.0":
+                quality_files = MODEL_QUALITY_FILES_GITHUB_V1_0
+            else:
+                quality_files = MODEL_QUALITY_FILES_GITHUB_V1_1_ZH
+
+            filename = quality_files[self._model_quality]
+            self._model_path = model_dir / filename
+
+            voices_dir = get_voices_dir(source="github", variant=resolved_variant)
+            if resolved_variant == "v1.0":
+                voices_filename = GITHUB_VOICES_FILENAME_V1_0
+            else:
+                voices_filename = GITHUB_VOICES_FILENAME_V1_1_ZH
+            self._voices_path = voices_dir / voices_filename
+
+        if ensure_models:
+            self._ensure_models()
+
+        logger.info(
+            f"Switched from variant '{old_variant}' to '{resolved_variant}' "
+            f"for language '{lang}'"
+        )
+
+    def _resolve_voice_style(self, voice: str | np.ndarray | VoiceBlend) -> np.ndarray:
+        """Resolve voice parameter to a voice style array."""
+        if isinstance(voice, VoiceBlend):
+            return self.create_blended_voice(voice)
+        if isinstance(voice, str):
+            if ":" in voice or "," in voice:
+                blend = VoiceBlend.parse(voice)
+                return self.create_blended_voice(blend)
+            return self.get_voice_style(voice)
+        return voice
+
+    def _resolve_short_sentence_defaults(
+        self, enable_short_sentence_override: bool | None
+    ) -> tuple["ShortSentenceConfig | None", dict[str, Any]]:
+        """Resolve short sentence config and transcript defaults."""
+        from .short_sentence_handler import ShortSentenceConfig
+
+        effective_config = self._short_sentence_config
+
+        if enable_short_sentence_override is not None:
+            if enable_short_sentence_override:
+                if effective_config is None:
+                    effective_config = ShortSentenceConfig(enabled=True)
+                else:
+                    effective_config = dataclasses.replace(
+                        effective_config, enabled=True
+                    )
+            elif effective_config is not None:
+                effective_config = dataclasses.replace(effective_config, enabled=False)
+        elif effective_config is None:
+            effective_config = ShortSentenceConfig()
+
+        if effective_config is None:
+            default_config = ShortSentenceConfig(enabled=False)
+        else:
+            default_config = effective_config
+
+        defaults = {
+            "enabled": bool(default_config.enabled),
+            "min_phoneme_length": int(default_config.min_phoneme_length),
+            "phoneme_pretext": default_config.phoneme_pretext,
+        }
+
+        return effective_config, defaults
 
     def create(
         self,
@@ -1615,189 +1744,49 @@ class Kokoro:
 
         Returns:
             Tuple of (audio samples as numpy array, sample rate)
-
-        Example:
-            Basic usage (TTS handles pauses):
-
-            >>> tts = Kokoro()
-            >>> audio, sr = tts.create(
-            ...     "Hello. How are you?",
-            ...     voice="af_sarah"
-            ... )
-
-            With SSMD breaks:
-
-            >>> audio, sr = tts.create(
-            ...     "Hello ...500ms world.",
-            ...     voice="af_sarah"
-            ... )
-
-            Manual pause control:
-
-            >>> audio, sr = tts.create(
-            ...     "First sentence. Second sentence.",
-            ...     voice="af_sarah",
-            ...     pause_mode="manual"
-            ... )
-
-            Short sentences handled automatically with repeat-and-cut:
-
-            >>> audio, sr = tts.create(
-            ...     '"Why?" "Do?" "Go!"',
-            ...     voice="af_sarah"
-            ... )  # Each short sentence processed with improved prosody
-
-            Language switching:
-
-            >>> audio, sr = tts.create(
-            ...     "This is *important*! [Bonjour](fr) everyone!",
-            ...     voice="af_sarah"
-            ... )
         """
+        resolved = self._resolve_generation_params(
+            config=config,
+            speed=speed,
+            lang=lang,
+            is_phonemes=is_phonemes,
+            pause_mode=pause_mode,
+            pause_clause=pause_clause,
+            pause_sentence=pause_sentence,
+            pause_paragraph=pause_paragraph,
+            pause_variance=pause_variance,
+            random_seed=random_seed,
+            enable_short_sentence=enable_short_sentence,
+        )
+
+        actual_speed = resolved["speed"]
+        actual_lang = resolved["lang"]
+        actual_is_phonemes = resolved["is_phonemes"]
+        actual_pause_mode = resolved["pause_mode"]
+        actual_pause_clause = resolved["pause_clause"]
+        actual_pause_sentence = resolved["pause_sentence"]
+        actual_pause_paragraph = resolved["pause_paragraph"]
+        actual_pause_variance = resolved["pause_variance"]
+        actual_random_seed = resolved["random_seed"]
+        actual_enable_short_sentence = resolved["enable_short_sentence"]
+
+        self._ensure_variant_for_language(actual_lang, ensure_models=True)
         self._init_kokoro()
 
-        # Merge config with kwargs (kwargs take priority)
-        # Priority: kwargs > config > defaults
-
-        # Resolve actual parameter values
-        actual_speed: float
-        actual_lang: str
-        actual_is_phonemes: bool
-        actual_pause_mode: Literal["tts", "manual"]
-        actual_pause_clause: float
-        actual_pause_sentence: float
-        actual_pause_paragraph: float
-        actual_pause_variance: float
-        actual_random_seed: int | None
-        actual_enable_short_sentence: bool | None
-
-        if config is not None:
-            # Start with config values
-            merged = config.merge_with_kwargs(
-                speed=speed,
-                lang=lang,
-                is_phonemes=is_phonemes,
-                pause_mode=pause_mode,
-                pause_clause=pause_clause,
-                pause_sentence=pause_sentence,
-                pause_paragraph=pause_paragraph,
-                pause_variance=pause_variance,
-                random_seed=random_seed,
-                enable_short_sentence=enable_short_sentence,
-            )
-            # Extract merged values (kwargs override config)
-            # Type assertions needed because dict access loses type information
-            actual_speed = float(merged["speed"])
-            actual_lang = str(merged["lang"])
-            actual_is_phonemes = bool(merged["is_phonemes"])
-            actual_pause_mode = cast(Literal["tts", "manual"], merged["pause_mode"])
-            actual_pause_clause = float(merged["pause_clause"])
-            actual_pause_sentence = float(merged["pause_sentence"])
-            actual_pause_paragraph = float(merged["pause_paragraph"])
-            actual_pause_variance = float(merged["pause_variance"])
-            actual_random_seed = cast(int | None, merged["random_seed"])
-            actual_enable_short_sentence = cast(
-                bool | None, merged["enable_short_sentence"]
-            )
-        else:
-            # No config provided, use defaults for any None kwargs
-            actual_speed = speed if speed is not None else 1.0
-            actual_lang = lang if lang is not None else "en-us"
-            actual_is_phonemes = is_phonemes if is_phonemes is not None else False
-            actual_pause_mode = pause_mode if pause_mode is not None else "tts"
-            actual_pause_clause = pause_clause if pause_clause is not None else 0.3
-            actual_pause_sentence = (
-                pause_sentence if pause_sentence is not None else 0.6
-            )
-            actual_pause_paragraph = (
-                pause_paragraph if pause_paragraph is not None else 1.0
-            )
-            actual_pause_variance = (
-                pause_variance if pause_variance is not None else 0.05
-            )
-            actual_random_seed = random_seed
-            actual_enable_short_sentence = enable_short_sentence
-
-        # Auto-detect and switch variant if needed (e.g., for Chinese)
-        resolved_variant = self._resolve_model_variant(actual_lang)
-
-        # If variant changed, we need to reinitialize
-        if resolved_variant != self._model_variant:
-            old_variant = self._model_variant
-            self._model_variant = resolved_variant
-            self._vocab_version = (
-                resolved_variant  # Update vocab version to match variant
-            )
-
-            # Force re-initialization of resources for new variant
-            self._tokenizer = None  # Tokenizer will reload with new vocab
-            self._session = None  # Session will reload new model
-            self._voices_data = None  # Voices will reload
-
-            # Update paths for new variant
-            if self._model_source == "github":
-                # Update model path using helper function
-                model_dir = get_model_dir(source="github", variant=resolved_variant)
-
-                if resolved_variant == "v1.0":
-                    quality_files = MODEL_QUALITY_FILES_GITHUB_V1_0
-                else:  # v1.1-zh
-                    quality_files = MODEL_QUALITY_FILES_GITHUB_V1_1_ZH
-
-                filename = quality_files[self._model_quality]
-                self._model_path = model_dir / filename
-
-                # Update voices path using helper function
-                voices_dir = get_voices_dir(source="github", variant=resolved_variant)
-
-                if resolved_variant == "v1.0":
-                    voices_filename = GITHUB_VOICES_FILENAME_V1_0
-                else:  # v1.1-zh
-                    voices_filename = GITHUB_VOICES_FILENAME_V1_1_ZH
-
-                self._voices_path = voices_dir / voices_filename
-
-            # Ensure new variant files are downloaded
-            self._ensure_models()
-
-            # Re-initialize with new variant
-            self._init_kokoro()
-
-            logger.info(
-                f"Switched from variant '{old_variant}' to '{resolved_variant}' "
-                f"for language '{actual_lang}'"
-            )
-
-        # Initialize random generator for reproducible variance
         rng = np.random.default_rng(actual_random_seed)
+        voice_style = self._resolve_voice_style(voice)
 
-        # Resolve voice to style vector
-        if isinstance(voice, VoiceBlend):
-            voice_style = self.create_blended_voice(voice)
-        elif isinstance(voice, str):
-            # Check if it's a blend string (contains : or ,)
-            if ":" in voice or "," in voice:
-                blend = VoiceBlend.parse(voice)
-                voice_style = self.create_blended_voice(blend)
-            else:
-                voice_style = self.get_voice_style(voice)
-        else:
-            voice_style = voice
-
-        # Derive trim_silence from pause_mode
-        # "manual" mode trims silence so PyKokoro can control pauses precisely
-        # "tts" mode lets TTS generate natural pauses
         trim_silence = actual_pause_mode == "manual"
 
-        # If already phonemes, use directly
         if actual_is_phonemes:
             phonemes = text
             batches = self._split_phonemes(phonemes)
-            return self._generate_from_phoneme_batches(
-                batches, voice_style, actual_speed, trim_silence
-            ), SAMPLE_RATE
-
-        # Unified flow: text → segments → audio
+            return (
+                self._generate_from_phoneme_batches(
+                    batches, voice_style, actual_speed, trim_silence
+                ),
+                SAMPLE_RATE,
+            )
 
         from .phonemes import text_to_phoneme_segments
 
@@ -1813,7 +1802,6 @@ class Kokoro:
             rng=rng,
         )
 
-        # Generate audio from segments
         audio = self._generate_from_segments(
             segments,
             voice_style,
@@ -1821,6 +1809,341 @@ class Kokoro:
             trim_silence,
             actual_enable_short_sentence,
         )
+
+        return audio, SAMPLE_RATE
+
+    def compile(
+        self,
+        text: str,
+        *,
+        voice: str | np.ndarray | VoiceBlend | None = None,
+        config: "GenerationConfig | None" = None,
+        speed: float | None = None,
+        lang: str | None = None,
+        is_phonemes: bool | None = None,
+        pause_mode: Literal["tts", "manual"] | None = None,
+        pause_clause: float | None = None,
+        pause_sentence: float | None = None,
+        pause_paragraph: float | None = None,
+        pause_variance: float | None = None,
+        random_seed: int | None = None,
+        enable_short_sentence: bool | None = None,
+        include_tokens: bool = False,
+    ) -> dict[str, Any]:
+        """Compile text into an audio-ready transcript dictionary."""
+        from .phonemes import PhonemeSegment, text_to_phoneme_segments
+        from .short_sentence_handler import is_segment_empty, is_segment_short
+        from .ssmd_parser import has_ssmd_markup
+
+        resolved = self._resolve_generation_params(
+            config=config,
+            speed=speed,
+            lang=lang,
+            is_phonemes=is_phonemes,
+            pause_mode=pause_mode,
+            pause_clause=pause_clause,
+            pause_sentence=pause_sentence,
+            pause_paragraph=pause_paragraph,
+            pause_variance=pause_variance,
+            random_seed=random_seed,
+            enable_short_sentence=enable_short_sentence,
+        )
+
+        actual_speed = resolved["speed"]
+        actual_lang = resolved["lang"]
+        actual_is_phonemes = resolved["is_phonemes"]
+        actual_pause_mode = resolved["pause_mode"]
+        actual_pause_clause = resolved["pause_clause"]
+        actual_pause_sentence = resolved["pause_sentence"]
+        actual_pause_paragraph = resolved["pause_paragraph"]
+        actual_pause_variance = resolved["pause_variance"]
+        actual_random_seed = resolved["random_seed"]
+        actual_enable_short_sentence = resolved["enable_short_sentence"]
+
+        self._ensure_variant_for_language(actual_lang, ensure_models=False)
+
+        effective_short_sentence, short_sentence_defaults = (
+            self._resolve_short_sentence_defaults(actual_enable_short_sentence)
+        )
+
+        if actual_is_phonemes:
+            segments = [
+                PhonemeSegment(
+                    text=text,
+                    phonemes=text,
+                    tokens=self.tokenizer.tokenize(text) if include_tokens else [],
+                    lang=actual_lang,
+                )
+            ]
+            source_has_ssmd = False
+        else:
+            source_has_ssmd = has_ssmd_markup(text)
+            segments = text_to_phoneme_segments(
+                text=text,
+                tokenizer=self.tokenizer,
+                lang=actual_lang,
+                pause_mode=actual_pause_mode,
+                pause_clause=actual_pause_clause,
+                pause_sentence=actual_pause_sentence,
+                pause_paragraph=actual_pause_paragraph,
+                pause_variance=actual_pause_variance,
+                rng=np.random.default_rng(actual_random_seed),
+            )
+
+        default_voice: dict[str, Any] = {
+            "name": None,
+            "variant": None,
+            "language": None,
+            "gender": None,
+            "blend": None,
+        }
+        if isinstance(voice, VoiceBlend):
+            default_voice["blend"] = {
+                "voices": [
+                    {"name": name, "weight": weight} for name, weight in voice.voices
+                ],
+                "interpolation": voice.interpolation,
+            }
+        elif isinstance(voice, str):
+            default_voice["name"] = voice
+
+        transcript_segments: list[dict[str, Any]] = []
+        for segment in segments:
+            ssmd_metadata = segment.ssmd_metadata or {}
+            prosody_rate = ssmd_metadata.get("prosody_rate")
+            prosody_pitch = ssmd_metadata.get("prosody_pitch")
+            prosody_volume = ssmd_metadata.get("prosody_volume")
+
+            segment_voice_name = ssmd_metadata.get("voice_name")
+            segment_voice_lang = ssmd_metadata.get("voice_language")
+            segment_voice_gender = ssmd_metadata.get("voice_gender")
+            segment_voice_variant = ssmd_metadata.get("voice_variant")
+
+            say_as_interpret = ssmd_metadata.get("say_as_interpret")
+            say_as_format = ssmd_metadata.get("say_as_format")
+            say_as_detail = ssmd_metadata.get("say_as_detail")
+
+            segment_metadata: dict[str, Any] = {}
+            if say_as_interpret:
+                segment_metadata["say_as"] = {
+                    "interpret_as": say_as_interpret,
+                    "format": say_as_format,
+                    "detail": say_as_detail,
+                }
+            if ssmd_metadata.get("markers"):
+                segment_metadata["markers"] = ssmd_metadata.get("markers")
+            if ssmd_metadata.get("emphasis"):
+                segment_metadata["emphasis"] = ssmd_metadata.get("emphasis")
+            if ssmd_metadata.get("substitution"):
+                segment_metadata["substitution"] = ssmd_metadata.get("substitution")
+            if ssmd_metadata.get("phonemes"):
+                segment_metadata["phoneme_override"] = True
+
+            is_short_sentence = bool(
+                effective_short_sentence
+                and is_segment_short(segment, effective_short_sentence)
+                and not is_segment_empty(segment, effective_short_sentence)
+            )
+
+            segment_payload: dict[str, Any] = {
+                "type": "phoneme_segment",
+                "text": segment.text,
+                "phonemes": segment.phonemes,
+                "lang": segment.lang,
+                "pause": {
+                    "before": segment.pause_before,
+                    "after": segment.pause_after,
+                },
+                "flags": {
+                    "say_as_applied": bool(say_as_interpret),
+                    "is_short_sentence": is_short_sentence,
+                    "use_repeat_and_cut": is_short_sentence,
+                },
+            }
+
+            if include_tokens:
+                segment_payload["tokens"] = list(segment.tokens)
+
+            if (
+                segment_voice_name
+                or segment_voice_lang
+                or segment_voice_gender
+                or segment_voice_variant
+            ):
+                segment_payload["voice"] = {
+                    "name": segment_voice_name,
+                    "variant": segment_voice_variant,
+                    "language": segment_voice_lang,
+                    "gender": segment_voice_gender,
+                }
+
+            if prosody_rate or prosody_pitch or prosody_volume:
+                segment_payload["prosody"] = {
+                    "rate": prosody_rate,
+                    "pitch": prosody_pitch,
+                    "volume": prosody_volume,
+                }
+
+            if segment_metadata:
+                segment_payload["metadata"] = segment_metadata
+
+            transcript_segments.append(segment_payload)
+
+        transcript = {
+            "format_version": TRANSCRIPT_VERSION,
+            "source": {
+                "text": text,
+                "has_ssmd": source_has_ssmd,
+            },
+            "defaults": {
+                "lang": actual_lang,
+                "speed": actual_speed,
+                "pause_mode": actual_pause_mode,
+                "pause": {
+                    "clause": actual_pause_clause,
+                    "sentence": actual_pause_sentence,
+                    "paragraph": actual_pause_paragraph,
+                    "variance": actual_pause_variance,
+                    "random_seed": actual_random_seed,
+                },
+                "prosody": {
+                    "rate": None,
+                    "pitch": None,
+                    "volume": None,
+                },
+                "short_sentence": short_sentence_defaults,
+                "voice": default_voice,
+                "include_tokens": include_tokens,
+            },
+            "segments": transcript_segments,
+        }
+
+        validate_transcript(transcript)
+        return transcript
+
+    def create_from_transcript(
+        self,
+        transcript: dict[str, Any] | str,
+        *,
+        voice: str | np.ndarray | VoiceBlend | None = None,
+        speed: float | None = None,
+        enable_short_sentence: bool | None = None,
+    ) -> tuple[np.ndarray, int]:
+        """Generate audio from a transcript dict or JSON string."""
+        from .phonemes import PhonemeSegment
+        from .short_sentence_handler import ShortSentenceConfig
+
+        transcript_dict = load_transcript(transcript)
+        validate_transcript(transcript_dict)
+
+        defaults = transcript_dict["defaults"]
+        segments_data = transcript_dict["segments"]
+
+        actual_lang = defaults["lang"]
+        actual_speed = speed if speed is not None else float(defaults["speed"])
+        actual_pause_mode = defaults["pause_mode"]
+        trim_silence = actual_pause_mode == "manual"
+
+        self._ensure_variant_for_language(actual_lang, ensure_models=True)
+        self._init_kokoro()
+
+        resolved_voice = voice
+        if resolved_voice is None:
+            voice_defaults = defaults.get("voice", {})
+            voice_name = voice_defaults.get("name")
+            voice_blend = voice_defaults.get("blend")
+            if voice_blend:
+                blend_voices = [
+                    (item["name"], float(item["weight"]))
+                    for item in voice_blend.get("voices", [])
+                ]
+                resolved_voice = VoiceBlend(
+                    voices=blend_voices,
+                    interpolation=voice_blend.get("interpolation", "linear"),
+                )
+            elif voice_name:
+                resolved_voice = voice_name
+
+        if resolved_voice is None:
+            raise ValueError(
+                "Transcript does not define a default voice; provide a voice override."
+            )
+
+        voice_style = self._resolve_voice_style(resolved_voice)
+
+        segments: list[PhonemeSegment] = []
+        for segment_data in segments_data:
+            pause = segment_data["pause"]
+            segment_voice = segment_data.get("voice") or {}
+            prosody = segment_data.get("prosody") or {}
+            metadata = segment_data.get("metadata") or {}
+
+            ssmd_metadata: dict[str, Any] = {}
+            if segment_voice.get("name"):
+                ssmd_metadata["voice_name"] = segment_voice.get("name")
+            if segment_voice.get("language"):
+                ssmd_metadata["voice_language"] = segment_voice.get("language")
+            if segment_voice.get("gender"):
+                ssmd_metadata["voice_gender"] = segment_voice.get("gender")
+            if segment_voice.get("variant"):
+                ssmd_metadata["voice_variant"] = segment_voice.get("variant")
+
+            if prosody.get("rate"):
+                ssmd_metadata["prosody_rate"] = prosody.get("rate")
+            if prosody.get("pitch"):
+                ssmd_metadata["prosody_pitch"] = prosody.get("pitch")
+            if prosody.get("volume"):
+                ssmd_metadata["prosody_volume"] = prosody.get("volume")
+
+            say_as = metadata.get("say_as") or {}
+            if say_as.get("interpret_as"):
+                ssmd_metadata["say_as_interpret"] = say_as.get("interpret_as")
+                ssmd_metadata["say_as_format"] = say_as.get("format")
+                ssmd_metadata["say_as_detail"] = say_as.get("detail")
+
+            if metadata.get("markers"):
+                ssmd_metadata["markers"] = metadata.get("markers")
+            if metadata.get("emphasis"):
+                ssmd_metadata["emphasis"] = metadata.get("emphasis")
+            if metadata.get("substitution"):
+                ssmd_metadata["substitution"] = metadata.get("substitution")
+
+            segment = PhonemeSegment(
+                text=segment_data["text"],
+                phonemes=segment_data["phonemes"],
+                tokens=segment_data.get("tokens", []),
+                lang=segment_data.get("lang", actual_lang),
+                pause_before=float(pause["before"]),
+                pause_after=float(pause["after"]),
+                ssmd_metadata=ssmd_metadata or None,
+            )
+
+            segment.voice_name = segment_voice.get("name")
+            segment.voice_language = segment_voice.get("language")
+            segment.voice_gender = segment_voice.get("gender")
+            segment.voice_variant = segment_voice.get("variant")
+
+            segments.append(segment)
+
+        short_sentence = defaults.get("short_sentence", {})
+        short_sentence_config = ShortSentenceConfig(
+            min_phoneme_length=int(short_sentence.get("min_phoneme_length", 5)),
+            phoneme_pretext=str(short_sentence.get("phoneme_pretext", "—")),
+            enabled=bool(short_sentence.get("enabled", True)),
+        )
+
+        previous_config = self._short_sentence_config
+        self._short_sentence_config = short_sentence_config
+        try:
+            audio = self._generate_from_segments(
+                segments,
+                voice_style,
+                actual_speed,
+                trim_silence,
+                enable_short_sentence,
+            )
+        finally:
+            self._short_sentence_config = previous_config
 
         return audio, SAMPLE_RATE
 
@@ -1836,48 +2159,18 @@ class Kokoro:
 
         This bypasses text-to-phoneme conversion, useful when working
         with pre-tokenized phoneme content.
-
-        Args:
-            phonemes: IPA phoneme string
-            voice: Voice name, style vector, or VoiceBlend
-            config: Optional GenerationConfig object. Only the `speed`
-                parameter is used from the config.
-            speed: Speech speed (1.0 = normal). Overrides config if provided.
-                Default: 1.0
-
-        Returns:
-            Tuple of (audio samples as numpy array, sample rate)
         """
         self._init_kokoro()
 
-        # Resolve speed parameter
-
         actual_speed: float
         if config is not None:
-            # Use config speed unless overridden by kwarg
             actual_speed = speed if speed is not None else config.speed
         else:
-            # No config, use kwarg or default
             actual_speed = speed if speed is not None else 1.0
 
-        # Resolve voice to style vector if needed
-        if isinstance(voice, VoiceBlend):
-            voice_style = self.create_blended_voice(voice)
-        elif isinstance(voice, str):
-            # Check if it's a blend string (contains : or ,)
-            if ":" in voice or "," in voice:
-                blend = VoiceBlend.parse(voice)
-                voice_style = self.create_blended_voice(blend)
-            else:
-                voice_style = self.get_voice_style(voice)
-        else:
-            voice_style = voice
-
-        # kokoro-onnx supports direct phoneme input via create method with ps parameter
-        # But we need to convert to tokens first
+        voice_style = self._resolve_voice_style(voice)
         tokens = self.tokenizer.tokenize(phonemes)
 
-        # Debug logging for phoneme generation
         if os.getenv("TTSFORGE_DEBUG_PHONEMES"):
             logger.info(f"Phonemes: {phonemes}")
             logger.info(f"Tokens: {tokens}")
@@ -1890,42 +2183,20 @@ class Kokoro:
         voice: str | np.ndarray | VoiceBlend,
         speed: float = 1.0,
     ) -> tuple[np.ndarray, int]:
-        """
-        Generate audio from token IDs directly.
-
-        This provides the lowest-level interface, useful for pre-tokenized
-        content and maximum control.
-
-        Args:
-            tokens: List of token IDs
-            voice: Voice name, style vector, or VoiceBlend
-            speed: Speech speed (1.0 = normal)
-
-        Returns:
-            Tuple of (audio samples as numpy array, sample rate)
-        """
+        """Generate audio from token IDs directly."""
         self._init_kokoro()
+        assert self._audio_generator is not None
+        audio_generator = self._audio_generator
 
-        # Resolve voice to style vector
-        if isinstance(voice, VoiceBlend):
-            voice_style = self.create_blended_voice(voice)
-        elif isinstance(voice, str):
-            voice_style = self.get_voice_style(voice)
-        else:
-            voice_style = voice
-
-        # Detokenize to phonemes and generate audio
+        voice_style = self._resolve_voice_style(voice)
         phonemes = self.tokenizer.detokenize(tokens)
-
-        # Split phonemes into batches and generate audio
         batches = self._split_phonemes(phonemes)
         audio_parts = []
 
         for batch in batches:
-            audio_part, _ = self._audio_generator.generate_from_phonemes(
+            audio_part, _ = audio_generator.generate_from_phonemes(
                 batch, voice_style, speed
             )
-            # Trim silence from each part
             audio_part, _ = trim_audio(audio_part)
             audio_parts.append(audio_part)
 
@@ -1942,157 +2213,15 @@ class Kokoro:
         lang: str | None = None,
         trim_silence: bool = False,
     ) -> tuple[np.ndarray, int]:
-        """
-        Generate audio from a PhonemeSegment.
+        """Generate audio from a PhonemeSegment."""
+        if lang is not None:
+            segment.lang = lang
 
-        Respects the pause_after field by appending silence to the generated audio.
-
-        Args:
-            segment: PhonemeSegment with phonemes and tokens
-            voice: Voice name, style vector, or VoiceBlend
-            speed: Speech speed (1.0 = normal)
-            lang: Language code override (e.g., 'de', 'en-us')
-            trim_silence: Whether to trim silence from segment boundaries
-
-        Returns:
-            Tuple of (audio samples as numpy array, sample rate)
-        """
-        from .utils import generate_silence
-
-        # Debug logging for segment
-        if os.getenv("TTSFORGE_DEBUG_PHONEMES"):
-            logger.info(f"Segment text: {segment.text[:100]}...")
-            logger.info(f"Segment phonemes: {segment.phonemes}")
-            logger.info(f"Segment tokens: {segment.tokens}")
-            logger.info(f"Segment lang: {segment.lang}")
-            logger.info(f"Segment pause_after: {segment.pause_after}")
-
-        # Generate audio for the segment
-        # Use tokens if available, otherwise use phonemes
-        if segment.tokens:
-            audio, sample_rate = self.create_from_tokens(segment.tokens, voice, speed)
-        elif segment.phonemes:
-            audio, sample_rate = self.create_from_phonemes(
-                phonemes=segment.phonemes, voice=voice, speed=speed
-            )
-        else:
-            # Fall back to text
-            # Use lang override if provided, otherwise use segment's lang
-            effective_lang = lang if lang is not None else segment.lang
-            audio, sample_rate = self.create(
-                text=segment.text, voice=voice, speed=speed, lang=effective_lang
-            )
-        if trim_silence:
-            audio, _ = trim_audio(audio)
-        # Add pause after segment if specified
-        if segment.pause_after > 0:
-            pause_audio = generate_silence(segment.pause_after, sample_rate)
-            audio = np.concatenate([audio, pause_audio])
-
-        return audio, sample_rate
-
-    def create_from_document(
-        self,
-        document: "Document",  # noqa: F821
-        voice: str | np.ndarray | VoiceBlend,
-        speed: float = 1.0,
-        lang: str = "en-us",
-        pause_mode: Literal["tts", "manual"] = "tts",
-    ) -> tuple[np.ndarray, int]:
-        """
-        Generate audio from an SSMD Document.
-
-        This method allows you to use the SSMD Document API for building
-        structured TTS content with rich markup features.
-
-        Args:
-            document: SSMD Document instance with markup
-            voice: Voice name, style vector, or VoiceBlend
-            speed: Speech speed (1.0 = normal)
-            lang: Default language code (can be overridden in SSMD markup)
-            pause_mode: How to handle pauses:
-                - "tts" (default): TTS generates pauses naturally
-                - "manual": PyKokoro controls pauses with precision
-
-        Returns:
-            Tuple of (audio samples as numpy array, sample rate)
-
-        Example:
-            >>> from ssmd import Document
-            >>> from pykokoro import Kokoro
-            >>>
-            >>> # Create document with SSMD markup
-            >>> doc = Document()
-            >>> doc.add_sentence("Hello and *welcome*!")
-            >>> doc.add_sentence("This is ...500ms a pause.")
-            >>> doc.add_paragraph("[Bonjour](fr) everyone!")
-            >>>
-            >>> # Generate audio
-            >>> tts = Kokoro()
-            >>> audio, sr = tts.create_from_document(doc, voice="af_sarah")
-        """
-
-        # Convert document to SSMD text
-        ssmd_text = document.to_ssmd()
-
-        # Use the standard create method which will auto-detect SSMD
-        return self.create(
-            text=ssmd_text,
-            voice=voice,
-            speed=speed,
-            lang=lang,
-            pause_mode=pause_mode,
+        voice_style = self._resolve_voice_style(voice)
+        audio = self._generate_from_segments(
+            [segment], voice_style, speed, trim_silence
         )
-
-    def phonemize(self, text: str, lang: str = "en-us") -> str:
-        """
-        Convert text to phonemes.
-
-        Args:
-            text: Input text
-            lang: Language code
-
-        Returns:
-            Phoneme string
-        """
-        return self.tokenizer.phonemize(text, lang=lang)
-
-    def tokenize(self, phonemes: str) -> list[int]:
-        """
-        Convert phonemes to tokens.
-
-        Args:
-            phonemes: Phoneme string
-
-        Returns:
-            List of token IDs
-        """
-        return self.tokenizer.tokenize(phonemes)
-
-    def detokenize(self, tokens: list[int]) -> str:
-        """
-        Convert tokens back to phonemes.
-
-        Args:
-            tokens: List of token IDs
-
-        Returns:
-            Phoneme string
-        """
-        return self.tokenizer.detokenize(tokens)
-
-    def text_to_tokens(self, text: str, lang: str = "en-us") -> list[int]:
-        """
-        Convert text directly to tokens.
-
-        Args:
-            text: Input text
-            lang: Language code
-
-        Returns:
-            List of token IDs
-        """
-        return self.tokenizer.text_to_tokens(text, lang=lang)
+        return audio, SAMPLE_RATE
 
     def generate_chunks(
         self,
@@ -2102,51 +2231,24 @@ class Kokoro:
         lang: str = "en-us",
         chunk_size: int = 500,
     ) -> Generator[tuple[np.ndarray, int, str], None, None]:
-        """
-        Generate audio in chunks for long text.
-
-        This splits text into manageable chunks and yields audio for each.
-        Useful for progress tracking during long conversions.
-
-        Args:
-            text: Text to synthesize
-            voice: Voice name, style vector, or VoiceBlend
-            speed: Speech speed
-            lang: Language code
-            chunk_size: Approximate character count per chunk
-
-        Yields:
-            Tuple of (audio samples, sample rate, text chunk)
-        """
+        """Generate audio in chunks for long text."""
         self._init_kokoro()
+        assert self._audio_generator is not None
+        audio_generator = self._audio_generator
 
-        # Resolve voice to style vector
-        if isinstance(voice, VoiceBlend):
-            voice_style = self.create_blended_voice(voice)
-        elif isinstance(voice, str):
-            # Check if it's a blend string (contains : or ,)
-            if ":" in voice or "," in voice:
-                blend = VoiceBlend.parse(voice)
-                voice_style = self.create_blended_voice(blend)
-            else:
-                voice_style = self.get_voice_style(voice)
-        else:
-            voice_style = voice
-
-        # Split text into chunks at sentence boundaries
+        voice_style = self._resolve_voice_style(voice)
         chunks = self._split_text(text, chunk_size)
 
         for chunk in chunks:
             if not chunk.strip():
                 continue
 
-            # Convert chunk to phonemes and generate audio
             phonemes = self.tokenizer.phonemize(chunk, lang=lang)
             batches = self._split_phonemes(phonemes)
             audio_parts = []
 
             for batch in batches:
-                audio_part, _ = self._audio_generator.generate_from_phonemes(
+                audio_part, _ = audio_generator.generate_from_phonemes(
                     batch, voice_style, speed
                 )
                 audio_part, _ = trim_audio(audio_part)
@@ -2353,7 +2455,7 @@ class Kokoro:
                 # Execute blocking ONNX inference in a thread executor
                 audio_part, sample_rate = await loop.run_in_executor(
                     None,
-                    self._audio_generator.generate_from_phonemes,
+                    audio_generator.generate_from_phonemes,
                     phoneme_batch,
                     voice_style,
                     speed,
@@ -2412,7 +2514,7 @@ class Kokoro:
         batched_phonemes = self._split_phonemes(phonemes)
 
         for phoneme_batch in batched_phonemes:
-            audio_part, sample_rate = self._audio_generator.generate_from_phonemes(
+            audio_part, sample_rate = audio_generator.generate_from_phonemes(
                 phoneme_batch, voice_style, speed
             )
             # Trim silence
@@ -2423,6 +2525,7 @@ class Kokoro:
     def _split_phonemes(self, phonemes: str) -> list[str]:
         """Delegate to AudioGenerator.split_phonemes (backward compatibility)."""
         self._init_kokoro()
+        assert self._audio_generator is not None
         return self._audio_generator.split_phonemes(phonemes)
 
     def _generate_from_phoneme_batches(
@@ -2434,6 +2537,7 @@ class Kokoro:
     ) -> np.ndarray:
         """Delegate to AudioGenerator (backward compatibility)."""
         self._init_kokoro()
+        assert self._audio_generator is not None
         return self._audio_generator.generate_from_phoneme_batches(
             batches, voice_style, speed, trim_silence
         )
@@ -2452,13 +2556,15 @@ class Kokoro:
         via SSMD voice annotations.
         """
         self._init_kokoro()
+        assert self._audio_generator is not None
+        audio_generator = self._audio_generator
 
         # Create voice resolver callback
         def voice_resolver(voice_name: str) -> np.ndarray:
             """Resolve voice name to style vector."""
             return self.get_voice_style(voice_name)
 
-        return self._audio_generator.generate_from_segments(
+        return audio_generator.generate_from_segments(
             segments,
             voice_style,
             speed,

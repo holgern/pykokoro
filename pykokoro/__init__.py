@@ -34,6 +34,7 @@ from .tokenizer import (
     TokenizerConfig,
     create_tokenizer,
 )
+from .transcript import export_transcript, load_transcript, validate_transcript
 from .trim import trim
 from .utils import (
     get_device,
@@ -91,6 +92,10 @@ __all__ = [
     "get_gpu_info",
     # Audio functions
     "trim",
+    # Transcript helpers
+    "export_transcript",
+    "load_transcript",
+    "validate_transcript",
     # Helper functions
     "create_tokenizer",
     "phonemize_text_list",
