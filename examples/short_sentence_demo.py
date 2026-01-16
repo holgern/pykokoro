@@ -192,15 +192,13 @@ def main():
 
     print("\nConfiguration Options:")
     print("  • min_phoneme_length: Threshold for 'short' (default: 10)")
-    print("  • target_phoneme_length: Target for repetition (default: 30)")
-    print("  • max_repetitions: Max times to repeat (default: 5)")
     print("  • enabled: Enable/disable the feature (default: True)")
 
     print("\nUsage:")
     print("  # Custom configuration")
     print(
         "  config = ShortSentenceConfig("
-        "min_phoneme_length=15, target_phoneme_length=40)"
+        "min_phoneme_length=15)"
     )
     print("  kokoro = Kokoro(short_sentence_config=config)")
     print()

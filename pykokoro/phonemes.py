@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 if TYPE_CHECKING:
+    from .short_sentence_handler import ShortSentenceConfig
     from .tokenizer import Tokenizer
 
 logger = logging.getLogger(__name__)
@@ -203,9 +204,8 @@ def split_and_phonemize_text(
        - paragraph → sentence → clause → word
     4. Only truncates as last resort (when even individual words are too long)
 
-    Note: Short sentences are handled automatically during audio generation using
-    the repeat-and-cut technique (see short_sentence_handler.py), which produces
-    higher quality audio than segment batching.
+    Note: Short sentences are handled during phoneme creation by surrounding the
+    phonemes with the configured pretext (see short_sentence_handler.py).
 
     Args:
         text: Input text to process
@@ -548,6 +548,7 @@ def text_to_phoneme_segments(
     pause_paragraph: float = 1.0,
     pause_variance: float = 0.05,
     rng: np.random.Generator | None = None,
+    short_sentence_config: "ShortSentenceConfig | None" = None,
 ) -> list[PhonemeSegment]:
     """Convert text to list of PhonemeSegment with pauses populated.
 
@@ -558,9 +559,8 @@ def text_to_phoneme_segments(
        - "tts": Merges sentences into paragraphs for natural TTS pauses
        - "manual": Keeps sentence-level segmentation for precise control
 
-    Short sentences are handled automatically during audio generation using
-    the repeat-and-cut technique (see short_sentence_handler.py), which
-    produces higher quality audio than segment batching.
+    Short sentences are handled during phoneme creation by surrounding the
+    phonemes with the configured pretext (see short_sentence_handler.py).
 
     SSMD markup in text is automatically detected and processed. Supported features:
     - Breaks: ...n, ...w, ...c, ...s, ...p, ...500ms, ...2s
@@ -588,6 +588,8 @@ def text_to_phoneme_segments(
         pause_variance: Standard deviation for Gaussian pause variance (only used
             when pause_mode="manual")
         rng: NumPy random generator for reproducibility
+        short_sentence_config: Optional ShortSentenceConfig for applying
+            phoneme pretext around short single-word segments
 
     Returns:
         List of PhonemeSegment instances with pause_after populated
@@ -621,14 +623,17 @@ def text_to_phoneme_segments(
         >>> # Each sentence is a separate segment with automatic pauses
 
         Short sentences (like "Why?" or "Go!") are automatically handled
-        by the repeat-and-cut technique during audio generation for
-        improved prosody.
+        by applying the configured phoneme pretext during phoneme creation.
     """
     from .constants import MAX_PHONEME_LENGTH
+    from .short_sentence_handler import ShortSentenceConfig
 
     # Create RNG if not provided
     if rng is None:
         rng = np.random.default_rng()
+
+    if short_sentence_config is None:
+        short_sentence_config = ShortSentenceConfig()
 
     # Step 1: ALWAYS parse through SSMD (with sentence detection)
     initial_pause, ssmd_segments = parse_ssmd_to_segments(
@@ -662,9 +667,6 @@ def text_to_phoneme_segments(
         )
 
     # Step 4: CASCADE (handle overflow for segments exceeding max_phoneme_length)
-    # Note: Short sentences are NOT batched here - they are handled during audio
-    # generation by the repeat-and-cut technique in AudioGenerator, which produces
-    # higher quality audio.
     final_segments: list[PhonemeSegment] = []
     for segment in phoneme_segments:
         if not segment.text.strip():
@@ -698,6 +700,24 @@ def text_to_phoneme_segments(
             rng,
         )
     # else: pause_mode == "tts", segments keep SSMD pauses, TTS handles rest
+
+    if short_sentence_config.enabled:
+        pretext = short_sentence_config.phoneme_pretext
+        for segment in final_segments:
+            if not segment.text.strip() or not segment.phonemes.strip():
+                continue
+            if segment.ssmd_metadata and segment.ssmd_metadata.get(
+                "short_sentence_pretext"
+            ):
+                continue
+            if short_sentence_config.should_use_pause_surrounding(
+                len(segment.phonemes), segment.text
+            ):
+                segment.phonemes = f"{pretext}{segment.phonemes}{pretext}"
+                segment.tokens = tokenizer.tokenize(segment.phonemes)
+                if segment.ssmd_metadata is None:
+                    segment.ssmd_metadata = {}
+                segment.ssmd_metadata["short_sentence_pretext"] = True
 
     return final_segments
 

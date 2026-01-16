@@ -59,7 +59,7 @@ class GenerationConfig:
             pause variance will be reproducible. Default: None
         enable_short_sentence: Override short sentence handling for this call.
             - None (default): Use config setting from Kokoro initialization
-            - True: Force enable short sentence handling (repeat-and-cut)
+            - True: Force enable short sentence handling (phoneme pretext)
             - False: Force disable short sentence handling
             Default: None
 

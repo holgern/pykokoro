@@ -35,7 +35,7 @@ class AudioGenerator:
     - Batch generation from phoneme lists
     - Segment-based generation with pause support
     - Token-to-audio generation
-    - Short sentence handling via repeat-and-cut
+    - Short sentence handling via phoneme pretext
 
     Args:
         session: ONNX Runtime inference session
@@ -268,8 +268,7 @@ class AudioGenerator:
     ) -> list[np.ndarray]:
         """Generate audio for a single segment with phonemes.
 
-        Handles splitting long phonemes, applying prosody modifications,
-        and using repeat-and-cut for short sentences.
+        Handles splitting long phonemes and applying prosody modifications.
 
         Args:
             segment: Phoneme segment to process
@@ -284,12 +283,7 @@ class AudioGenerator:
         Returns:
             List of audio arrays (may be multiple if phonemes were split)
         """
-        from .short_sentence_handler import (
-            ShortSentenceConfig,
-            generate_short_sentence_audio,
-            is_segment_empty,
-            is_segment_short,
-        )
+        from .short_sentence_handler import ShortSentenceConfig, is_segment_empty
 
         audio_parts: list[np.ndarray] = []
 
@@ -325,24 +319,6 @@ class AudioGenerator:
 
         if effective_config and is_segment_empty(segment, effective_config):
             logger.debug(f"Skipping phoneme segment: '{segment.text[:50]}'")
-            return audio_parts
-
-        # Check if this is a short segment that should use repeat-and-cut
-        if effective_config and is_segment_short(segment, effective_config):
-            audio = generate_short_sentence_audio(
-                segment=segment,
-                audio_generator=self,
-                voice_style=voice_style,
-                speed=speed,
-                config=effective_config,
-                tokenizer=self._tokenizer,
-            )
-
-            # Apply prosody modifications if present
-            audio = self._apply_segment_prosody(audio, segment)
-
-            # Note: repeat-and-cut already trims, so no additional trim needed
-            audio_parts.append(audio)
             return audio_parts
 
         # Handle long phonemes by splitting

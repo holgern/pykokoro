@@ -1146,10 +1146,10 @@ class Kokoro:
             model_source: Model source ("huggingface" or "github")
             model_variant: Model variant ("v1.0", "v1.1-zh")
             short_sentence_config: Configuration for short sentence handling using
-                the repeat-and-cut technique. This improves audio quality for short
-                sentences (like "Why?" or "Go!") by generating them with
-                phoneme context. If None, uses default thresholds
-                (min_phoneme_length=30). Set enabled=False to disable.
+                phoneme pretext. This improves audio quality for short sentences
+                (like "Why?" or "Go!") by surrounding phonemes with context.
+                If None, uses default thresholds (min_phoneme_length=30).
+                Set enabled=False to disable.
                 Example:
                     from pykokoro.short_sentence_handler import ShortSentenceConfig
                     config = ShortSentenceConfig(
@@ -1696,10 +1696,9 @@ class Kokoro:
         - Markers: @name (stored in metadata)
 
         Short sentences (like "Why?" or "Go!") are automatically handled using
-        the repeat-and-cut technique for improved prosody. This generates the
-        sentence with repeated context and cuts to the original length, producing
-        better quality than processing short sentences individually. Configure via
-        Kokoro(short_sentence_config=...) or set_short_sentence_config().
+        phoneme pretext for improved prosody. This surrounds the phonemes with
+        context during phoneme creation. Configure via Kokoro(short_sentence_config=...)
+        or set_short_sentence_config().
 
         Args:
             text: Text to synthesize (or phonemes if is_phonemes=True). SSMD
@@ -1739,7 +1738,7 @@ class Kokoro:
             enable_short_sentence: Override short sentence handling for this call.
                 Overrides config if provided.
                 None (default): Use config setting from Kokoro initialization
-                True: Force enable short sentence handling (repeat-and-cut)
+                True: Force enable short sentence handling (phoneme pretext)
                 False: Force disable short sentence handling
 
         Returns:
@@ -1776,6 +1775,10 @@ class Kokoro:
         rng = np.random.default_rng(actual_random_seed)
         voice_style = self._resolve_voice_style(voice)
 
+        effective_short_sentence, _ = self._resolve_short_sentence_defaults(
+            actual_enable_short_sentence
+        )
+
         trim_silence = actual_pause_mode == "manual"
 
         if actual_is_phonemes:
@@ -1790,6 +1793,12 @@ class Kokoro:
 
         from .phonemes import text_to_phoneme_segments
 
+        short_sentence_config = effective_short_sentence
+        if short_sentence_config is None and actual_enable_short_sentence is False:
+            from .short_sentence_handler import ShortSentenceConfig
+
+            short_sentence_config = ShortSentenceConfig(enabled=False)
+
         segments = text_to_phoneme_segments(
             text=text,
             tokenizer=self.tokenizer,
@@ -1800,6 +1809,7 @@ class Kokoro:
             pause_paragraph=actual_pause_paragraph,
             pause_variance=actual_pause_variance,
             rng=rng,
+            short_sentence_config=short_sentence_config,
         )
 
         audio = self._generate_from_segments(
@@ -1832,7 +1842,6 @@ class Kokoro:
     ) -> dict[str, Any]:
         """Compile text into an audio-ready transcript dictionary."""
         from .phonemes import PhonemeSegment, text_to_phoneme_segments
-        from .short_sentence_handler import is_segment_empty, is_segment_short
         from .ssmd_parser import has_ssmd_markup
 
         resolved = self._resolve_generation_params(
@@ -1878,6 +1887,12 @@ class Kokoro:
             source_has_ssmd = False
         else:
             source_has_ssmd = has_ssmd_markup(text)
+            short_sentence_config = effective_short_sentence
+            if short_sentence_config is None and actual_enable_short_sentence is False:
+                from .short_sentence_handler import ShortSentenceConfig
+
+                short_sentence_config = ShortSentenceConfig(enabled=False)
+
             segments = text_to_phoneme_segments(
                 text=text,
                 tokenizer=self.tokenizer,
@@ -1888,6 +1903,7 @@ class Kokoro:
                 pause_paragraph=actual_pause_paragraph,
                 pause_variance=actual_pause_variance,
                 rng=np.random.default_rng(actual_random_seed),
+                short_sentence_config=short_sentence_config,
             )
 
         default_voice: dict[str, Any] = {
@@ -1938,12 +1954,10 @@ class Kokoro:
                 segment_metadata["substitution"] = ssmd_metadata.get("substitution")
             if ssmd_metadata.get("phonemes"):
                 segment_metadata["phoneme_override"] = True
+            if ssmd_metadata.get("short_sentence_pretext"):
+                segment_metadata["short_sentence_pretext"] = True
 
-            is_short_sentence = bool(
-                effective_short_sentence
-                and is_segment_short(segment, effective_short_sentence)
-                and not is_segment_empty(segment, effective_short_sentence)
-            )
+            is_short_sentence = bool(ssmd_metadata.get("short_sentence_pretext"))
 
             segment_payload: dict[str, Any] = {
                 "type": "phoneme_segment",
@@ -2107,6 +2121,8 @@ class Kokoro:
                 ssmd_metadata["emphasis"] = metadata.get("emphasis")
             if metadata.get("substitution"):
                 ssmd_metadata["substitution"] = metadata.get("substitution")
+            if metadata.get("short_sentence_pretext"):
+                ssmd_metadata["short_sentence_pretext"] = True
 
             segment = PhonemeSegment(
                 text=segment_data["text"],

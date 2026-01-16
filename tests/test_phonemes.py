@@ -8,7 +8,9 @@ from pykokoro.phonemes import (
     phonemize_text_list,
     populate_segment_pauses,
     split_and_phonemize_text,
+    text_to_phoneme_segments,
 )
+from pykokoro.short_sentence_handler import ShortSentenceConfig
 from pykokoro.tokenizer import Tokenizer, create_tokenizer
 
 
@@ -104,6 +106,35 @@ class TestHelperFunctions:
         assert segments[1].text == "world"
         assert all(len(s.phonemes) > 0 for s in segments)
         assert all(len(s.tokens) > 0 for s in segments)
+
+    def test_short_sentence_pretext_applied(self, tokenizer):
+        """Short single-word segments should get phoneme pretext."""
+        config = ShortSentenceConfig(min_phoneme_length=50, phoneme_pretext="—")
+        segments = text_to_phoneme_segments(
+            "Hi!",
+            tokenizer,
+            lang="en-us",
+            short_sentence_config=config,
+        )
+
+        segment = next(seg for seg in segments if seg.text.strip())
+        assert segment.phonemes.startswith("—")
+        assert segment.phonemes.endswith("—")
+        assert segment.ssmd_metadata
+        assert segment.ssmd_metadata.get("short_sentence_pretext") is True
+
+        segments = text_to_phoneme_segments(
+            "!!!",
+            tokenizer,
+            lang="en-us",
+            short_sentence_config=config,
+        )
+
+        segment = next(seg for seg in segments if seg.text.strip())
+        assert len(segment.phonemes) == 0
+        assert segment.ssmd_metadata
+        assert "short_sentence_pretext" not in segment.ssmd_metadata
+
 
 
 class TestSplitAndPhonemizeText:
