@@ -565,9 +565,8 @@ def text_to_phoneme_segments(
     SSMD markup in text is automatically detected and processed. Supported features:
     - Breaks: ...n, ...w, ...c, ...s, ...p, ...500ms, ...2s
     - Emphasis: *text* (moderate), **text** (strong)
-    - Prosody: +loud+, >fast>, ^high^ (stored for future processing)
-    - Language: [Bonjour](fr) switches language for that segment
-    - Phonemes: [tomato](ph: təˈmeɪtoʊ) uses explicit phonemes
+    - Language: [Bonjour]{lang="fr"} switches language for that segment
+    - Phonemes: [tomato]{ph="təˈmeɪtoʊ"} uses explicit phonemes
     - Substitution: [H2O](sub: water) replaces text before phonemization
     - Markers: @name (stored in metadata)
 

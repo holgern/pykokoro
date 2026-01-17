@@ -20,7 +20,10 @@ from kokorog2p import (
     get_kokoro_vocab,
     ids_to_phonemes,
     phonemes_to_ids,
-    phonemize_with_markdown,
+    phonemize_with_ssmd,
+    phonemize_with_speechmarkdown,
+    ANNOTATION_REGEX,
+    SPEECHMARKDOWN_ATTR_REGEX,
     validate_for_kokoro,
 )
 from kokorog2p.base import G2PBase
@@ -386,15 +389,27 @@ class Tokenizer:
         # Apply custom phoneme dictionary first
         processed_text = self._apply_phoneme_dictionary(text)
 
-        # Use phonemize_with_markdown if we have custom phonemes
+        # Use phonemize_with_ssmd if we have custom phonemes
         # Otherwise use standard phonemization
-        if processed_text != text and "[" in processed_text:
+        if ANNOTATION_REGEX.search(processed_text) and processed_text != text:
             # Text contains markdown phoneme annotations
             try:
-                phonemes = phonemize_with_markdown(processed_text, lang)
+                phonemes = phonemize_with_ssmd(processed_text, lang)
             except Exception as e:
                 logger.warning(
-                    f"Failed to use phonemize_with_markdown, "
+                    f"Failed to use phonemize_with_ssmd, "
+                    f"falling back to standard phonemization: {e}"
+                )
+                # Fallback to standard phonemization
+                g2p = self._get_g2p(lang)
+                phonemes = g2p.phonemize(text)
+        elif SPEECHMARKDOWN_ATTR_REGEX.search(processed_text) and processed_text != text:
+            # Text contains markdown phoneme annotations
+            try:
+                phonemes = phonemize_with_speechmarkdown(processed_text, lang)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to use phonemize_with_speechmarkdown, "
                     f"falling back to standard phonemization: {e}"
                 )
                 # Fallback to standard phonemization

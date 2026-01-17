@@ -139,7 +139,7 @@ class PhonemeDictionary:
     def apply(self, text: str) -> str:
         """Apply custom phoneme dictionary to text.
 
-        Replaces words with markdown phoneme notation: [word](/phoneme/)
+        Replaces words with ssmd phoneme notation: [word]{ph="phoneme"}
 
         Args:
             text: Input text
@@ -168,7 +168,7 @@ class PhonemeDictionary:
             # Use a replacement function to preserve the original case
             def replace_func(match: re.Match[str], p: str = phoneme) -> str:
                 matched_word = match.group(0)
-                return f"[{matched_word}](/{p}/)"
+                return f"[{matched_word}]\\{{ph=\"{p}\"}}"
 
             result = re.sub(pattern, replace_func, result, flags=flags)
 
