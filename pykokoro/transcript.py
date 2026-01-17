@@ -51,7 +51,7 @@ def _require_bool(value: Any, name: str) -> bool:
 
 
 def _require_number(value: Any, name: str) -> float:
-    if not isinstance(value, (int, float)):
+    if not isinstance(value, int | float):
         raise ValueError(f"{name} must be a number")
     return float(value)
 
@@ -67,7 +67,7 @@ def _optional_str(value: Any, name: str) -> str | None:
 def _optional_number(value: Any, name: str) -> float | None:
     if value is None:
         return None
-    if not isinstance(value, (int, float)):
+    if not isinstance(value, int | float):
         raise ValueError(f"{name} must be a number or null")
     return float(value)
 

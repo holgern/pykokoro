@@ -2209,6 +2209,7 @@ class Kokoro:
         batches = self._split_phonemes(phonemes)
         audio_parts = []
 
+        audio_generator = self._audio_generator
         for batch in batches:
             audio_part, _ = audio_generator.generate_from_phonemes(
                 batch, voice_style, speed
@@ -2465,13 +2466,13 @@ class Kokoro:
         queue: asyncio.Queue[tuple[np.ndarray, int, str] | None] = asyncio.Queue()
 
         async def process_batches() -> None:
-            """Process phoneme batches in the background."""
+            """Process phoneme batches in a background."""
             loop = asyncio.get_event_loop()
             for phoneme_batch in batched_phonemes:
                 # Execute blocking ONNX inference in a thread executor
                 audio_part, sample_rate = await loop.run_in_executor(
                     None,
-                    audio_generator.generate_from_phonemes,
+                    self._audio_generator.generate_from_phonemes,
                     phoneme_batch,
                     voice_style,
                     speed,
@@ -2481,7 +2482,7 @@ class Kokoro:
                 await queue.put((audio_part, sample_rate, phoneme_batch))
             await queue.put(None)  # Signal end of stream
 
-        # Start processing in the background
+        # Start processing in background
         asyncio.create_task(process_batches())
 
         # Yield chunks as they become available
@@ -2514,6 +2515,7 @@ class Kokoro:
             Tuple of (audio samples as numpy array, sample rate, text chunk)
         """
         self._init_kokoro()
+        audio_generator = self._audio_generator
 
         # Resolve voice to style vector
         if isinstance(voice, VoiceBlend):

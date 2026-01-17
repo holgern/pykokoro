@@ -30,6 +30,19 @@ if TYPE_CHECKING:
     from .phonemes import PhonemeSegment
     from .tokenizer import Tokenizer
 
+ANNOTATION_RE = re.compile(
+    r"""\[
+        (?P<text>[^\]]+)          # [text]
+        \]\{
+        (?P<attrs>
+            \s*\w+\s*=\s*"[^"]+"  # key="value"
+            (?:\s+\w+\s*=\s*"[^"]+")*
+        )
+        \s*\}
+    """,
+    re.VERBOSE,
+)
+
 
 @dataclass
 class SSMDMetadata:
@@ -132,20 +145,20 @@ def has_ssmd_markup(text: str) -> bool:
     if re.search(r"\*\w[^*]*\*|\*[^*]*\w\*", text):
         return True
 
-    # Prosody
-    if re.search(r"[+><^][\w\s]+[+><^]", text):
-        return True
-
-    # Annotations: [text](annotation)
-    if re.search(r"\[[^\]]+\]\([^)]+\)", text):
+    # Annotations: [text]{annotation)
+    if re.search(
+        r'\[[^\]]+\]\{\s*\w+\s*=\s*"[^"]+"(?:\s+\w+\s*=\s*"[^"]+")*\s*\}', text
+    ):
         return True
 
     # Markers: @name
     if re.search(r"(?:^|\s)@\w+", text):
         return True
 
-    # Voice markers: @voice: name
-    if re.search(r"@voice:\s*\w+", text, re.IGNORECASE):
+    # Voice markers: <div></div>
+    if bool(
+        re.search(r"<div\b[^>]*=.*?>.*?</div\s*>", text, re.IGNORECASE | re.DOTALL)
+    ):
         return True
 
     return False
@@ -214,10 +227,11 @@ def _map_ssmd_segment_to_metadata(
 
     metadata = SSMDMetadata()
 
-    # Handle text transformations (priority: audio > say-as > substitution > phoneme > original)
+    # Handle text transformations (priority order: audio >
+    # say-as > sub > phoneme > text)
     text = ssmd_seg.text
 
-    # Audio segments - playback audio file instead of synthesizing
+    # Audio segments - play pre-recorded audio
     if ssmd_seg.audio:
         metadata.audio_src = ssmd_seg.audio.src
         metadata.audio_alt_text = ssmd_seg.audio.alt_text

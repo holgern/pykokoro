@@ -320,7 +320,10 @@ class TestSSMDVoiceSwitching:
 
         # Test 1: Block directives (<div voice="name">)
         # Currently this doesn't work - SSMD treats directives as raw text
-        text = '<div voice="af_sarah">Hello ...s</div>\n\n<div voice="am_michael">World</div>'
+        text = (
+            '<div voice="af_sarah">Hello ...s</div>\n\n'
+            '<div voice="am_michael">World</div>'
+        )
         initial_pause, segments = parse_ssmd_to_segments(text, tokenizer)
 
         # For now, just verify it doesn't crash and returns segments
@@ -499,7 +502,10 @@ class TestSSMDVoiceSwitching:
 
         # Use new <div voice="name"> directive syntax
         # Currently this doesn't work - SSMD treats directives as raw text
-        text = '<div voice="af_sarah">Hello there ...s</div>\n\n<div voice="am_michael">Goodbye</div>'
+        text = (
+            '<div voice="af_sarah">Hello there ...s</div>\n\n'
+            '<div voice="am_michael">Goodbye</div>'
+        )
 
         segments = text_to_phoneme_segments(
             text=text,
