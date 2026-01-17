@@ -31,14 +31,16 @@ if TYPE_CHECKING:
     from .tokenizer import Tokenizer
 
 ANNOTATION_RE = re.compile(
-    r"""\[
-        (?P<text>[^\]]+)          # [text]
-        \]\{
-        (?P<attrs>
-            \s*\w+\s*=\s*"[^"]+"  # key="value"
-            (?:\s+\w+\s*=\s*"[^"]+")*
-        )
-        \s*\}
+    r"""
+    \[
+        [^\]]+                      # [text]
+    \]
+    \{
+        \s*\w+\s*=\s*
+        (?:'[^']+'|"[^"]+")         # 'value' OR "value"
+        (?:\s+\w+\s*=\s*(?:'[^']+'|"[^"]+"))*
+        \s*
+    \}
     """,
     re.VERBOSE,
 )
@@ -146,9 +148,7 @@ def has_ssmd_markup(text: str) -> bool:
         return True
 
     # Annotations: [text]{annotation)
-    if re.search(
-        r'\[[^\]]+\]\{\s*\w+\s*=\s*"[^"]+"(?:\s+\w+\s*=\s*"[^"]+")*\s*\}', text
-    ):
+    if bool(ANNOTATION_RE.search(text)):
         return True
 
     # Markers: @name

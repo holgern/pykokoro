@@ -1689,7 +1689,6 @@ class Kokoro:
         Supported features include:
         - Breaks: ...n, ...w, ...c, ...s, ...p, ...500ms, ...2s
         - Emphasis: *text* (moderate), **text** (strong)
-        - Prosody: +loud+, >fast>, ^high^ (stored for future processing)
         - Language: [Bonjour](fr) switches language for that segment
         - Phonemes: [tomato](ph: təˈmeɪtoʊ) uses explicit phonemes
         - Substitution: [H2O](sub: water) replaces text before phonemization

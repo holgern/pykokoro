@@ -22,21 +22,12 @@ class TestSSMDDetection:
         assert has_ssmd_markup("This is **very important**")
         assert not has_ssmd_markup("This has * asterisks * but not emphasis")
 
-    def test_has_ssmd_markup_prosody(self):
-        """Test detection of prosody shorthand."""
-        from pykokoro.ssmd_parser import has_ssmd_markup
-
-        assert has_ssmd_markup("Speak +loud+")
-        assert has_ssmd_markup("Talk >fast>")
-        assert has_ssmd_markup("Say ^high^")
-        assert not has_ssmd_markup("Normal text")
-
     def test_has_ssmd_markup_annotations(self):
         """Test detection of annotations."""
         from pykokoro.ssmd_parser import has_ssmd_markup
 
-        assert has_ssmd_markup("[Bonjour](fr)")
-        assert has_ssmd_markup("[word](/phoneme/)")
+        assert has_ssmd_markup("[Bonjour]{lang='fr'}")
+        assert has_ssmd_markup("[Bonjour]{ph='abc'}")
         assert not has_ssmd_markup("No markup here")
 
     def test_has_ssmd_markup_markers(self):
