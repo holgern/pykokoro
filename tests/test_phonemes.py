@@ -136,7 +136,6 @@ class TestHelperFunctions:
         assert "short_sentence_pretext" not in segment.ssmd_metadata
 
 
-
 class TestSplitAndPhonemizeText:
     """Tests for split_and_phonemize_text() standalone function."""
 

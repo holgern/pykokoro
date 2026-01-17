@@ -24,7 +24,7 @@ def test_compile_basic_transcript():
 
 def test_compile_say_as_metadata():
     kokoro = Kokoro()
-    transcript = kokoro.compile("[123](as: cardinal)", voice="af_sarah")
+    transcript = kokoro.compile("[123]{as='cardinal'}", voice="af_sarah")
 
     segment = transcript["segments"][0]
     assert segment["flags"]["say_as_applied"] is True

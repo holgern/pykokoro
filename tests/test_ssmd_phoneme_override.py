@@ -19,7 +19,7 @@ class TestSSMDPhonemeOverride:
         """Test single phoneme override works."""
         kokoro = Kokoro()
         segments = text_to_phoneme_segments(
-            text="[tomato](ph: təˈmeɪtoʊ)",
+            text="[tomato]{ph='təˈmeɪtoʊ'}",
             tokenizer=kokoro.tokenizer,
             lang="en-us",
         )
@@ -34,7 +34,7 @@ class TestSSMDPhonemeOverride:
         """Test consecutive phoneme overrides without spacing."""
         kokoro = Kokoro()
         segments = text_to_phoneme_segments(
-            text="[tomato](ph: təˈmeɪtoʊ)[pause](ph: ………………)",
+            text="[tomato]{ph='təˈmeɪtoʊ'}[pause]{ph='………………'}",
             tokenizer=kokoro.tokenizer,
             lang="en-us",
         )
@@ -57,7 +57,7 @@ class TestSSMDPhonemeOverride:
         """Test consecutive phoneme overrides with spacing."""
         kokoro = Kokoro()
         segments = text_to_phoneme_segments(
-            text="[tomato](ph: təˈmeɪtoʊ) [pause](ph: ………………)",
+            text="[tomato]{ph='təˈmeɪtoʊ'} [pause]{ph='………………'}",
             tokenizer=kokoro.tokenizer,
             lang="en-us",
         )
@@ -74,7 +74,7 @@ class TestSSMDPhonemeOverride:
         """Test mixing normal text with phoneme overrides."""
         kokoro = Kokoro()
         segments = text_to_phoneme_segments(
-            text="I say [tomato](ph: təˈmeɪtoʊ) potato",
+            text="I say [tomato]{ph='təˈmeɪtoʊ'} potato",
             tokenizer=kokoro.tokenizer,
             lang="en-us",
         )
@@ -91,7 +91,7 @@ class TestSSMDPhonemeOverride:
         """Test multiple different phoneme overrides in sequence."""
         kokoro = Kokoro()
         segments = text_to_phoneme_segments(
-            text="[one](ph: wʌn)[two](ph: tuː)[three](ph: θɹiː)",
+            text="[one]{ph='wʌn'}[two]{ph='tuː'}[three]{ph='θɹiː'}",
             tokenizer=kokoro.tokenizer,
             lang="en-us",
         )
@@ -108,7 +108,7 @@ class TestSSMDPhonemeOverride:
         """Test that TTS mode (default) preserves phoneme overrides."""
         kokoro = Kokoro()
         segments = text_to_phoneme_segments(
-            text="[tomato](ph: təˈmeɪtoʊ)[pause](ph: ………………)",
+            text="[tomato]{ph='təˈmeɪtoʊ'}[pause]{ph='………………'}",
             tokenizer=kokoro.tokenizer,
             lang="en-us",
             pause_mode="tts",  # Default mode that merges segments
@@ -126,7 +126,7 @@ class TestSSMDPhonemeOverride:
         """Test that manual mode preserves phoneme overrides."""
         kokoro = Kokoro()
         segments = text_to_phoneme_segments(
-            text="[tomato](ph: təˈmeɪtoʊ)[pause](ph: ………………)",
+            text="[tomato]{ph='təˈmeɪtoʊ'}[pause]{ph='………………'}",
             tokenizer=kokoro.tokenizer,
             lang="en-us",
             pause_mode="manual",  # Manual mode with auto pauses

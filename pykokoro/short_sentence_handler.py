@@ -62,10 +62,7 @@ class ShortSentenceConfig:
             True if pause-surrounding should be applied
             (sentence is short AND single-word)
         """
-        return (
-            self.enabled
-            and phoneme_length < self.min_phoneme_length
-        )
+        return self.enabled and phoneme_length < self.min_phoneme_length
 
     def contains_only_punctuation(self, phoneme: str) -> bool:
         """Check if segment contains only pounctions.

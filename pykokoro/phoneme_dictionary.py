@@ -168,7 +168,7 @@ class PhonemeDictionary:
             # Use a replacement function to preserve the original case
             def replace_func(match: re.Match[str], p: str = phoneme) -> str:
                 matched_word = match.group(0)
-                return f"[{matched_word}]\\{{ph=\"{p}\"}}"
+                return f'[{matched_word}]\\{{ph="{p}"}}'
 
             result = re.sub(pattern, replace_func, result, flags=flags)
 

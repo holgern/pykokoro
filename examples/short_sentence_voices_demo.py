@@ -205,10 +205,7 @@ def main():
 
     print("\nUsage:")
     print("  # Custom configuration")
-    print(
-        "  config = ShortSentenceConfig("
-        "min_phoneme_length=15 )"
-    )
+    print("  config = ShortSentenceConfig(" "min_phoneme_length=15 )")
     print("  kokoro = Kokoro(short_sentence_config=config)")
     print()
     print("  # Disable short sentence handling")
