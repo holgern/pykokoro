@@ -51,6 +51,8 @@ class SSMDMetadata:
         voice_language: Voice language attribute (e.g., "en-US", "fr-FR")
         voice_gender: Voice gender attribute ("male", "female", "neutral")
         voice_variant: Voice variant number for multi-variant voices
+        audio_src: Audio file source URL or path (for audio segments)
+        audio_alt_text: Fallback text if audio cannot be played
     """
 
     emphasis: str | None = None
@@ -68,6 +70,8 @@ class SSMDMetadata:
     voice_language: str | None = None
     voice_gender: str | None = None
     voice_variant: str | None = None
+    audio_src: str | None = None
+    audio_alt_text: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -87,6 +91,8 @@ class SSMDMetadata:
             "voice_language": self.voice_language,
             "voice_gender": self.voice_gender,
             "voice_variant": self.voice_variant,
+            "audio_src": self.audio_src,
+            "audio_alt_text": self.audio_alt_text,
         }
 
 
@@ -99,12 +105,14 @@ class SSMDSegment:
         pause_before: Pause duration before this segment in seconds (e.g., for headings)
         pause_after: Pause duration after this segment in seconds
         metadata: SSMD metadata (emphasis, prosody, etc.)
+        paragraph: Paragraph index this segment belongs to
     """
 
     text: str
     pause_before: float = 0.0
     pause_after: float = 0.0
     metadata: SSMDMetadata = field(default_factory=SSMDMetadata)
+    paragraph: int = 0
 
 
 def has_ssmd_markup(text: str) -> bool:
@@ -206,10 +214,16 @@ def _map_ssmd_segment_to_metadata(
 
     metadata = SSMDMetadata()
 
-    # Handle text transformations (priority: say-as > substitution > phoneme > original)
+    # Handle text transformations (priority: audio > say-as > substitution > phoneme > original)
     text = ssmd_seg.text
 
-    if ssmd_seg.say_as:
+    # Audio segments - playback audio file instead of synthesizing
+    if ssmd_seg.audio:
+        metadata.audio_src = ssmd_seg.audio.src
+        metadata.audio_alt_text = ssmd_seg.audio.alt_text
+        # Use alt_text for phonemization fallback
+        text = ssmd_seg.audio.alt_text or ""
+    elif ssmd_seg.say_as:
         # Store say-as metadata
         metadata.say_as_interpret = ssmd_seg.say_as.interpret_as
         metadata.say_as_format = ssmd_seg.say_as.format
@@ -227,7 +241,7 @@ def _map_ssmd_segment_to_metadata(
         text = ssmd_seg.substitution
         metadata.substitution = ssmd_seg.substitution
     elif ssmd_seg.phoneme:
-        # Access the phoneme string from PhonemeAttrs object
+        # Access phoneme string from PhonemeAttrs object
         # ssmd_seg.phoneme has .ph (phoneme string) and .alphabet ("ipa" or "x-sampa")
         metadata.phonemes = ssmd_seg.phoneme.ph
         # Keep original text for display, phoneme will override during synthesis
@@ -270,6 +284,10 @@ def parse_ssmd_to_segments(
     pause_clause: float = 0.3,
     pause_sentence: float = 0.6,
     pause_paragraph: float = 1.0,
+    model_size: str | None = None,
+    use_spacy: bool | None = None,
+    heading_levels: dict | None = None,
+    parse_yaml_header: bool = False,
 ) -> tuple[float, list[SSMDSegment]]:
     """Parse SSMD markup and convert to segments with metadata.
 
@@ -281,8 +299,9 @@ def parse_ssmd_to_segments(
     - Pause durations from break markers (...c, ...s, ...p, ...500ms)
     - Metadata (emphasis, prosody, language, phonemes, voice, etc.)
     - Voice markers (@voice: name) with proper propagation
-    - Text transformations (say-as, substitution, phoneme)
+    - Text transformations (say-as, substitution, phoneme, audio)
     - Markers (@marker_name)
+    - Audio segments ([audio](file.mp3))
 
     Args:
         text: Input text with SSMD markup
@@ -293,6 +312,10 @@ def parse_ssmd_to_segments(
         pause_clause: Duration for 'medium' break strength in seconds
         pause_sentence: Duration for 'strong' break strength in seconds
         pause_paragraph: Duration for 'x-strong' break strength in seconds
+        model_size: Size of spacy model for sentence detection ('sm', 'md', 'lg')
+        use_spacy: Force use of spacy for sentence detection
+        heading_levels: Custom heading configurations (overrides default)
+        parse_yaml_header: If True, parse YAML front matter and apply config
 
     Returns:
         Tuple of (initial_pause, segments) where segments is a list of SSMDSegment
@@ -313,11 +336,15 @@ def parse_ssmd_to_segments(
     caps.heading_emphasis = True
 
     sentences = parse_sentences(
-        text,
+        ssmd_text=text,
         sentence_detection=True,
         include_default_voice=True,
         language=lang,
         capabilities=caps,
+        model_size=model_size,
+        use_spacy=use_spacy,
+        heading_levels=heading_levels,
+        parse_yaml_header=parse_yaml_header,
     )
 
     if not sentences:
@@ -325,6 +352,9 @@ def parse_ssmd_to_segments(
 
     pykokoro_segments = []
     initial_pause = 0.0
+
+    # Track paragraph index for proper segmentation
+    paragraph_idx = 0
 
     for sentence in sentences:
         # Extract voice context for this sentence
@@ -337,7 +367,7 @@ def parse_ssmd_to_segments(
                 str(sentence.voice.variant) if sentence.voice.variant else None
             )
 
-        # Process each segment in the sentence
+        # Process each segment in sentence
         for seg_idx, ssmd_seg in enumerate(sentence.segments):
             # Determine language for this segment
             # Priority: segment lang > sentence lang > default
@@ -401,15 +431,20 @@ def parse_ssmd_to_segments(
                 )
                 pause_after = max(pause_after, sentence_pause)
 
-            # Create PyKokoro SSMDSegment
+            # Create PyKokoro SSMDSegment with paragraph tracking
             pykokoro_segments.append(
                 SSMDSegment(
                     text=seg_text,
                     pause_before=pause_before,
                     pause_after=pause_after,
                     metadata=metadata,
+                    paragraph=paragraph_idx,
                 )
             )
+
+        # Increment paragraph index when we hit a paragraph boundary
+        if sentence.is_paragraph_end:
+            paragraph_idx += 1
 
     return initial_pause, pykokoro_segments
 
@@ -459,12 +494,17 @@ def ssmd_segments_to_phoneme_segments(
         lang = ssmd_seg.metadata.language or default_lang
 
         # Get phonemes - use explicit if provided, otherwise phonemize
-        if ssmd_seg.metadata.phonemes:
+        # Audio segments don't need phonemization (they play pre-recorded audio)
+        if ssmd_seg.metadata.audio_src:
+            # Audio segment - use alt text for display, skip phonemization
+            phonemes = ""
+            tokens = []
+        elif ssmd_seg.metadata.phonemes:
             # Use explicit phoneme override
             phonemes = ssmd_seg.metadata.phonemes
             tokens = tokenizer.tokenize(phonemes)
         else:
-            # Phonemize the text
+            # Phonemize text
             phonemes = tokenizer.phonemize(ssmd_seg.text, lang=lang)
             tokens = tokenizer.tokenize(phonemes)
 
@@ -474,7 +514,7 @@ def ssmd_segments_to_phoneme_segments(
             phonemes=phonemes,
             tokens=tokens,
             lang=lang,
-            paragraph=paragraph,
+            paragraph=ssmd_seg.paragraph,  # Use paragraph from SSMD segment
             sentence=sentence_start + i,
             pause_before=ssmd_seg.pause_before,
             pause_after=ssmd_seg.pause_after,

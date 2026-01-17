@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kokorog2p import (
+    ANNOTATION_REGEX,
     N_TOKENS,
+    SPEECHMARKDOWN_ATTR_REGEX,
     BackendType,
     GToken,
     filter_for_kokoro,
@@ -20,10 +22,8 @@ from kokorog2p import (
     get_kokoro_vocab,
     ids_to_phonemes,
     phonemes_to_ids,
-    phonemize_with_ssmd,
     phonemize_with_speechmarkdown,
-    ANNOTATION_REGEX,
-    SPEECHMARKDOWN_ATTR_REGEX,
+    phonemize_with_ssmd,
     validate_for_kokoro,
 )
 from kokorog2p.base import G2PBase
@@ -134,7 +134,8 @@ class Tokenizer:
     Mixed-Language Support:
         Enable automatic language detection for text containing multiple languages
         by setting TokenizerConfig.use_mixed_language=True and specifying
-        allowed_languages. This uses kokorog2p's MixedLanguageG2P backend.
+        allowed_languages. This uses kokorog2p's preprocess_multilang to annotate
+        text with language tags before phonemization.
 
     Args:
         espeak_config: Deprecated, kept for backward compatibility
@@ -263,47 +264,25 @@ class Tokenizer:
         """Delegate to MixedLanguageHandler.validate_config (backward compatibility)."""
         self._mixed_language_handler.validate_config()
 
-    def _get_mixed_language_cache_key(self) -> str:
-        """Delegate to MixedLanguageHandler.get_cache_key (backward compatibility)."""
-        return self._mixed_language_handler.get_cache_key()
-
-    def invalidate_mixed_language_cache(self) -> None:
-        """Delegate to MixedLanguageHandler.invalidate_cache."""
-        self._mixed_language_handler.invalidate_cache()
-
     def _get_g2p(self, lang: str) -> G2PBase:
         """Get or create a G2P instance for the given language.
 
-        If mixed-language mode is enabled, returns a MixedLanguageG2P instance.
-        Otherwise, returns a standard single-language G2P instance.
+        If mixed-language mode is enabled, preprocessing is applied in the
+        phonemize method before calling this G2P instance.
 
         Args:
             lang: Language code (e.g., 'en-us', 'en-gb', 'de', 'fr-fr')
 
         Returns:
-            G2P instance for the language (or MixedLanguageG2P if enabled)
+            G2P instance for the language
 
         Raises:
             ValueError: If mixed-language config is invalid
         """
-        # Try to get mixed-language G2P if enabled
-        mixed_g2p = self._mixed_language_handler.get_or_create_g2p(
-            lang=lang,
-            use_espeak_fallback=self.config.use_espeak_fallback,
-            use_goruut_fallback=self.config.use_goruut_fallback,
-            use_spacy=self.config.use_spacy,
-        )
+        # Validate mixed-language configuration if enabled
+        if self.config.use_mixed_language:
+            self._validate_mixed_language_config()
 
-        # If mixed-language G2P was created, cache it and return it
-        if mixed_g2p is not None:
-            cache_key = self._mixed_language_handler.get_cache_key()
-            if cache_key:
-                # Share the cache with the handler
-                self._g2p_cache[cache_key] = mixed_g2p
-                self._mixed_language_handler._g2p_cache = self._g2p_cache
-            return mixed_g2p
-
-        # Standard single-language G2P
         if lang not in self._g2p_cache:
             # Map language to kokorog2p format
             from .constants import SUPPORTED_LANGUAGES
@@ -386,6 +365,12 @@ class Tokenizer:
         if not text:
             return ""
 
+        # Preprocess for mixed-language detection (before custom dictionary)
+        if self.config.use_mixed_language:
+            text = self._mixed_language_handler.preprocess_text(
+                text, default_language=lang
+            )
+
         # Apply custom phoneme dictionary first
         processed_text = self._apply_phoneme_dictionary(text)
 
@@ -403,7 +388,9 @@ class Tokenizer:
                 # Fallback to standard phonemization
                 g2p = self._get_g2p(lang)
                 phonemes = g2p.phonemize(text)
-        elif SPEECHMARKDOWN_ATTR_REGEX.search(processed_text) and processed_text != text:
+        elif (
+            SPEECHMARKDOWN_ATTR_REGEX.search(processed_text) and processed_text != text
+        ):
             # Text contains markdown phoneme annotations
             try:
                 phonemes = phonemize_with_speechmarkdown(processed_text, lang)
@@ -431,6 +418,8 @@ class Tokenizer:
             kokorog2p_lang = SUPPORTED_LANGUAGES.get(
                 lang.lower(), SUPPORTED_LANGUAGES.get("en-us")
             )
+            if kokorog2p_lang is None:
+                kokorog2p_lang = "en-us"
             # Retry with dictionaries disabled (pure espeak mode)
             g2p_fallback = get_g2p(
                 language=kokorog2p_lang,

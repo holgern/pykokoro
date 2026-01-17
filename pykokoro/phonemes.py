@@ -548,7 +548,7 @@ def text_to_phoneme_segments(
     pause_paragraph: float = 1.0,
     pause_variance: float = 0.05,
     rng: np.random.Generator | None = None,
-    short_sentence_config: "ShortSentenceConfig | None" = None,
+    short_sentence_config: ShortSentenceConfig | None = None,
 ) -> list[PhonemeSegment]:
     """Convert text to list of PhonemeSegment with pauses populated.
 

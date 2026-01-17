@@ -9,8 +9,9 @@ for text containing multiple languages. This is useful for:
 - Code snippets in documentation
 - Multilingual content
 
-The MixedLanguageG2P feature uses lingua-language-detector to automatically
-detect language boundaries and route text to the appropriate phonemizer.
+The mixed-language feature uses kokorog2p's preprocess_multilang and
+lingua-language-detector to automatically detect language boundaries and
+annotate text with language tags for proper phonemization.
 
 Usage:
     python examples/mixed_language.py
@@ -19,7 +20,7 @@ Output:
     mixed_language_demo.wav - Generated mixed-language speech
 
 Requirements:
-    - kokorog2p with mixed-language support
+    - kokorog2p with preprocess_multilang support
     - lingua-language-detector (optional, for detection)
 
 Note:
@@ -223,7 +224,7 @@ def main():
     print("  - mixed_language_confidence: Detection threshold (0.0-1.0, default 0.7)")
     print()
     print("This feature requires:")
-    print("  - kokorog2p with MixedLanguageG2P support")
+    print("  - kokorog2p with preprocess_multilang support")
     print("  - lingua-language-detector (pip install lingua-language-detector)")
     print()
 
