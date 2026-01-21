@@ -17,6 +17,7 @@ Available Spanish voices:
 """
 
 import soundfile as sf
+
 from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.generation_config import GenerationConfig
 

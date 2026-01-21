@@ -23,6 +23,7 @@ import time
 from typing import Any
 
 import soundfile as sf
+
 from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.generation_config import GenerationConfig
 
@@ -366,8 +367,8 @@ def main():
         print()
         print("pipe = KokoroPipeline(")
         print("    PipelineConfig(")
-        print("        voice=\"af_bella\",")
-        print("        generation=GenerationConfig(lang=\"en-us\", speed=1.0),")
+        print('        voice="af_bella",')
+        print('        generation=GenerationConfig(lang="en-us", speed=1.0),')
         print('        provider="cpu",')
         print("        provider_options={")
         for key, value in optimal_config.items():

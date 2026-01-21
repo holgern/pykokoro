@@ -13,6 +13,7 @@ Output:
 """
 
 import soundfile as sf
+
 from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.generation_config import GenerationConfig
 
@@ -69,9 +70,7 @@ def main():
     """Generate English speech testing contractions and past tense forms."""
     print("Initializing TTS engine...")
     pipe = KokoroPipeline(
-        PipelineConfig(
-            voice=VOICE, generation=GenerationConfig(lang=LANG, speed=1.0)
-        )
+        PipelineConfig(voice=VOICE, generation=GenerationConfig(lang=LANG, speed=1.0))
     )
 
     print("Testing contractions: 've (have), 's (has/is), 'd (had/would)")

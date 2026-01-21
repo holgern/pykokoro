@@ -254,8 +254,8 @@ class KokoroG2PAdapter(G2PAdapter):
 
     def _resolve_phoneme_override(
         self,
-        spans: list["AnnotationSpan"],
-        segment: "Segment",
+        spans: list[AnnotationSpan],
+        segment: Segment,
         warnings: list[str],
     ) -> str | None:
         phoneme_override = None

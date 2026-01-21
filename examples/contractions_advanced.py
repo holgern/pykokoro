@@ -19,8 +19,6 @@ Output:
 
 import soundfile as sf
 
-import pykokoro
-
 # Extensive text with lots of direct speech and contractions
 TEXT = """
 # The Conversation

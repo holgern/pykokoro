@@ -20,6 +20,7 @@ For a full list, see: https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh
 """
 
 import soundfile as sf
+
 from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.generation_config import GenerationConfig
 

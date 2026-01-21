@@ -14,6 +14,7 @@ Output:
 """
 
 import soundfile as sf
+
 from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.generation_config import GenerationConfig
 
@@ -99,7 +100,10 @@ def main():
     print("   → SSMD breaks automatically detected and processed")
     print()
     print("3. Manual pause control (this example):")
-    print("   pipe.run(text, voice='af_sarah', generation=GenerationConfig(pause_mode='manual'))")
+    print(
+        "   pipe.run(text, voice='af_sarah', "
+        "generation=GenerationConfig(pause_mode='manual'))"
+    )
     print("   → PyKokoro controls pauses precisely at linguistic boundaries")
     print()
 
