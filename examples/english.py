@@ -25,7 +25,9 @@ Available English voices:
 
 import soundfile as sf
 
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
+from pykokoro.tokenizer import Tokenizer
 
 # Quote about technology and the future
 TEXT = (
@@ -42,7 +44,8 @@ LANG = "en-us"  # American English
 def main():
     """Generate English speech audio."""
     print("Initializing TTS engine...")
-    kokoro = pykokoro.Kokoro()
+    generation = GenerationConfig(lang=LANG, speed=1.0)
+    pipe = KokoroPipeline(PipelineConfig(voice=VOICE, generation=generation))
 
     # Example 1: Generate from text
     print("\n=== Example 1: Text-to-Speech ===")
@@ -51,12 +54,8 @@ def main():
     print(f"Language: {LANG}")
 
     print("\nGenerating audio from text...")
-    samples, sample_rate = kokoro.create(
-        TEXT,
-        voice=VOICE,
-        speed=1.0,
-        lang=LANG,
-    )
+    res = pipe.run(TEXT)
+    samples, sample_rate = res.audio, res.sample_rate
 
     output_file = "english_demo.wav"
     sf.write(output_file, samples, sample_rate)
@@ -68,16 +67,19 @@ def main():
     # Example 2: Generate from phonemes directly
     print("\n=== Example 2: Phonemes-to-Speech ===")
     # First, convert text to phonemes to show the phoneme representation
-    phonemes = kokoro.phonemize(TEXT, lang=LANG)
+    tokenizer = Tokenizer()
+    phonemes = tokenizer.phonemize(TEXT, lang=LANG)
     print(f"Phonemes: {phonemes[:100]}...")  # Show first 100 chars
     print(f"Phoneme length: {len(phonemes)} characters")
 
     print("\nGenerating audio from phonemes...")
-    samples_from_phonemes, sample_rate = kokoro.create(
+    res_phonemes = pipe.run(
         phonemes,
-        voice=VOICE,
-        speed=1.0,
-        is_phonemes=True,  # Important: tell the engine we're passing phonemes
+        generation=GenerationConfig(lang=LANG, speed=1.0, is_phonemes=True),
+    )
+    samples_from_phonemes, sample_rate = (
+        res_phonemes.audio,
+        res_phonemes.sample_rate,
     )
 
     output_file_phonemes = "english_phonemes_demo.wav"
@@ -91,24 +93,17 @@ def main():
     print("\n=== Example 3: Custom Phonemes with Markdown ===")
     # You can also use markdown notation like in the kokoro-onnx example:
     # [word](/phoneme/)
-    custom_text = "[PyKokoro](/paɪkəkˈoʊɹoʊ/) is a Python library for text-to-speech."
-
-    # Phonemize the custom text (markdown notation will be processed)
-    custom_phonemes = kokoro.phonemize(custom_text, lang=LANG)
-    print(f"Custom phonemes: {custom_phonemes}")
-
-    samples_custom, sample_rate = kokoro.create(
-        custom_phonemes,
-        voice=VOICE,
-        speed=1.0,
-        is_phonemes=True,
+    custom_text = (
+        '[PyKokoro]{ph="paɪkəkˈoʊɹoʊ"} is a Python library for text-to-speech.'
     )
+
+    samples_custom = pipe.run(custom_text).audio
+    sample_rate = res.sample_rate
 
     output_file_custom = "english_custom_demo.wav"
     sf.write(output_file_custom, samples_custom, sample_rate)
     print(f"Created {output_file_custom}")
 
-    kokoro.close()
     print("\nDone!")
 
 

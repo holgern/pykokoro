@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import logging
 
-from pykokoro import Kokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 from pykokoro.short_sentence_handler import ShortSentenceConfig
 
 
@@ -60,15 +61,21 @@ def analyze_short_sentence(text: str = "Hi!", voice: str = "af_sarah"):
     # Create Kokoro with short sentence handling and DEBUG logging
     config = ShortSentenceConfig(
         enabled=True,
-        context_sentence="Two. ",
-        cut_offset_ms=2,
         min_phoneme_length=10,
+        phoneme_pretext="—",
     )
 
-    kokoro = Kokoro(short_sentence_config=config)
+    pipe = KokoroPipeline(
+        PipelineConfig(
+            voice=voice,
+            generation=GenerationConfig(lang="en-us", speed=1.0),
+            short_sentence_config=config,
+        )
+    )
 
     # Generate audio - this will trigger the boundary detection
-    audio, sample_rate = kokoro.create(text, voice=voice, speed=1.0, lang="en-us")
+    res = pipe.run(text)
+    audio, sample_rate = res.audio, res.sample_rate
 
     duration = len(audio) / sample_rate
 

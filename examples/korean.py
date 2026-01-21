@@ -29,8 +29,9 @@ import os
 
 import soundfile as sf
 
-import pykokoro
-from pykokoro import VoiceBlend
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
+from pykokoro.voice_manager import VoiceBlend
 
 # Enable phoneme debugging to see what phonemes are generated
 os.environ["PYKOKORO_DEBUG_PHONEMES"] = "1"
@@ -78,7 +79,12 @@ LANG = "ko"  # Korean language code
 def main():
     """Generate Korean speech using phonemization."""
     print("Initializing TTS engine...")
-    kokoro = pykokoro.Kokoro()
+    pipe = KokoroPipeline(
+        PipelineConfig(
+            voice=VoiceBlend.parse(BLEND),
+            generation=GenerationConfig(lang=LANG, speed=1.0),
+        )
+    )
 
     print("=" * 60)
     print("NOTE: Kokoro was NOT explicitly trained on Korean.")
@@ -91,12 +97,8 @@ def main():
     print(f"Language: {LANG}")
 
     print("\nGenerating audio...")
-    samples, sample_rate = kokoro.create(
-        TEXT,
-        voice=VoiceBlend.parse(BLEND),
-        speed=1.0,
-        lang=LANG,
-    )
+    res = pipe.run(TEXT)
+    samples, sample_rate = res.audio, res.sample_rate
 
     output_file = "korean_demo.wav"
     sf.write(output_file, samples, sample_rate)
@@ -104,8 +106,6 @@ def main():
     duration = len(samples) / sample_rate
     print(f"\nCreated {output_file}")
     print(f"Duration: {duration:.2f} seconds")
-
-    kokoro.close()
 
 
 if __name__ == "__main__":

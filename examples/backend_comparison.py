@@ -24,10 +24,9 @@ Output:
 
 import numpy as np
 import soundfile as sf
-
-import pykokoro
-from pykokoro import TokenizerConfig
-
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
+from pykokoro.tokenizer import Tokenizer, TokenizerConfig
 # Phonetically rich English text with comprehensive coverage
 # Includes: quotes, dashes, ellipses, abbreviations, numbers, punctuation
 RICH_TEXT = """
@@ -98,6 +97,10 @@ def main():
     print(f"Voice: {VOICE}")
     print(f"Language: {LANG}")
 
+    pipe = KokoroPipeline(
+        PipelineConfig(voice=VOICE, generation=GenerationConfig(lang=LANG))
+    )
+
     # Test each backend
     all_samples = []
     sample_rate_value = 24000
@@ -140,7 +143,7 @@ def main():
                 print(f"  use_goruut_fallback: {config.use_goruut_fallback}")
 
                 # Create tokenizer
-                tokenizer = pykokoro.Tokenizer(config=config)
+                tokenizer = Tokenizer(config=config)
 
                 # Phonemize
                 print("\nPhonemizing...")
@@ -152,25 +155,22 @@ def main():
                 tokens = tokenizer.tokenize(phonemes)
                 print(f"Tokens: {len(tokens)}")
 
-            # Create Kokoro instance for audio generation
-            kokoro = pykokoro.Kokoro()
-
             # Generate announcement
             announcement = f"Backend: {backend_name}"
             print(f"\nGenerating announcement: {announcement}")
-            filler_samples, sample_rate_value = kokoro.create(
-                announcement,
-                voice=VOICE,
-                lang=LANG,
+            filler_res = pipe.run(announcement)
+            filler_samples, sample_rate_value = (
+                filler_res.audio,
+                filler_res.sample_rate,
             )
 
             # Generate audio from phonemes
             print("Generating audio from phonemes...")
-            samples, sample_rate_value = kokoro.create(
+            samples_res = pipe.run(
                 phonemes,
-                voice=VOICE,
-                is_phonemes=True,
+                generation=GenerationConfig(lang=LANG, is_phonemes=True),
             )
+            samples, sample_rate_value = samples_res.audio, samples_res.sample_rate
 
             duration = len(samples) / sample_rate_value
             print(f"Duration: {duration:.2f}s")
@@ -192,8 +192,6 @@ def main():
                     "success": True,
                 }
             )
-
-            kokoro.close()
 
         except ImportError as e:
             print(f"❌ ImportError: {e}")

@@ -13,14 +13,23 @@ Output:
 """
 
 import soundfile as sf
-
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
 
 def main():
     """Generate example with pauses and text splitting."""
     print("Initializing TTS engine...")
-    kokoro = pykokoro.Kokoro()
+    generation = GenerationConfig(
+        lang="en-us",
+        pause_mode="manual",
+        pause_clause=0.3,
+        pause_sentence=0.6,
+        pause_paragraph=1.2,
+        pause_variance=0.05,
+        random_seed=42,
+    )
+    pipe = KokoroPipeline(PipelineConfig(voice="af_sarah", generation=generation))
 
     # Long text with SSMD pauses and natural sentence breaks
     text = """
@@ -55,17 +64,8 @@ def main():
     print(f"Text length: {len(text)} characters")
     print()
 
-    samples, sample_rate = kokoro.create(
-        text,
-        voice="af_sarah",
-        lang="en-us",
-        pause_mode="manual",  # PyKokoro controls pauses precisely
-        pause_clause=0.3,
-        pause_sentence=0.6,
-        pause_paragraph=1.2,
-        pause_variance=0.05,  # Add natural variance (±100ms at 95% confidence)
-        random_seed=42,  # For reproducible results
-    )
+    res = pipe.run(text)
+    samples, sample_rate = res.audio, res.sample_rate
 
     output_file = "pauses_splitting_demo.wav"
     sf.write(output_file, samples, sample_rate)
@@ -113,8 +113,6 @@ def main():
     print(f"  Total pause time:         ~{total_pause_time:.1f}s")
     print(f"  Estimated speech time:    ~{duration - total_pause_time:.1f}s")
     print()
-
-    kokoro.close()
 
     print("Pause modes:")
     print("  • pause_mode='tts' (default) - TTS generates pauses naturally")

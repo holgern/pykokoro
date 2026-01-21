@@ -14,14 +14,23 @@ Output:
 """
 
 import soundfile as sf
-
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
 
 def main():
     """Generate example with automatic pauses."""
     print("Initializing TTS engine...")
-    kokoro = pykokoro.Kokoro()
+    generation = GenerationConfig(
+        lang="en-us",
+        pause_mode="manual",
+        pause_clause=0.25,
+        pause_sentence=0.5,
+        pause_paragraph=1.0,
+        pause_variance=0.05,
+        random_seed=None,
+    )
+    pipe = KokoroPipeline(PipelineConfig(voice="af_sarah", generation=generation))
 
     # Text with multiple paragraphs, sentences, and clauses
     # No manual pause markers needed - pauses are added automatically!
@@ -61,17 +70,8 @@ def main():
     print()
 
     # Generate with automatic pauses
-    samples, sample_rate = kokoro.create(
-        text,
-        voice="af_sarah",
-        lang="en-us",
-        pause_mode="manual",  # PyKokoro controls pauses precisely
-        pause_clause=0.25,  # Clause pauses (commas)
-        pause_sentence=0.5,  # Sentence pauses
-        pause_paragraph=1.0,  # Paragraph pauses
-        pause_variance=0.05,  # Natural variance (±100ms at 95%)
-        random_seed=None,  # Different pauses each time for natural variation
-    )
+    res = pipe.run(text)
+    samples, sample_rate = res.audio, res.sample_rate
 
     output_file = "automatic_pauses_demo.wav"
     sf.write(output_file, samples, sample_rate)
@@ -87,21 +87,19 @@ def main():
     print("=" * 70)
     print()
 
-    kokoro.close()
-
     print("Comparison with other approaches:")
     print()
     print("1. TTS-controlled pauses (default):")
-    print("   kokoro.create(text, voice='af_sarah')")
+    print("   pipe.run(text, voice='af_sarah')")
     print("   → TTS generates natural pauses automatically")
     print()
     print("2. SSMD break markers:")
     print("   text = 'Hello ...c world ...s How are you?'")
-    print("   kokoro.create(text, voice='af_sarah')")
+    print("   pipe.run(text, voice='af_sarah')")
     print("   → SSMD breaks automatically detected and processed")
     print()
     print("3. Manual pause control (this example):")
-    print("   kokoro.create(text, voice='af_sarah', pause_mode='manual')")
+    print("   pipe.run(text, voice='af_sarah', generation=GenerationConfig(pause_mode='manual'))")
     print("   → PyKokoro controls pauses precisely at linguistic boundaries")
     print()
 

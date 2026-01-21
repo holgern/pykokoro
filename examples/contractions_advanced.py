@@ -330,49 +330,16 @@ def main():
     print("Estimated duration: ~15-20 minutes")
 
     print("\nGenerating audio (this may take a while for long text)...")
-    if False:
-        print("Initializing TTS engine...")
-        kokoro = pykokoro.Kokoro()
-        samples, sample_rate = kokoro.create(
-            TEXT,
-            voice=VOICE,
-            speed=1.0,
-            lang=LANG,
-            pause_mode="tts",
-            # Use default pause_mode="tts" to let TTS generate natural prosody
-            # The SSMD pause markers (...p, ...s) in the text will still be honored
-        )
+    from pykokoro import KokoroPipeline, PipelineConfig
+    from pykokoro.generation_config import GenerationConfig
 
-        output_file = "contractions_advanced_demo.wav"
-        sf.write(output_file, samples, sample_rate)
-        kokoro.close()
-    elif True:
-        from pykokoro import KokoroPipeline, PipelineConfig
-
-        # pipe = KokoroPipeline(PipelineConfig(voice=VOICE, mode="modular"))
-        pipe = KokoroPipeline(PipelineConfig(voice=VOICE, mode="compat"))
-        res = pipe.run(TEXT, lang=LANG)
-        samples = res.audio
-        sample_rate = res.sample_rate
-        output_file = "contractions_advanced_demo.wav"
-        sf.write(output_file, samples, sample_rate)
-
-    else:
-        from misaki import en, espeak
-
-        # Misaki G2P with espeak-ng fallback
-        fallback = espeak.EspeakFallback(british=False)
-        g2p = en.G2P(trf=False, british=False, fallback=fallback)
-        phonemes, _ = g2p(TEXT)
-        samples, sample_rate = kokoro.create(
-            phonemes,
-            voice=VOICE,
-            speed=1.0,
-            is_phonemes=True,  # Important: tell the engine we're passing phonemes
-        )
-        output_file = "contractions_advanced_demo_misaki.wav"
-        sf.write(output_file, samples, sample_rate)
-        kokoro.close()
+    generation = GenerationConfig(lang=LANG, pause_mode="tts", speed=1.0)
+    pipe = KokoroPipeline(PipelineConfig(voice=VOICE, generation=generation))
+    res = pipe.run(TEXT)
+    samples = res.audio
+    sample_rate = res.sample_rate
+    output_file = "contractions_advanced_demo.wav"
+    sf.write(output_file, samples, sample_rate)
 
     duration = len(samples) / sample_rate
     print(f"\nCreated {output_file}")

@@ -141,7 +141,11 @@ class KokoroG2PAdapter(G2PAdapter):
                 phonemes = cached.get("phonemes", "")
                 tokens = cached.get("tokens", [])
             else:
-                if phoneme_override:
+                if generation.is_phonemes:
+                    phonemes = segment.text
+                    model_version = self._get_model_version(cfg)
+                    tokens = g2p.phonemes_to_ids(phonemes, model=model_version)
+                elif phoneme_override:
                     phonemes = phoneme_override
                     tokens = []
                 else:

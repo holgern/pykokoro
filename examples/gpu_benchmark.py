@@ -16,8 +16,8 @@ Output:
 import time
 
 import soundfile as sf
-
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
 # Test text - medium length to get meaningful timings
 TEXT = (
@@ -52,23 +52,28 @@ def benchmark_provider(
         print(f"{'=' * 60}")
 
         # Initialize with specific provider
-        kokoro = pykokoro.Kokoro(
-            provider=provider_name,  # type: ignore[arg-type]
-            provider_options=provider_options,
-            # Optional: Test with different model sources
-            # model_source="github",  # GitHub source
-            # model_variant="v1.0",  # English model
-            # model_quality="fp16",  # Use fp16 quality
+        pipe = KokoroPipeline(
+            PipelineConfig(
+                voice="af_bella",
+                provider=provider_name,  # type: ignore[arg-type]
+                provider_options=provider_options,
+                generation=GenerationConfig(lang="en-us", speed=1.0),
+                # Optional: Test with different model sources
+                # model_source="github",  # GitHub source
+                # model_variant="v1.0",  # English model
+                # model_quality="fp16",  # Use fp16 quality
+            )
         )
 
         # Warmup run (important for GPU providers)
         print("Running warmup...")
-        kokoro.create(TEXT[:100], voice="af_bella")
+        pipe.run(TEXT[:100])
 
         # Actual benchmark
         print("Running benchmark...")
         start = time.time()
-        samples, sr = kokoro.create(TEXT, voice="af_bella", speed=1.0)
+        res = pipe.run(TEXT)
+        samples, sr = res.audio, res.sample_rate
         elapsed = time.time() - start
 
         # Calculate metrics
@@ -77,8 +82,9 @@ def benchmark_provider(
 
         print(f"✓ Generated {audio_duration:.2f}s of audio in {elapsed:.2f}s")
         print(f"  Real-time factor: {rtf:.2f}x")
-        if kokoro._session:
-            print(f"  Actual providers: {kokoro._session.get_providers()}")
+        kokoro_backend = getattr(pipe.synth, "_kokoro", None)
+        if kokoro_backend and kokoro_backend._session:
+            print(f"  Actual providers: {kokoro_backend._session.get_providers()}")
 
         # Save sample output
         suffix = f"_{list(provider_options.keys())[0]}" if provider_options else ""
@@ -86,7 +92,6 @@ def benchmark_provider(
         sf.write(output_file, samples, sr)
         print(f"  Saved sample to: {output_file}")
 
-        kokoro.close()
         return elapsed, rtf
 
     except Exception as e:

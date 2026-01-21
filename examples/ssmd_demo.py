@@ -25,8 +25,8 @@ Features demonstrated:
 """
 
 import soundfile as sf
-
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
 # Story with comprehensive SSMD markup
 # Note: Using kokorog2p format [word](/phoneme/) instead of SSMD ph: syntax
@@ -85,7 +85,9 @@ def main():
     print("SSMD (Speech Synthesis Markdown) Demo")
     print("=" * 70)
 
-    kokoro = pykokoro.Kokoro()
+    pipe = KokoroPipeline(
+        PipelineConfig(voice=VOICE, generation=GenerationConfig(lang=LANG, speed=1.0))
+    )
 
     # Demo 1: English story with SSMD markup
     print("\n--- Demo 1: English Story with SSMD Markup ---")
@@ -97,12 +99,8 @@ def main():
     print("-" * 70)
 
     print("\nGenerating audio with SSMD markup...")
-    samples, sample_rate = kokoro.create(
-        story,
-        voice=VOICE,
-        speed=1.0,
-        lang=LANG,
-    )
+    res = pipe.run(story)
+    samples, sample_rate = res.audio, res.sample_rate
 
     output_file = "ssmd_story_demo.wav"
     sf.write(output_file, samples, sample_rate)
@@ -121,12 +119,12 @@ def main():
     print("-" * 70)
 
     print("\nGenerating audio with SSMD markup...")
-    samples_fr, sample_rate_fr = kokoro.create(
+    res_fr = pipe.run(
         french_story,
         voice=FRENCH_VOICE,
-        speed=1.0,
-        lang=FRENCH_LANG,
+        generation=GenerationConfig(lang=FRENCH_LANG, speed=1.0),
     )
+    samples_fr, sample_rate_fr = res_fr.audio, res_fr.sample_rate
 
     output_file_fr = "ssmd_french_story_demo.wav"
     sf.write(output_file_fr, samples_fr, sample_rate_fr)
@@ -148,12 +146,7 @@ Custom 2 second pause ...2s like this.
     print(break_examples)
 
     print("\nGenerating audio with various breaks...")
-    samples_breaks, _ = kokoro.create(
-        break_examples,
-        voice=VOICE,
-        speed=1.0,
-        lang=LANG,
-    )
+    samples_breaks = pipe.run(break_examples).audio
 
     output_file_breaks = "ssmd_breaks_demo.wav"
     sf.write(output_file_breaks, samples_breaks, sample_rate)
@@ -170,12 +163,7 @@ The formula [H2O](sub: water) is essential for life.
     print(emphasis_text)
 
     print("\nGenerating audio with emphasis...")
-    samples_emphasis, _ = kokoro.create(
-        emphasis_text,
-        voice=VOICE,
-        speed=1.0,
-        lang=LANG,
-    )
+    samples_emphasis = pipe.run(emphasis_text).audio
 
     output_file_emphasis = "ssmd_emphasis_demo.wav"
     sf.write(output_file_emphasis, samples_emphasis, sample_rate)
@@ -192,19 +180,12 @@ The formula [H2O](sub: water) is essential for life.
     print(voice_switching_text)
 
     print("\nGenerating audio with automatic voice switching...")
-    samples_voices, _ = kokoro.create(
-        voice_switching_text,
-        voice=VOICE,  # Default voice
-        speed=1.0,
-        lang=LANG,
-    )
+    samples_voices = pipe.run(voice_switching_text).audio
 
     output_file_voices = "ssmd_voice_switching_demo.wav"
     sf.write(output_file_voices, samples_voices, sample_rate)
     print(f"Created: {output_file_voices}")
     print("Note: Each segment automatically uses its annotated voice!")
-
-    kokoro.close()
 
     print("\n" + "=" * 70)
     print("SSMD Demo Complete!")
@@ -213,12 +194,11 @@ The formula [H2O](sub: water) is essential for life.
     print("  ✓ Break markers: ...c ...s ...p ...500ms ...2s")
     print("  ✓ Emphasis: *moderate* **strong**")
     print("  ✓ Language switching: [text](lang-code)")
-    print("  ✓ Phonetic pronunciation: [word](/phoneme/) (kokorog2p format)")
+    print("  ✓ Phonetic pronunciation: [word](ph: phoneme)")
     print("  ✓ Substitution: [text](sub: replacement)")
     print("  ✓ Markers: @marker_name")
     print("  ✓ Voice switching: [text](voice: name) - NEW!")
-    print("\nNote: PyKokoro uses kokorog2p format [word](/phoneme/) for")
-    print("      phonetic pronunciation, not SSMD's [word](ph: phoneme) syntax.")
+    print("\nNote: PyKokoro uses SSMD [word](ph: phoneme) syntax for phonemes.")
     print("\nVoice switching happens automatically per segment!")
     print("Each [text](voice: name) annotation switches to that voice.")
 

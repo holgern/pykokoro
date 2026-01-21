@@ -16,7 +16,9 @@ Output:
 import numpy as np
 import soundfile as sf
 
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
+from pykokoro.tokenizer import Tokenizer
 
 # Six variations with different dash styles
 # Base sentence: A complex sentence that can accommodate multiple dashes
@@ -66,7 +68,10 @@ LANG = "en-us"  # American English
 def main():
     """Generate speech with different dash variations."""
     print("Initializing TTS engine...")
-    kokoro = pykokoro.Kokoro()
+    pipe = KokoroPipeline(
+        PipelineConfig(voice=VOICE, generation=GenerationConfig(lang=LANG, speed=1.0))
+    )
+    tokenizer = Tokenizer()
 
     print(f"Voice: {VOICE}")
     print(f"Language: {LANG}")
@@ -83,27 +88,20 @@ def main():
         filler_text = f"Variation {i}, {variation_name.replace('_', ' ')}."
         print(f"Filler: {filler_text}")
 
-        filler_samples, sample_rate_value = kokoro.create(
-            filler_text,
-            voice=VOICE,
-            speed=1.0,
-            lang=LANG,
-            # Use default pause_mode="tts" for natural prosody
+        filler_res = pipe.run(filler_text)
+        filler_samples, sample_rate_value = (
+            filler_res.audio,
+            filler_res.sample_rate,
         )
 
         # Convert text to phonemes
         print("Converting to phonemes...")
-        phonemes = kokoro.phonemize(text, lang=LANG)
+        phonemes = tokenizer.phonemize(text, lang=LANG)
         print(f"Phonemes: {phonemes}")
 
         print("Generating audio...")
-        samples, sample_rate_value = kokoro.create(
-            text,
-            voice=VOICE,
-            speed=1.0,
-            lang=LANG,
-            # Use default pause_mode="tts" for natural prosody
-        )
+        samples_res = pipe.run(text)
+        samples, sample_rate_value = samples_res.audio, samples_res.sample_rate
 
         duration = len(samples) / sample_rate_value
         print(f"Duration: {duration:.2f} seconds\n")
@@ -138,7 +136,6 @@ def main():
     print("  • Whether dashes are read aloud or treated as pauses")
     print()
 
-    kokoro.close()
     print("Done! Listen to the combined file to compare all dash variations.")
 
 

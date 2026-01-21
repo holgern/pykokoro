@@ -17,8 +17,8 @@ Available Hindi voices:
 """
 
 import soundfile as sf
-
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
 # Hindi wisdom about life and perseverance
 TEXT = (
@@ -33,19 +33,17 @@ LANG = "hi"  # Hindi
 def main():
     """Generate Hindi speech audio."""
     print("Initializing TTS engine...")
-    kokoro = pykokoro.Kokoro()
+    pipe = KokoroPipeline(
+        PipelineConfig(voice=VOICE, generation=GenerationConfig(lang=LANG, speed=1.0))
+    )
 
     print(f"Text: {TEXT}")
     print(f"Voice: {VOICE}")
     print(f"Language: {LANG}")
 
     print("\nGenerating audio...")
-    samples, sample_rate = kokoro.create(
-        TEXT,
-        voice=VOICE,
-        speed=1.0,
-        lang=LANG,
-    )
+    res = pipe.run(TEXT)
+    samples, sample_rate = res.audio, res.sample_rate
 
     output_file = "hindi_demo.wav"
     sf.write(output_file, samples, sample_rate)
@@ -53,8 +51,6 @@ def main():
     duration = len(samples) / sample_rate
     print(f"\nCreated {output_file}")
     print(f"Duration: {duration:.2f} seconds")
-
-    kokoro.close()
 
 
 if __name__ == "__main__":

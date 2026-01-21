@@ -23,8 +23,8 @@ import time
 from typing import Any
 
 import soundfile as sf
-
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
 # Test text - medium length to get meaningful timings
 TEXT = """
@@ -58,25 +58,29 @@ def benchmark_config(
     """
     try:
         # Initialize with specific configuration
-        kokoro = pykokoro.Kokoro(
-            provider="cpu",
-            provider_options=provider_options,
+        pipe = KokoroPipeline(
+            PipelineConfig(
+                voice="af_bella",
+                provider="cpu",
+                provider_options=provider_options,
+                generation=GenerationConfig(lang="en-us", speed=1.0),
+            )
         )
 
         # Warmup run
         if warmup:
-            kokoro.create(SHORT_TEXT, voice="af_bella")
+            pipe.run(SHORT_TEXT)
 
         # Actual benchmark
         start = time.time()
-        samples, sr = kokoro.create(text, voice="af_bella", speed=1.0)
+        res = pipe.run(text)
+        samples, sr = res.audio, res.sample_rate
         elapsed = time.time() - start
 
         # Calculate metrics
         audio_duration = len(samples) / sr
         rtf = elapsed / audio_duration  # Real-time factor
 
-        kokoro.close()
         return elapsed, rtf, len(samples)
 
     except Exception as e:
@@ -312,11 +316,18 @@ def test_combined_optimal():
         print(f"✓ {elapsed:.2f}s (RTF: {rtf:.2f}x)")
 
         # Save sample output
-        kokoro = pykokoro.Kokoro(provider="cpu", provider_options=optimal_config)
-        samples, sr = kokoro.create(TEXT, voice="af_bella")
+        pipe = KokoroPipeline(
+            PipelineConfig(
+                voice="af_bella",
+                provider="cpu",
+                provider_options=optimal_config,
+                generation=GenerationConfig(lang="en-us", speed=1.0),
+            )
+        )
+        res = pipe.run(TEXT)
+        samples, sr = res.audio, res.sample_rate
         sf.write("cpu_benchmark_optimal.wav", samples, sr)
         print("  Saved sample to: cpu_benchmark_optimal.wav")
-        kokoro.close()
 
         return optimal_config
 
@@ -350,19 +361,24 @@ def main():
     if optimal_config:
         print("\nRecommended CPU configuration:")
         print("```python")
-        print("import pykokoro")
+        print("from pykokoro import KokoroPipeline, PipelineConfig")
+        print("from pykokoro.generation_config import GenerationConfig")
         print()
-        print("kokoro = pykokoro.Kokoro(")
-        print('    provider="cpu",')
-        print("    provider_options={")
+        print("pipe = KokoroPipeline(")
+        print("    PipelineConfig(")
+        print("        voice=\"af_bella\",")
+        print("        generation=GenerationConfig(lang=\"en-us\", speed=1.0),")
+        print('        provider="cpu",')
+        print("        provider_options={")
         for key, value in optimal_config.items():
             if isinstance(value, bool):
-                print(f'        "{key}": {value},')
+                print(f'            "{key}": {value},')
             elif isinstance(value, int):
-                print(f'        "{key}": {value},')
+                print(f'            "{key}": {value},')
             else:
-                print(f'        "{key}": {repr(value)},')
-        print("    }")
+                print(f'            "{key}": {repr(value)},')
+        print("        }")
+        print("    )")
         print(")")
         print("```")
 

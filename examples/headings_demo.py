@@ -15,8 +15,8 @@ when heading_emphasis capability is enabled (on by default in PyKokoro).
 """
 
 import soundfile as sf
-
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
 # Sample document with multiple heading levels
 DOCUMENT_TEXT = """
@@ -64,12 +64,16 @@ def main():
     print("  ### Level 3: 50ms pauses (no emphasis)")
     print("\n" + "=" * 50)
 
-    # Initialize Kokoro
-    kokoro = pykokoro.Kokoro()
+    pipe = KokoroPipeline(
+        PipelineConfig(
+            voice="af_sarah", generation=GenerationConfig(lang="en-us", speed=1.0)
+        )
+    )
 
     # Generate audio with heading pauses
     print("\nGenerating audio...")
-    audio, sample_rate = kokoro.create(DOCUMENT_TEXT, voice="af_sarah")
+    res = pipe.run(DOCUMENT_TEXT)
+    audio, sample_rate = res.audio, res.sample_rate
 
     # Save to file
     output_file = "headings_demo.wav"
@@ -90,9 +94,6 @@ def main():
     # Total pause time: ~1.55 seconds
     print("\n  Estimated heading pauses: ~1.55 seconds")
     print("    (2 × Level 1 = 1.20s, 1 × Level 2 = 0.15s, 2 × Level 3 = 0.20s)")
-
-    # Clean up
-    kokoro.close()
 
     print("\n" + "=" * 50)
     print("Play the generated audio file to hear the heading pauses!")

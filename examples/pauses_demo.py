@@ -27,14 +27,18 @@ Output:
 """
 
 import soundfile as sf
-
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
 
 def main():
     """Generate example audio files with pauses."""
     print("Initializing TTS engine...")
-    kokoro = pykokoro.Kokoro()
+    pipe = KokoroPipeline(
+        PipelineConfig(
+            voice="af_sarah", generation=GenerationConfig(lang="en-us", speed=1.0)
+        )
+    )
 
     # Example 1: Basic SSMD pause markers
     print("\n" + "=" * 60)
@@ -46,11 +50,8 @@ def main():
     print(f"Text: {text1}")
     print("Pause markers: ...c = 0.3s, ...s = 0.6s, ...p = 1.0s")
 
-    samples, sample_rate = kokoro.create(
-        text1,
-        voice="am_michael",
-        lang="en-us",
-    )
+    res1 = pipe.run(text1, voice="am_michael")
+    samples, sample_rate = res1.audio, res1.sample_rate
 
     output1 = "example1_basic_pauses.wav"
     sf.write(output1, samples, sample_rate)
@@ -68,13 +69,18 @@ def main():
     print(f"Text: {text2}")
     print("Custom durations: ...c = 0.2s, ...s = 0.5s, ...p = 1.5s")
 
-    samples, sample_rate = kokoro.create(
+    res2 = pipe.run(
         text2,
         voice="af_sarah",
-        pause_clause=0.2,
-        pause_sentence=0.5,
-        pause_paragraph=1.5,
+        generation=GenerationConfig(
+            lang="en-us",
+            speed=1.0,
+            pause_clause=0.2,
+            pause_sentence=0.5,
+            pause_paragraph=1.5,
+        ),
     )
+    samples, sample_rate = res2.audio, res2.sample_rate
 
     output2 = "example2_custom_durations.wav"
     sf.write(output2, samples, sample_rate)
@@ -92,10 +98,8 @@ def main():
     print(f"Text: {text3}")
     print("Note: Pause marker at start creates silence before speech")
 
-    samples, sample_rate = kokoro.create(
-        text3,
-        voice="am_adam",
-    )
+    res3 = pipe.run(text3, voice="am_adam")
+    samples, sample_rate = res3.audio, res3.sample_rate
 
     output3 = "example3_leading_pause.wav"
     sf.write(output3, samples, sample_rate)
@@ -113,10 +117,8 @@ def main():
     print(f"Text: {text4}")
     print("Note: Consecutive pauses add together (1.0s + 0.6s = 1.6s)")
 
-    samples, sample_rate = kokoro.create(
-        text4,
-        voice="af_bella",
-    )
+    res4 = pipe.run(text4, voice="af_bella")
+    samples, sample_rate = res4.audio, res4.sample_rate
 
     output4 = "example4_consecutive_pauses.wav"
     sf.write(output4, samples, sample_rate)
@@ -134,18 +136,14 @@ def main():
     print(f"Text: {text5}")
     print("Note: Use ...500ms or ...2s for exact time pauses")
 
-    samples, sample_rate = kokoro.create(
-        text5,
-        voice="af_nicole",
-    )
+    res5 = pipe.run(text5, voice="af_nicole")
+    samples, sample_rate = res5.audio, res5.sample_rate
 
     output5 = "example5_custom_time_pauses.wav"
     sf.write(output5, samples, sample_rate)
     duration5 = len(samples) / sample_rate
     print(f"✓ Generated: {output5}")
     print(f"  Duration: {duration5:.2f}s")
-
-    kokoro.close()
 
     print("\n" + "=" * 60)
     print("All examples generated successfully!")

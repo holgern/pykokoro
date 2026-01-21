@@ -32,7 +32,8 @@ import logging
 
 import soundfile as sf
 
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 from pykokoro.tokenizer import Tokenizer, TokenizerConfig
 
 # Configure logging to see mixed-language detection in action
@@ -116,21 +117,21 @@ def demo_mixed_language(text: str, primary_lang: str, voice: str, output_file: s
 
         # Generate audio
         print("Generating audio...")
-        kokoro = pykokoro.Kokoro()
-        samples, sample_rate = kokoro.create(
-            text,
-            voice=voice,
-            speed=1.0,
-            lang=primary_lang,
+        pipe = KokoroPipeline(
+            PipelineConfig(
+                voice=voice,
+                generation=GenerationConfig(lang=primary_lang, speed=1.0),
+                tokenizer_config=config,
+            )
         )
+        res = pipe.run(text)
+        samples, sample_rate = res.audio, res.sample_rate
 
         # Save audio
         sf.write(output_file, samples, sample_rate)
         duration = len(samples) / sample_rate
         print(f"✓ Created {output_file}")
         print(f"  Duration: {duration:.2f} seconds")
-
-        kokoro.close()
 
     except ImportError as e:
         print("⚠ Warning: Mixed-language mode not available")

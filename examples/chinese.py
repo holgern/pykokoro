@@ -20,8 +20,8 @@ For a full list, see: https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh
 """
 
 import soundfile as sf
-
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
 # Chinese proverb: "Learning is like rowing upstream; not to advance is to drop back."
 TEXT = "学如逆水行舟，不进则退。知识就是力量，时间就是金钱。"
@@ -36,8 +36,14 @@ def main():
     # Use GitHub v1.1-zh model for proper Chinese support with Bopomofo phonemes
     # The model will automatically use the v1.1-zh vocabulary (178 tokens)
     # which includes Bopomofo characters needed for Chinese phonemization
-    kokoro = pykokoro.Kokoro(
-        model_source="github", model_variant="v1.1-zh", model_quality="fp32"
+    pipe = KokoroPipeline(
+        PipelineConfig(
+            voice=VOICE,
+            model_source="github",
+            model_variant="v1.1-zh",
+            model_quality="fp32",
+            generation=GenerationConfig(lang=LANG, speed=1.0),
+        )
     )
 
     print(f"Text: {TEXT}")
@@ -45,12 +51,8 @@ def main():
     print(f"Language: {LANG}")
 
     print("\nGenerating audio...")
-    samples, sample_rate = kokoro.create(
-        TEXT,
-        voice=VOICE,
-        speed=1.0,
-        lang=LANG,
-    )
+    res = pipe.run(TEXT)
+    samples, sample_rate = res.audio, res.sample_rate
 
     output_file = "chinese_demo.wav"
     sf.write(output_file, samples, sample_rate)
@@ -58,8 +60,6 @@ def main():
     duration = len(samples) / sample_rate
     print(f"\nCreated {output_file}")
     print(f"Duration: {duration:.2f} seconds")
-
-    kokoro.close()
 
 
 if __name__ == "__main__":

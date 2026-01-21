@@ -27,8 +27,10 @@ Output:
 import numpy as np
 import soundfile as sf
 
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 from pykokoro.short_sentence_handler import ShortSentenceConfig
+from pykokoro.tokenizer import Tokenizer
 
 # Enable debug logging to see detailed processing information
 # logging.basicConfig(
@@ -87,7 +89,6 @@ def print_separator(title: str) -> None:
 
 
 def test_sentence_with_config(
-    kokoro: pykokoro.Kokoro,
     voice: str,
     config: ShortSentenceConfig | None,
     config_name: str,
@@ -104,13 +105,19 @@ def test_sentence_with_config(
         Tuple of (audio samples, sample rate)
     """
     # Create a new Kokoro instance with the config
-    kokoro_test = pykokoro.Kokoro(short_sentence_config=config)
+    kokoro_test = KokoroPipeline(
+        PipelineConfig(
+            voice=voice,
+            generation=GenerationConfig(lang=LANG, speed=1.0),
+            short_sentence_config=config,
+        )
+    )
 
-    samples, sr = kokoro_test.create(TEST_SENTENCE, voice=voice, lang=LANG)
+    res = kokoro_test.run(TEST_SENTENCE)
+    samples, sr = res.audio, res.sample_rate
 
     print(f"  {config_name:25} -> {len(samples):6} samples ({len(samples) / sr:.3f}s)")
 
-    kokoro_test.close()
     return samples, sr
 
 
@@ -128,7 +135,10 @@ def main():
     # Initialize with default config
     print_separator("Testing Individual Sentences")
 
-    kokoro = pykokoro.Kokoro()
+    kokoro = KokoroPipeline(
+        PipelineConfig(voice=VOICE, generation=GenerationConfig(lang=LANG, speed=1.0))
+    )
+    tokenizer = Tokenizer()
 
     all_samples = []
     all_samples2 = []
@@ -137,16 +147,16 @@ def main():
     pause = np.zeros(int(sample_rate * 0.5), dtype=np.float32)
     # Add announcement and samples to output
     announcement = "With pretexting"
-    intro, _ = kokoro.create(announcement, voice=VOICE, lang=LANG)
+    intro = kokoro.run(announcement).audio
     all_samples.extend([intro, pause])
     # Add announcement and samples to output
     announcement = "Without pretexting"
-    intro2, _ = kokoro.create(announcement, voice=VOICE, lang=LANG)
+    intro2 = kokoro.run(announcement).audio
     all_samples2.extend([pause, intro2, pause])
 
     # Test each sentence with different configurations
     for voice in VOICES:
-        phoneme_count = len(kokoro.tokenizer.phonemize(TEST_SENTENCE, lang=LANG))
+        phoneme_count = len(tokenizer.phonemize(TEST_SENTENCE, lang=LANG))
 
         print(f"\nVoice: '{voice}' ({phoneme_count} phonemes)")
 
@@ -161,11 +171,11 @@ def main():
 
         # Generate with both configs
         samples_enabled, sr = test_sentence_with_config(
-            kokoro, voice, config_enabled, "With prepending"
+            voice, config_enabled, "With prepending"
         )
 
         samples_disabled, sr = test_sentence_with_config(
-            kokoro, voice, config_disabled, "Without prepending"
+            voice, config_disabled, "Without prepending"
         )
         # Add: intro + enabled version + pause + disabled version + pause
         pause = np.zeros(int(sr * 0.1), dtype=np.float32)
@@ -205,18 +215,16 @@ def main():
 
     print("\nUsage:")
     print("  # Custom configuration")
-    print("  config = ShortSentenceConfig(" "min_phoneme_length=15 )")
-    print("  kokoro = Kokoro(short_sentence_config=config)")
+    print("  config = ShortSentenceConfig(min_phoneme_length=15)")
+    print("  pipe = KokoroPipeline(PipelineConfig(short_sentence_config=config))")
     print()
     print("  # Disable short sentence handling")
     print("  config = ShortSentenceConfig(enabled=False)")
-    print("  kokoro = Kokoro(short_sentence_config=config)")
+    print("  pipe = KokoroPipeline(PipelineConfig(short_sentence_config=config))")
 
     print("\n" + "=" * 70)
     print("Listen to the WAV file to hear the difference!")
     print("=" * 70)
-
-    kokoro.close()
 
 
 if __name__ == "__main__":

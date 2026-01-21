@@ -29,11 +29,11 @@ Supported interpret-as types:
 """
 
 import soundfile as sf
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
-import pykokoro
 
-
-def demo_numbers(kokoro, voice_style):
+def demo_numbers(pipe):
     """Demonstrate number normalization."""
     print("\n--- Number Normalization Demo ---")
     print("Testing cardinal, ordinal, digits, and fractions...")
@@ -63,12 +63,12 @@ The alias [456](as: number) works like cardinal.
     print(f"\nInput text:\n{script.strip()}\n")
 
     # Generate audio
-    audio, _ = kokoro.create(script, voice=voice_style, speed=1.0)
+    audio = pipe.run(script).audio
 
     return audio
 
 
-def demo_text_normalization(kokoro, voice_style):
+def demo_text_normalization(pipe):
     """Demonstrate text normalization."""
     print("\n--- Text Normalization Demo ---")
     print("Testing characters and expletive censoring...")
@@ -88,12 +88,12 @@ No more [profanity](as: expletive) in output.
     print(f"\nInput text:\n{script.strip()}\n")
 
     # Generate audio
-    audio, _ = kokoro.create(script, voice=voice_style, speed=1.0)
+    audio = pipe.run(script).audio
 
     return audio
 
 
-def demo_datetime(kokoro, voice_style):
+def demo_datetime(pipe):
     """Demonstrate date and time normalization."""
     print("\n--- Date and Time Normalization Demo ---")
     print("Testing date and time formatting...")
@@ -113,12 +113,12 @@ Lunch is at [12:00](as: time).
     print(f"\nInput text:\n{script.strip()}\n")
 
     # Generate audio
-    audio, _ = kokoro.create(script, voice=voice_style, speed=1.0)
+    audio = pipe.run(script).audio
 
     return audio
 
 
-def demo_telephone_and_units(kokoro, voice_style):
+def demo_telephone_and_units(pipe):
     """Demonstrate telephone and unit normalization."""
     print("\n--- Telephone and Unit Normalization Demo ---")
     print("Testing telephone numbers and units...")
@@ -139,12 +139,12 @@ It weighs [2.5lb](as: unit).
     print(f"\nInput text:\n{script.strip()}\n")
 
     # Generate audio
-    audio, _ = kokoro.create(script, voice=voice_style, speed=1.0)
+    audio = pipe.run(script).audio
 
     return audio
 
 
-def demo_mixed_features(kokoro, voice_style):
+def demo_mixed_features(pipe):
     """Demonstrate all features together."""
     print("\n--- Mixed Features Demo ---")
     print("Testing all say-as types in one script...")
@@ -173,12 +173,12 @@ Thank you, and watch your [language](as: expletive)!
     print(f"\nInput text:\n{script.strip()}\n")
 
     # Generate audio
-    audio, _ = kokoro.create(script, voice=voice_style, speed=1.0)
+    audio = pipe.run(script).audio
 
     return audio
 
 
-def demo_multilingual(kokoro, voice_style):
+def demo_multilingual(pipe):
     """Demonstrate multi-language support."""
     print("\n--- Multi-Language Support Demo ---")
     print("Testing say-as with different languages...")
@@ -193,12 +193,12 @@ The [3](as: ordinal) person wins.
     # This demo uses English voice for all examples
     print(f"\nEnglish example:\n{script_en.strip()}\n")
 
-    audio, _ = kokoro.create(script_en, voice=voice_style, speed=1.0)
+    audio = pipe.run(script_en).audio
 
     return audio
 
 
-def demo_error_handling(kokoro, voice_style):
+def demo_error_handling(pipe):
     """Demonstrate error handling and edge cases."""
     print("\n--- Error Handling Demo ---")
     print("Testing edge cases and error handling...")
@@ -224,7 +224,7 @@ Valid: [XYZ](as: characters).
     print(f"\nInput text:\n{script.strip()}\n")
 
     # Generate audio
-    audio, _ = kokoro.create(script, voice=voice_style, speed=1.0)
+    audio = pipe.run(script).audio
 
     return audio
 
@@ -253,59 +253,60 @@ def main():
     print("  - Units (5kg → five kilograms)")
 
     # Initialize Kokoro
-    kokoro = pykokoro.Kokoro()
-    voice_style = kokoro.get_voice_style(VOICE)
+    pipe = KokoroPipeline(
+        PipelineConfig(
+            voice=VOICE, generation=GenerationConfig(lang="en-us", speed=1.0)
+        )
+    )
 
     # Demo 1: Numbers
-    audio_numbers = demo_numbers(kokoro, voice_style)
+    audio_numbers = demo_numbers(pipe)
     output_file = "say_as_numbers_demo.wav"
     sf.write(output_file, audio_numbers, SAMPLE_RATE)
     duration = len(audio_numbers) / SAMPLE_RATE
     print(f"✓ Created: {output_file} ({duration:.2f}s)")
 
     # Demo 2: Text normalization
-    audio_text = demo_text_normalization(kokoro, voice_style)
+    audio_text = demo_text_normalization(pipe)
     output_file = "say_as_text_demo.wav"
     sf.write(output_file, audio_text, SAMPLE_RATE)
     duration = len(audio_text) / SAMPLE_RATE
     print(f"✓ Created: {output_file} ({duration:.2f}s)")
 
     # Demo 3: Date/Time
-    audio_datetime = demo_datetime(kokoro, voice_style)
+    audio_datetime = demo_datetime(pipe)
     output_file = "say_as_datetime_demo.wav"
     sf.write(output_file, audio_datetime, SAMPLE_RATE)
     duration = len(audio_datetime) / SAMPLE_RATE
     print(f"✓ Created: {output_file} ({duration:.2f}s)")
 
     # Demo 4: Telephone and Units
-    audio_tel_units = demo_telephone_and_units(kokoro, voice_style)
+    audio_tel_units = demo_telephone_and_units(pipe)
     output_file = "say_as_telephone_units_demo.wav"
     sf.write(output_file, audio_tel_units, SAMPLE_RATE)
     duration = len(audio_tel_units) / SAMPLE_RATE
     print(f"✓ Created: {output_file} ({duration:.2f}s)")
 
     # Demo 5: Mixed features
-    audio_mixed = demo_mixed_features(kokoro, voice_style)
+    audio_mixed = demo_mixed_features(pipe)
     output_file = "say_as_mixed_demo.wav"
     sf.write(output_file, audio_mixed, SAMPLE_RATE)
     duration = len(audio_mixed) / SAMPLE_RATE
     print(f"✓ Created: {output_file} ({duration:.2f}s)")
 
     # Demo 6: Multi-language
-    audio_multilang = demo_multilingual(kokoro, voice_style)
+    audio_multilang = demo_multilingual(pipe)
     output_file = "say_as_multilingual_demo.wav"
     sf.write(output_file, audio_multilang, SAMPLE_RATE)
     duration = len(audio_multilang) / SAMPLE_RATE
     print(f"✓ Created: {output_file} ({duration:.2f}s)")
 
     # Demo 7: Error handling
-    audio_errors = demo_error_handling(kokoro, voice_style)
+    audio_errors = demo_error_handling(pipe)
     output_file = "say_as_error_handling_demo.wav"
     sf.write(output_file, audio_errors, SAMPLE_RATE)
     duration = len(audio_errors) / SAMPLE_RATE
     print(f"✓ Created: {output_file} ({duration:.2f}s)")
-
-    kokoro.close()
 
     print("\n" + "=" * 70)
     print("Say-As Demo Complete!")

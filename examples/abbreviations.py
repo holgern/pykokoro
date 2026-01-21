@@ -14,7 +14,8 @@ Output:
 
 import soundfile as sf
 
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
 # Text with comprehensive abbreviations coverage
 TEXT = """
@@ -55,21 +56,16 @@ LANG = "en-us"  # American English
 def main():
     """Generate English speech with abbreviations."""
     print("Initializing TTS engine...")
-    kokoro = pykokoro.Kokoro()
 
+    generation = GenerationConfig(lang=LANG, speed=1.0)
+    pipe = KokoroPipeline(PipelineConfig(voice=VOICE, generation=generation))
     print("=== English Abbreviations Test ===")
     print(f"Voice: {VOICE}")
     print(f"Language: {LANG}\n")
 
     # Convert to phonemes to show how abbreviations are processed
-    print("Converting text to phonemes...")
-    phonemes = kokoro.phonemize(TEXT, lang=LANG)
-
-    # Show a sample of the phonemes (first 500 chars)
-    print("Sample phonemes (first 500 characters):")
-    print(f"{phonemes[:500]}...\n")
-
-    print(f"Total phoneme length: {len(phonemes)} characters\n")
+    print("Converting text to audio...")
+    res = pipe.run(TEXT)
 
     # List of abbreviations being tested
     abbreviations = [
@@ -121,24 +117,13 @@ def main():
         print(f"  - {abbr}")
     print()
 
-    print("Generating audio...")
-    samples, sample_rate = kokoro.create(
-        TEXT,
-        voice=VOICE,
-        speed=1.0,
-        lang=LANG,
-        # Use default pause_mode="tts" for natural prosody
-    )
-
     output_file = "abbreviations_demo.wav"
-    sf.write(output_file, samples, sample_rate)
+    sf.write(output_file, res.audio, res.sample_rate)
 
-    duration = len(samples) / sample_rate
+    duration = len(res.audio) / res.sample_rate
     print(f"\nCreated {output_file}")
     print(f"Duration: {duration:.2f} seconds")
     print("\nListen to verify that abbreviations are pronounced correctly!")
-
-    kokoro.close()
 
 
 if __name__ == "__main__":
