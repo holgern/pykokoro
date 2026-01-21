@@ -38,11 +38,24 @@ class PhrasplitSplitter(Splitter):
             if not split_items:
                 split_items = [(chunk, 0, len(chunk), None, None, None)]
 
+            cursor = 0
+
             for item in split_items:
                 seg_text, seg_start, seg_end, para, sent, clause = item
                 if seg_start is None or seg_end is None:
-                    seg_start = 0
-                    seg_end = len(seg_text)
+                    if seg_text:
+                        found = chunk.find(seg_text, cursor)
+                        if found >= 0:
+                            seg_start = found
+                            seg_end = found + len(seg_text)
+                            cursor = seg_end
+                        else:
+                            seg_start = cursor
+                            seg_end = cursor + len(seg_text)
+                            cursor = seg_end
+                    else:
+                        seg_start = cursor
+                        seg_end = cursor
                 abs_start = start + seg_start
                 abs_end = start + seg_end
                 segments.append(
