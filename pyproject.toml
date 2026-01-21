@@ -4,7 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["pykokoro*"]
+include = [
+    "pykokoro*",
+    "pykokoro.stages.*",
+    "pykokoro.runtime.*",
+    "pykokoro.compat.*",
+]
 
 [project]
 name = "pykokoro"
@@ -18,15 +23,15 @@ authors = [
 keywords = ["tts", "text-to-speech", "kokoro", "phonemizer", "espeak"]
 urls = { Homepage = "https://github.com/holgern/pykokoro" }
 dependencies = [
-    "kokorog2p>=0.4.0",
-    "phrasplit",
+    "kokorog2p>=0.5.0",
+    "phrasplit>=0.3.0",
     "numpy",
     "onnxruntime>=1.17.0",
     "platformdirs",
     "chardet",
     "charset-normalizer",
     "huggingface-hub",
-    "ssmd>=0.6.0",
+    "ssmd>=0.6.1",
     "num2words>=0.5.12",
     "babel>=2.12.0",
 ]
