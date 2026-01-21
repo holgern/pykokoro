@@ -89,9 +89,7 @@ class PhrasplitSplitter(Splitter):
             ranges.append((0, len(text)))
         return ranges
 
-    def _split_with_offsets(
-        self, phrasplit_module, text: str, language_model: str
-    ):
+    def _split_with_offsets(self, phrasplit_module, text: str, language_model: str):
         kwargs: dict[str, object] = {
             "mode": "sentence",
             "language_model": language_model,

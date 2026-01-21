@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from .kokorog2p import PhonemeSegment
 from ...pipeline_config import PipelineConfig
 from ...runtime.cache import cache_from_dir, make_g2p_key
 from ...runtime.spans import slice_boundaries, slice_spans
 from ...tokenizer import Tokenizer
 from ...types import Segment, Trace
 from ..base import DocumentResult, G2PAdapter
+from .kokorog2p import PhonemeSegment
 
 
 class TokenizerAdapter(G2PAdapter):

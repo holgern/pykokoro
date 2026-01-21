@@ -6,9 +6,9 @@ import pytest
 from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.generation_config import GenerationConfig
 from pykokoro.pipeline_config import PipelineConfig as PipelineConfigType
-from pykokoro.stages.g2p.kokorog2p import PhonemeSegment
 from pykokoro.stages.base import DocumentResult
 from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
+from pykokoro.stages.g2p.kokorog2p import PhonemeSegment
 from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import Trace
 
@@ -53,9 +53,7 @@ def test_modular_ssmd_parser_spans_and_breaks():
     assert any(span.attrs.get("lang") == "fr" for span in doc.annotation_spans)
 
     doc_break = parser.parse("Hello ...500ms world", cfg, trace)
-    assert any(
-        boundary.duration_s == 0.5 for boundary in doc_break.boundary_events
-    )
+    assert any(boundary.duration_s == 0.5 for boundary in doc_break.boundary_events)
 
 
 def test_phrasplit_offsets_match_slices():

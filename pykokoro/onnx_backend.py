@@ -20,8 +20,8 @@ from .utils import get_user_cache_path
 from .voice_manager import VoiceBlend, VoiceManager, slerp_voices
 
 if TYPE_CHECKING:
-    from .stages.g2p.kokorog2p import PhonemeSegment
     from .short_sentence_handler import ShortSentenceConfig
+    from .stages.g2p.kokorog2p import PhonemeSegment
 
 # Logger for debugging
 logger = logging.getLogger(__name__)

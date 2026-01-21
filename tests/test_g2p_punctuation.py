@@ -29,6 +29,7 @@ def test_kokorog2p_preserves_punctuation():
 
     assert len(phoneme_segments) == 1
     phonemes = phoneme_segments[0].phonemes
+    assert "wˌʌts" in phonemes  # "What's" should be preserved
     assert "!" in phonemes
     assert "?" in phonemes
     assert "." in phonemes

@@ -534,4 +534,3 @@ class TestMixedLanguageSupport:
             assert cache_size_1 == cache_size_2
         except ImportError:
             pytest.skip("lingua-language-detector not available")
-

@@ -46,7 +46,9 @@ class SsmdDocumentParser:
             start, end, cursor = self._append_text(clean_parts, segment.text, cursor)
             attrs = self._metadata_to_attrs(segment.metadata)
             if attrs and end > start:
-                spans.append(AnnotationSpan(char_start=start, char_end=end, attrs=attrs))
+                spans.append(
+                    AnnotationSpan(char_start=start, char_end=end, attrs=attrs)
+                )
             if segment.pause_before > 0:
                 boundaries.append(
                     BoundaryEvent(

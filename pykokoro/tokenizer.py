@@ -398,7 +398,6 @@ class Tokenizer:
             phonemes = g2p_fallback.phonemize(text)
             logger.info(f"Espeak-only phonemization result: '{phonemes[:50]}...'")
 
-
         # Filter to only characters in vocabulary using variant-specific model
         phonemes = filter_for_kokoro(phonemes, model=self._kokorog2p_model)
 

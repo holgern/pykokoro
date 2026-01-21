@@ -4,8 +4,8 @@ from typing import Protocol
 
 import numpy as np
 
-from ..g2p.kokorog2p import PhonemeSegment
 from ...types import Segment
+from ..g2p.kokorog2p import PhonemeSegment
 
 
 class Synthesizer(Protocol):

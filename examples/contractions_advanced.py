@@ -346,8 +346,9 @@ def main():
         output_file = "contractions_advanced_demo.wav"
         sf.write(output_file, samples, sample_rate)
         kokoro.close()
-    elif  True:
+    elif True:
         from pykokoro import KokoroPipeline, PipelineConfig
+
         # pipe = KokoroPipeline(PipelineConfig(voice=VOICE, mode="modular"))
         pipe = KokoroPipeline(PipelineConfig(voice=VOICE, mode="compat"))
         res = pipe.run(TEXT, lang=LANG)
@@ -355,7 +356,7 @@ def main():
         sample_rate = res.sample_rate
         output_file = "contractions_advanced_demo.wav"
         sf.write(output_file, samples, sample_rate)
- 
+
     else:
         from misaki import en, espeak
 
@@ -372,7 +373,7 @@ def main():
         output_file = "contractions_advanced_demo_misaki.wav"
         sf.write(output_file, samples, sample_rate)
         kokoro.close()
-        
+
     duration = len(samples) / sample_rate
     print(f"\nCreated {output_file}")
     print(f"Actual duration: {duration:.2f} seconds ({duration / 60:.2f} minutes)")

@@ -4,8 +4,8 @@ import numpy as np
 
 from ...onnx_backend import Kokoro
 from ...pipeline_config import PipelineConfig
-from ..g2p.kokorog2p import PhonemeSegment
 from ...types import Trace
+from ..g2p.kokorog2p import PhonemeSegment
 
 
 class OnnxSynthesizerAdapter:

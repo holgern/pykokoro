@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from __future__ import annotations
-
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
@@ -50,7 +48,7 @@ class PhonemeSegment:
         return result
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "PhonemeSegment":
+    def from_dict(cls, data: dict[str, Any]) -> PhonemeSegment:
         """Create from dictionary."""
         return cls(
             text=data["text"],
@@ -159,9 +157,7 @@ class KokoroG2PAdapter(G2PAdapter):
                     tokens = getattr(result, "ids", None) or getattr(
                         result, "token_ids", []
                     )
-                    result_warnings = cast(
-                        list[str], getattr(result, "warnings", [])
-                    )
+                    result_warnings = cast(list[str], getattr(result, "warnings", []))
                     if result_warnings:
                         trace.warnings.extend(
                             [str(warning) for warning in result_warnings]
@@ -186,7 +182,7 @@ class KokoroG2PAdapter(G2PAdapter):
 
         return out
 
-    def _get_g2p_instance(self, lang: str, cfg: "PipelineConfig") -> object:
+    def _get_g2p_instance(self, lang: str, cfg: PipelineConfig) -> object:
         cache_key = lang
         if cache_key in self._g2p_instances:
             return self._g2p_instances[cache_key]

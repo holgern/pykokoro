@@ -46,7 +46,10 @@ def main() -> None:
         "The pipeline uses a single segment for the full text and runs only G2P "
         "and ONNX synthesis."
     )
-    text = ("'That's ridiculous!' I protested. 'I'm not gonna stand here and let you insult me! What's your problem anyway?'")
+    text = (
+        "'That's ridiculous!' I protested. 'I'm not gonna stand here and "
+        "let you insult me! What's your problem anyway?'"
+    )
 
     cfg = PipelineConfig(
         voice="af",
