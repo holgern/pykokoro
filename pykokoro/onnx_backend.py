@@ -20,7 +20,7 @@ from .utils import get_user_cache_path
 from .voice_manager import VoiceBlend, VoiceManager, slerp_voices
 
 if TYPE_CHECKING:
-    from .phonemes import PhonemeSegment
+    from .stages.g2p.kokorog2p import PhonemeSegment
     from .short_sentence_handler import ShortSentenceConfig
 
 # Logger for debugging
@@ -1167,11 +1167,11 @@ class Kokoro:
         self._use_gpu = use_gpu
         self._provider: ProviderType | None = provider
         self._session_options = session_options
-        self._model_source = model_source
+        self._model_source: ModelSource = model_source
 
         # Store initial variant (before auto-detection)
-        self._initial_model_variant = model_variant
-        self._model_variant = model_variant
+        self._initial_model_variant: ModelVariant = model_variant
+        self._model_variant: ModelVariant = model_variant
         self._auto_switched_variant = False  # Track if we auto-switched
 
         # Load config for defaults
@@ -1268,7 +1268,7 @@ class Kokoro:
 
         # For GitHub models or v1.1-zh, load variant-specific vocab from config
         if self._model_source == "github" or self._model_variant == "v1.1-zh":
-            return load_vocab_from_config(self._model_variant)
+            return load_vocab_from_config(cast(ModelVariant, self._model_variant))
 
         # For HuggingFace v1.0 or default, use standard vocab
         return get_kokoro_vocab()
@@ -1298,7 +1298,7 @@ class Kokoro:
                     f"Automatically switching to model variant 'v1.1-zh'."
                 )
                 self._auto_switched_variant = True
-            return "v1.1-zh"
+            return cast(ModelVariant, "v1.1-zh")
 
         # Otherwise use configured variant
         return self._model_variant

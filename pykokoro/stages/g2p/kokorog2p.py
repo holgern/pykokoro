@@ -1,16 +1,78 @@
 from __future__ import annotations
 
-from ...phonemes import PhonemeSegment
-from ...pipeline_config import PipelineConfig
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from typing import TYPE_CHECKING, Any, cast
+
+from ...constants import SUPPORTED_LANGUAGES
 from ...runtime.cache import cache_from_dir, make_g2p_key
-from ...runtime.spans import slice_spans
-from ...types import Segment, Trace
+from ...runtime.spans import slice_boundaries, slice_spans
 from ..base import DocumentResult, G2PAdapter
+
+if TYPE_CHECKING:
+    from ...pipeline_config import PipelineConfig
+    from ...types import Segment, Trace
+
+
+@dataclass
+class PhonemeSegment:
+    """A segment of text with its phoneme representation."""
+
+    text: str
+    phonemes: str
+    tokens: list[int]
+    lang: str = "en-us"
+    paragraph: int = 0
+    sentence: int | str | None = None
+    pause_before: float = 0.0
+    pause_after: float = 0.0
+    ssmd_metadata: dict[str, Any] | None = field(default=None, repr=False)
+    voice_name: str | None = None
+    voice_language: str | None = None
+    voice_gender: str | None = None
+    voice_variant: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        result = {
+            "text": self.text,
+            "phonemes": self.phonemes,
+            "tokens": self.tokens,
+            "lang": self.lang,
+            "paragraph": self.paragraph,
+            "sentence": self.sentence,
+            "pause_before": self.pause_before,
+            "pause_after": self.pause_after,
+        }
+        if self.ssmd_metadata is not None:
+            result["ssmd_metadata"] = self.ssmd_metadata
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PhonemeSegment":
+        """Create from dictionary."""
+        return cls(
+            text=data["text"],
+            phonemes=data["phonemes"],
+            tokens=data["tokens"],
+            lang=data.get("lang", "en-us"),
+            paragraph=data.get("paragraph", 0),
+            sentence=data.get("sentence"),
+            pause_before=data.get("pause_before", 0.0),
+            pause_after=data.get("pause_after", 0.0),
+            ssmd_metadata=data.get("ssmd_metadata"),
+        )
+
+    def format_readable(self) -> str:
+        """Format as human-readable string: text [phonemes]."""
+        return f"{self.text} [{self.phonemes}]"
 
 
 class KokoroG2PAdapter(G2PAdapter):
     def __init__(self) -> None:
         self._g2p = None
+        self._g2p_instances: dict[str, object] = {}
 
     def _load(self):
         if self._g2p is not None:
@@ -35,27 +97,39 @@ class KokoroG2PAdapter(G2PAdapter):
         out: list[PhonemeSegment] = []
 
         for segment in segments:
+            span_warnings: list[str] = []
             span_list = slice_spans(
                 doc.annotation_spans,
                 segment.char_start,
                 segment.char_end,
                 overlap_mode=cfg.overlap_mode,
+                warnings=span_warnings,
             )
+            seg_boundaries = slice_boundaries(
+                doc.boundary_events, segment.char_start, segment.char_end
+            )
+            trace.warnings.extend(span_warnings)
+
             lang = generation.lang
             seg_len = max(0, segment.char_end - segment.char_start)
             phoneme_override = None
+            ssmd_metadata: dict[str, str] = {}
             for span in span_list:
-                if span.attrs.get("lang"):
-                    lang = span.attrs["lang"]
+                span_lang = span.attrs.get("lang")
+                if span_lang:
+                    lang = span_lang
                 if span.char_start == 0 and span.char_end == seg_len:
                     phoneme_override = span.attrs.get("ph") or span.attrs.get(
                         "phonemes"
                     )
+                self._apply_span_metadata(span.attrs, ssmd_metadata)
 
             cache_key = make_g2p_key(
                 text=segment.text,
                 lang=lang,
-                tokenizer_config=None,
+                tokenizer_config=asdict(cfg.tokenizer_config)
+                if cfg.tokenizer_config
+                else None,
                 phoneme_override=phoneme_override,
                 kokorog2p_version=getattr(g2p, "__version__", None),
                 model_quality=cfg.model_quality,
@@ -71,11 +145,13 @@ class KokoroG2PAdapter(G2PAdapter):
                     phonemes = phoneme_override
                     tokens = []
                 else:
+                    g2p_instance = self._get_g2p_instance(lang, cfg)
                     result = g2p.phonemize_to_result(
                         segment.text,
                         lang=lang,
                         return_phonemes=True,
                         return_ids=True,
+                        g2p=g2p_instance,
                     )
                     phonemes = getattr(result, "phonemes", None) or getattr(
                         result, "phoneme", ""
@@ -83,10 +159,16 @@ class KokoroG2PAdapter(G2PAdapter):
                     tokens = getattr(result, "ids", None) or getattr(
                         result, "token_ids", []
                     )
-                    warnings = getattr(result, "warnings", None)
-                    if warnings:
-                        trace.warnings.extend(list(warnings))
+                    result_warnings = cast(
+                        list[str], getattr(result, "warnings", [])
+                    )
+                    if result_warnings:
+                        trace.warnings.extend(
+                            [str(warning) for warning in result_warnings]
+                        )
                 cache.set(cache_key, {"phonemes": phonemes, "tokens": tokens})
+
+            pause_before, pause_after = self._resolve_pauses(seg_boundaries, generation)
 
             out.append(
                 PhonemeSegment(
@@ -96,7 +178,96 @@ class KokoroG2PAdapter(G2PAdapter):
                     lang=lang,
                     paragraph=segment.paragraph_idx or 0,
                     sentence=segment.sentence_idx,
+                    pause_before=pause_before,
+                    pause_after=pause_after,
+                    ssmd_metadata=ssmd_metadata or None,
                 )
             )
 
         return out
+
+    def _get_g2p_instance(self, lang: str, cfg: "PipelineConfig") -> object:
+        cache_key = lang
+        if cache_key in self._g2p_instances:
+            return self._g2p_instances[cache_key]
+
+        tokenizer_config = cfg.tokenizer_config
+        kokorog2p_lang = SUPPORTED_LANGUAGES.get(lang, lang)
+        version = "1.1" if cfg.model_variant == "v1.1-zh" else "1.0"
+
+        kwargs: dict[str, object] = {
+            "language": kokorog2p_lang,
+            "version": version,
+            "phoneme_quotes": "curly",
+        }
+        if tokenizer_config is not None:
+            kwargs.update(
+                {
+                    "use_goruut_fallback": tokenizer_config.use_goruut_fallback,
+                    "use_espeak_fallback": tokenizer_config.use_espeak_fallback,
+                    "use_spacy": tokenizer_config.use_spacy,
+                    "backend": tokenizer_config.backend,
+                    "load_gold": tokenizer_config.load_gold,
+                    "load_silver": tokenizer_config.load_silver,
+                }
+            )
+
+        g2p_module = self._load()
+        g2p_instance = g2p_module.get_g2p(**kwargs)
+        self._g2p_instances[cache_key] = g2p_instance
+        return g2p_instance
+
+    def _apply_span_metadata(
+        self, attrs: dict[str, str], metadata: dict[str, str]
+    ) -> None:
+        if not attrs:
+            return
+        if "voice" in attrs:
+            metadata["voice_name"] = attrs["voice"]
+        if "voice_name" in attrs:
+            metadata["voice_name"] = attrs["voice_name"]
+        if "prosody_rate" in attrs:
+            metadata["prosody_rate"] = attrs["prosody_rate"]
+        if "rate" in attrs:
+            metadata.setdefault("prosody_rate", attrs["rate"])
+        if "prosody_pitch" in attrs:
+            metadata["prosody_pitch"] = attrs["prosody_pitch"]
+        if "pitch" in attrs:
+            metadata.setdefault("prosody_pitch", attrs["pitch"])
+        if "prosody_volume" in attrs:
+            metadata["prosody_volume"] = attrs["prosody_volume"]
+        if "volume" in attrs:
+            metadata.setdefault("prosody_volume", attrs["volume"])
+        if "lang" in attrs:
+            metadata["language"] = attrs["lang"]
+        if "ph" in attrs:
+            metadata["phonemes"] = attrs["ph"]
+        if "phonemes" in attrs:
+            metadata["phonemes"] = attrs["phonemes"]
+
+    def _resolve_pauses(self, boundaries, generation):
+        pause_before = 0.0
+        pause_after = 0.0
+        for boundary in boundaries:
+            if boundary.kind != "pause":
+                continue
+            duration = boundary.duration_s
+            if duration is None:
+                strength = boundary.attrs.get("strength")
+                if strength == "c":
+                    duration = generation.pause_clause
+                elif strength == "s":
+                    duration = generation.pause_sentence
+                elif strength == "p":
+                    duration = generation.pause_paragraph
+                elif strength == "w":
+                    duration = 0.15
+                elif strength == "n":
+                    duration = 0.0
+            if duration is None:
+                continue
+            if boundary.pos == 0:
+                pause_before = max(pause_before, duration)
+            else:
+                pause_after = max(pause_after, duration)
+        return pause_before, pause_after

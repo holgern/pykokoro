@@ -5,8 +5,6 @@ from typing import Any, Literal
 
 import numpy as np
 
-from .phonemes import PhonemeSegment as PhonemeSegment
-
 
 @dataclass(frozen=True)
 class AnnotationSpan:

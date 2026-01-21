@@ -1,6 +1,6 @@
 """Tests for pykokoro.short_sentence_handler module."""
 
-from pykokoro.phonemes import PhonemeSegment
+from pykokoro.stages.g2p.kokorog2p import PhonemeSegment
 from pykokoro.short_sentence_handler import (
     ShortSentenceConfig,
     is_segment_empty,

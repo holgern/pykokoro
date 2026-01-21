@@ -11,7 +11,7 @@ import numpy as np
 import onnxruntime as rt
 
 from .constants import MAX_PHONEME_LENGTH, SAMPLE_RATE
-from .phonemes import PhonemeSegment
+from .stages.g2p.kokorog2p import PhonemeSegment
 from .prosody import apply_prosody
 from .tokenizer import Tokenizer
 from .trim import trim as trim_audio

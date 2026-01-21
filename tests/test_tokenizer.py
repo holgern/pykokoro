@@ -535,24 +535,3 @@ class TestMixedLanguageSupport:
         except ImportError:
             pytest.skip("lingua-language-detector not available")
 
-
-class TestSplitWithPauses:
-    """Tests for SSMD break parsing (old split_text_with_pauses removed).
-
-    NOTE: The old split_text_with_pauses() function has been removed in favor
-    of SSMD break syntax. These tests should be removed or migrated to test_ssmd.py.
-    See test_ssmd.py for SSMD break parsing tests.
-    """
-
-    def test_removed_function_notice(self):
-        """Test that old pause marker function has been removed."""
-        import pykokoro.phonemes as phonemes_module
-
-        # split_text_with_pauses should not exist anymore
-        assert not hasattr(phonemes_module, "split_text_with_pauses")
-
-        # has_pause_markers should not exist anymore
-        assert not hasattr(phonemes_module, "has_pause_markers")
-
-    def test_trailing_multiple_pauses(self):
-        """Test multiple pause markers at the end."""

@@ -1,36 +1,11 @@
 #!/usr/bin/env python3
-"""
-Demonstrate split_and_phonemize_text with different split modes.
+"""Demonstrate span-based splitting + phonemization with the pipeline stages."""
 
-This example shows how to use the split_and_phonemize_text function
-with paragraph, sentence, and clause modes to intelligently split text
-for TTS processing.
-
-NOTE: This demonstrates the legacy split_and_phonemize_text() API which
-uses the `split_mode` parameter. For the simplified public API, use
-Kokoro.create() with the `pause_mode` parameter instead:
-
-    # Modern API (recommended for most use cases)
-    with Kokoro() as kokoro:
-        # Default: TTS controls pauses naturally
-        audio, sr = kokoro.create(text, voice="af_bella")
-
-        # Manual pause control
-        audio, sr = kokoro.create(
-            text,
-            voice="af_bella",
-            pause_mode="manual",
-            pause_sentence=0.5
-        )
-
-The split_and_phonemize_text() function is still useful for:
-- Direct access to phoneme segments
-- Custom processing pipelines
-- Integration with other TTS backends
-"""
-
-from pykokoro import Tokenizer
-from pykokoro.phonemes import split_and_phonemize_text
+from pykokoro import PipelineConfig
+from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
+from pykokoro.stages.g2p.tokenizer import TokenizerAdapter
+from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
+from pykokoro.types import Trace
 
 
 def print_separator(title: str) -> None:
@@ -40,9 +15,9 @@ def print_separator(title: str) -> None:
     print("=" * 80)
 
 
-def print_segments(segments: list, mode: str) -> None:
+def print_segments(segments: list) -> None:
     """Print segment information in a readable format."""
-    print_separator(f"Split Mode: {mode.upper()}")
+    print_separator("Pipeline Segments")
     print(f"Total segments: {len(segments)}\n")
 
     for i, seg in enumerate(segments, 1):
@@ -58,7 +33,7 @@ def print_segments(segments: list, mode: str) -> None:
 
 
 def main():
-    """Run the split_and_phonemize_text demonstration."""
+    """Run the span-based phonemization demonstration."""
 
     # Sample text with 3 paragraphs, each containing 3 short sentences
     text = """The sun rises in the east. Birds begin to sing. The day starts fresh.
@@ -75,71 +50,37 @@ People walk to work. Cars fill the streets. The city comes alive."""
     print(text)
     print("-" * 80)
 
-    # Initialize tokenizer
-    print("\nInitializing tokenizer...")
-    tokenizer = Tokenizer()
+    cfg = PipelineConfig(voice="af_bella")
+    trace = Trace()
+    parser = SsmdDocumentParser()
+    splitter = PhrasplitSplitter()
+    g2p = TokenizerAdapter()
 
-    # Test all three split modes
-    split_modes = ["paragraph", "sentence", "clause"]
+    try:
+        doc = parser.parse(text, cfg, trace)
+        text_segments = splitter.split(doc, cfg, trace)
+        phoneme_segments = g2p.phonemize(text_segments, doc, cfg, trace)
 
-    for mode in split_modes:
-        print(f"\n{'▶' * 40}")
-        print(f"Processing with split_mode='{mode}'...")
-        print(f"{'▶' * 40}")
+        print_segments(phoneme_segments)
 
-        try:
-            segments = split_and_phonemize_text(
-                text=text,
-                tokenizer=tokenizer,
-                lang="en-us",
-                split_mode=mode,
-                language_model="en_core_web_sm",
-            )
+        total_chars = sum(len(seg.text) for seg in phoneme_segments)
+        total_phonemes = sum(len(seg.phonemes) for seg in phoneme_segments)
+        total_tokens = sum(len(seg.tokens) for seg in phoneme_segments)
 
-            print_segments(segments, mode)
+        print("Summary Statistics:")
+        print(f"  Total characters: {total_chars}")
+        print(f"  Total phonemes:   {total_phonemes}")
+        print(f"  Total tokens:     {total_tokens}")
+        print(f"  Avg chars/seg:    {total_chars / len(phoneme_segments):.1f}")
+        print(f"  Avg phonemes/seg: {total_phonemes / len(phoneme_segments):.1f}")
 
-            # Show summary statistics
-            total_chars = sum(len(seg.text) for seg in segments)
-            total_phonemes = sum(len(seg.phonemes) for seg in segments)
-            total_tokens = sum(len(seg.tokens) for seg in segments)
-
-            print(f"Summary Statistics for {mode.upper()} mode:")
-            print(f"  Total characters: {total_chars}")
-            print(f"  Total phonemes:   {total_phonemes}")
-            print(f"  Total tokens:     {total_tokens}")
-            print(f"  Avg chars/seg:    {total_chars / len(segments):.1f}")
-            print(f"  Avg phonemes/seg: {total_phonemes / len(segments):.1f}")
-
-        except ImportError as e:
-            print(f"\n⚠️  Error: {e}")
-            print(f"   Mode '{mode}' requires spaCy.")
-            print("   Install with: pip install spacy")
-            print("   Then: python -m spacy download en_core_web_sm")
-        except Exception as e:
-            print(f"\n❌ Error processing mode '{mode}': {e}")
-
-    # Comparison table
-    print_separator("MODE COMPARISON SUMMARY")
-    print(f"{'Mode':<15} {'Segments':<10} {'Behavior':<50}")
-    print("-" * 80)
-    newline_repr = r"\n\n"
-    behavior_text = f"Split on double newlines ({newline_repr})"
-    print(f"{'paragraph':<15} {'3':<10} {behavior_text:<50}")
-    print(
-        f"{'sentence':<15} {'9':<10} {'Split on sentence boundaries (using spaCy)':<50}"
-    )
-    print(
-        f"{'clause':<15} {'9+':<10} {'Split on sentences + commas (using spaCy)':<50}"
-    )
-    print()
-
-    print("Key Observations:")
-    print("  • 'paragraph' mode: Keeps each paragraph as one segment")
-    print("  • 'sentence' mode: Creates one segment per sentence")
-    print("  • 'clause' mode: Can split further at commas for finer control")
-    print("  • Paragraph and sentence indices track the text structure")
-    print("  • All segments stay within max_phoneme_length (510 by default)")
-    print()
+    except ImportError as e:
+        print(f"\n⚠️  Error: {e}")
+        print("   Sentence/clause splitting requires spaCy.")
+        print("   Install with: pip install spacy")
+        print("   Then: python -m spacy download en_core_web_sm")
+    except Exception as e:
+        print(f"\n❌ Error processing text: {e}")
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .phonemes import PhonemeSegment
+    from .stages.g2p.kokorog2p import PhonemeSegment
 
 logger = logging.getLogger(__name__)
 # Enable debug logging for this module

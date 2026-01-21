@@ -8,7 +8,7 @@ from .pipeline_config import PipelineConfig
 from .runtime.tracing import trace_timing
 from .stages.base import DocumentParser, G2PAdapter, Splitter, Synthesizer
 from .stages.doc_parsers.ssmd import SsmdDocumentParser
-from .stages.g2p.tokenizer import TokenizerAdapter
+from .stages.g2p.kokorog2p import KokoroG2PAdapter
 from .stages.splitters.phrasplit import PhrasplitSplitter
 from .stages.synth.onnx import OnnxSynthesizerAdapter
 from .types import AudioResult, Trace
@@ -27,7 +27,7 @@ class KokoroPipeline:
         self.config = config
         self.doc_parser = doc_parser or SsmdDocumentParser()
         self.splitter = splitter or PhrasplitSplitter()
-        self.g2p = g2p or TokenizerAdapter()
+        self.g2p = g2p or KokoroG2PAdapter()
         self.synth = synth or OnnxSynthesizerAdapter()
 
     def run(self, text: str, **overrides: Any) -> AudioResult:

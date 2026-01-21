@@ -6,7 +6,7 @@ import pytest
 from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.generation_config import GenerationConfig
 from pykokoro.pipeline_config import PipelineConfig as PipelineConfigType
-from pykokoro.phonemes import PhonemeSegment
+from pykokoro.stages.g2p.kokorog2p import PhonemeSegment
 from pykokoro.stages.base import DocumentResult
 from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
 from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter

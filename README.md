@@ -78,51 +78,43 @@ python examples/gpu_benchmark.py
 
 ## Quick Start
 
-```python
-import pykokoro
-import soundfile as sf
-
-# Initialize the TTS engine (auto-selects best provider)
-tts = pykokoro.Kokoro(provider="auto")
-
-# Generate speech
-text = "Hello, world! This is Kokoro speaking."
-audio, sample_rate = tts.create(text, voice="af_sarah", speed=1.0, lang="en-us")
-
-# Save to file
-sf.write("output.wav", audio, sample_rate)
-```
-
-## Pipeline API (Recommended)
-
-The new pipeline API provides a structured, API-first interface while preserving
-existing behavior in `mode="compat"`.
+The pipeline API is the only supported interface.
 
 ```python
 from pykokoro import KokoroPipeline, PipelineConfig
 
-pipe = KokoroPipeline(PipelineConfig(mode="compat", voice="af_sarah"))
+pipe = KokoroPipeline(PipelineConfig(voice="af_sarah"))
 res = pipe.run("Hello")
 audio = res.audio
 ```
 
 ### Migration
 
-Old:
+Old (removed):
 
 ```python
-from pykokoro import Kokoro
-k = Kokoro(voice="af")
-audio = k("Hello")
+# Legacy Kokoro-based API has been removed in favor of the pipeline.
 ```
 
 New:
 
 ```python
 from pykokoro import KokoroPipeline, PipelineConfig
-pipe = KokoroPipeline(PipelineConfig(mode="compat", voice="af"))
+pipe = KokoroPipeline(PipelineConfig(voice="af"))
 res = pipe.run("Hello")
 audio = res.audio
+```
+
+### Helper Snippet
+
+```python
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
+
+generation = GenerationConfig(lang="en-us", speed=1.0)
+config = PipelineConfig(voice="af_sarah", generation=generation)
+pipe = KokoroPipeline(config)
+res = pipe.run("Hello")
 ```
 
 ## Hardware Acceleration
@@ -130,22 +122,25 @@ audio = res.audio
 ### Automatic Provider Selection (Recommended)
 
 ```python
-import pykokoro
-
 # Auto-select best available provider (CUDA > CoreML > DirectML > CPU)
 # Note: OpenVINO is attempted but will fall back to next priority if incompatible
-tts = pykokoro.Kokoro(provider="auto")
+from pykokoro import KokoroPipeline, PipelineConfig
+
+pipe = KokoroPipeline(PipelineConfig(provider="auto", voice="af_sarah"))
+res = pipe.run("Hello")
 ```
 
 ### Explicit Provider Selection
 
 ```python
 # Force specific provider
-tts = pykokoro.Kokoro(provider="cuda")      # NVIDIA CUDA
-tts = pykokoro.Kokoro(provider="openvino")  # Intel OpenVINO (currently incompatible, will raise error)
-tts = pykokoro.Kokoro(provider="directml")  # Windows DirectML
-tts = pykokoro.Kokoro(provider="coreml")    # Apple CoreML
-tts = pykokoro.Kokoro(provider="cpu")       # CPU only
+from pykokoro import KokoroPipeline, PipelineConfig
+
+pipe = KokoroPipeline(PipelineConfig(provider="cuda", voice="af_sarah"))      # NVIDIA CUDA
+pipe = KokoroPipeline(PipelineConfig(provider="openvino", voice="af_sarah"))  # Intel OpenVINO
+pipe = KokoroPipeline(PipelineConfig(provider="directml", voice="af_sarah"))  # Windows DirectML
+pipe = KokoroPipeline(PipelineConfig(provider="coreml", voice="af_sarah"))    # Apple CoreML
+pipe = KokoroPipeline(PipelineConfig(provider="cpu", voice="af_sarah"))       # CPU only
 ```
 
 ### Check Available Providers
@@ -171,40 +166,54 @@ python your_script.py
 ### Basic Text-to-Speech
 
 ```python
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
-# Create TTS instance with GPU acceleration and fp16 model
-tts = pykokoro.Kokoro(provider="cuda", model_quality="fp16")
+# Create pipeline with GPU acceleration and fp16 model
+config = PipelineConfig(
+    voice="af_nicole",
+    provider="cuda",
+    model_quality="fp16",
+    generation=GenerationConfig(lang="en-us"),
+)
+pipe = KokoroPipeline(config)
 
 # Generate audio
-audio, sr = tts.create("Hello world", voice="af_nicole", lang="en-us")
+res = pipe.run("Hello world")
+audio = res.audio
 ```
 
 ### Voice Blending
 
 ```python
 # Blend two voices (50% each)
-blend = pykokoro.VoiceBlend.parse("af_nicole:50,am_michael:50")
-audio, sr = tts.create("Mixed voice", voice=blend)
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.voice_manager import VoiceBlend
+
+blend = VoiceBlend.parse("af_nicole:50,am_michael:50")
+pipe = KokoroPipeline(PipelineConfig(voice=blend))
+res = pipe.run("Mixed voice")
+audio = res.audio
 ```
 
 ### Streaming Generation
 
 ```python
-# Synchronous streaming
-for chunk, sr, text_chunk in tts.create_stream_sync("Long text here...", voice="af_sarah"):
-    # Process audio chunk in real-time
-    play_audio(chunk, sr)
+from pykokoro import KokoroPipeline, PipelineConfig
 
-# Async streaming
-async for chunk, sr, text_chunk in tts.create_stream("Long text here...", voice="af_sarah"):
-    await process_audio(chunk, sr)
+pipe = KokoroPipeline(PipelineConfig(voice="af_sarah"))
+chunks = ["Long text", "here..."]
+for text_chunk in chunks:
+    res = pipe.run(text_chunk)
+    play_audio(res.audio, res.sample_rate)
 ```
 
 ### Phoneme-Based Generation
 
 ```python
-from pykokoro import Tokenizer
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
+from pykokoro.tokenizer import Tokenizer
 
 # Create tokenizer
 tokenizer = Tokenizer()
@@ -214,7 +223,13 @@ phonemes = tokenizer.phonemize("Hello world", lang="en-us")
 print(phonemes)  # hə'loʊ wɜːld
 
 # Generate from phonemes
-audio, sr = tts.create_from_phonemes(phonemes, voice="af_sarah")
+config = PipelineConfig(
+    voice="af_sarah",
+    generation=GenerationConfig(lang="en-us", is_phonemes=True),
+)
+pipe = KokoroPipeline(config)
+res = pipe.run(phonemes)
+audio = res.audio
 ```
 
 ### Pause Control
@@ -231,10 +246,11 @@ Add explicit pauses using SSMD break syntax in your text:
 text = "Chapter 5 ...p I'm Klaus. ...c Welcome to the show!"
 
 # Breaks are processed automatically
-audio, sr = tts.create(
-    text,
-    voice="am_michael"
-)
+from pykokoro import KokoroPipeline, PipelineConfig
+
+pipe = KokoroPipeline(PipelineConfig(voice="am_michael"))
+res = pipe.run(text)
+audio = res.audio
 ```
 
 **SSMD Break Markers:**
@@ -253,13 +269,21 @@ normally.
 **Custom Pause Durations:**
 
 ```python
-audio, sr = tts.create(
-    text,
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
+
+config = PipelineConfig(
     voice="am_michael",
-    pause_clause=0.2,      # ...c = 200ms
-    pause_sentence=0.5,    # ...s = 500ms
-    pause_paragraph=1.5    # ...p = 1500ms
+    generation=GenerationConfig(
+        pause_mode="manual",
+        pause_clause=0.2,      # ...c = 200ms
+        pause_sentence=0.5,    # ...s = 500ms
+        pause_paragraph=1.5,   # ...p = 1500ms
+    ),
 )
+pipe = KokoroPipeline(config)
+res = pipe.run(text)
+audio = res.audio
 ```
 
 #### 2. Automatic Natural Pauses
@@ -277,17 +301,23 @@ computer vision, natural language processing, and speech recognition.
 """
 
 # Automatic pauses at clause, sentence, and paragraph boundaries
-audio, sr = tts.create(
-    text,
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
+
+config = PipelineConfig(
     voice="af_sarah",
-    split_mode="clause",      # Split on commas and sentences
-    trim_silence=True,        # Enable automatic pause insertion
-    pause_clause=0.25,        # Pause after clauses (commas)
-    pause_sentence=0.5,       # Pause after sentences
-    pause_paragraph=1.0,      # Pause after paragraphs
-    pause_variance=0.05,      # Add natural variance (default)
-    random_seed=42            # For reproducible results (optional)
+    generation=GenerationConfig(
+        pause_mode="manual",
+        pause_clause=0.25,        # Pause after clauses (commas)
+        pause_sentence=0.5,       # Pause after sentences
+        pause_paragraph=1.0,      # Pause after paragraphs
+        pause_variance=0.05,      # Add natural variance (default)
+        random_seed=42,           # For reproducible results (optional)
+    ),
 )
+pipe = KokoroPipeline(config)
+res = pipe.run(text)
+audio = res.audio
 ```
 
 **Key Features:**
@@ -297,12 +327,10 @@ audio, sr = tts.create(
 - **Reproducible**: Use `random_seed` for consistent output
 - **Composable**: Works with SSMD break markers
 
-**Split Modes:**
+**Splitting Behavior:**
 
-- `None` (default) - Automatic phoneme-based splitting, no automatic pauses
-- `"paragraph"` - Split on double newlines
-- `"sentence"` - Split on sentence boundaries (requires spaCy)
-- `"clause"` - Split on sentences + commas (requires spaCy, recommended)
+- The default pipeline splitter uses spaCy sentence/clause detection.
+- For custom splitting, pass a custom `Splitter` into `KokoroPipeline`.
 
 **Pause Variance Options:**
 
@@ -310,7 +338,7 @@ audio, sr = tts.create(
 - `pause_variance=0.05` - Default (±100ms at 95% confidence)
 - `pause_variance=0.1` - More variation (±200ms at 95% confidence)
 
-**Note:** For `split_mode="sentence"` or `split_mode="clause"`, install spaCy:
+**Note:** For sentence/clause splitting, install spaCy:
 
 ```bash
 pip install spacy
@@ -324,13 +352,13 @@ Use SSMD markers for special emphasis and automatic pauses for natural rhythm:
 ```python
 text = "Welcome! ...p Let's discuss AI, machine learning, and deep learning."
 
-audio, sr = tts.create(
-    text,
+config = PipelineConfig(
     voice="af_sarah",
-    split_mode="clause",     # Automatic pauses at commas
-    trim_silence=True,
-    pause_variance=0.05
+    generation=GenerationConfig(pause_mode="manual", pause_variance=0.05),
 )
+pipe = KokoroPipeline(config)
+res = pipe.run(text)
+audio = res.audio
 ```
 
 See `examples/pauses_demo.py`, `examples/pauses_with_splitting.py`, and
@@ -342,41 +370,54 @@ PyKokoro supports automatic text normalization using SSMD (Speech Synthesis Mark
 syntax. Convert numbers, dates, phone numbers, and more into speakable text:
 
 ```python
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
+
+pipe = KokoroPipeline(PipelineConfig(voice="af_sarah"))
+
 # Cardinal numbers
 text = "I have [123](as: cardinal) apples"
-audio, sr = tts.create(text, voice="af_sarah")
+res = pipe.run(text)
 # TTS says: "I have one hundred twenty-three apples"
 
 # Ordinal numbers
 text = "I came in [3](as: ordinal) place"
+res = pipe.run(text)
 # TTS says: "I came in third place"
 
 # Digits (spell out)
 text = "My PIN is [1234](as: digits)"
+res = pipe.run(text)
 # TTS says: "My PIN is one two three four"
 
 # Telephone numbers
 text = "Call [+1-555-0123](as: telephone)"
+res = pipe.run(text)
 # TTS says: "Call plus one five five five oh one two three"
 
 # Dates with custom formatting
 text = "Today is [12/31/2024](as: date, format: mdy)"
+res = pipe.run(text)
 # TTS says: "Today is December thirty-first, two thousand twenty-four"
 
 # Time (12-hour or 24-hour)
 text = "The time is [14:30](as: time)"
+res = pipe.run(text)
 # TTS says: "The time is two thirty PM"
 
 # Characters (spell out)
 text = "The code is [ABC](as: characters)"
+res = pipe.run(text)
 # TTS says: "The code is A B C"
 
 # Fractions
 text = "Add [1/2](as: fraction) cup of sugar"
+res = pipe.run(text)
 # TTS says: "Add one half cup of sugar"
 
 # Units
 text = "The package weighs [5kg](as: unit)"
+res = pipe.run(text)
 # TTS says: "The package weighs five kilograms"
 ```
 
@@ -400,14 +441,23 @@ text = "The package weighs [5kg](as: unit)"
 Say-as works with multiple languages (English, French, German, Spanish, and more):
 
 ```python
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
+
 # French cardinal
 text = "[123](as: cardinal)"
-audio, sr = tts.create(text, voice="ff_siwis", lang="fr-fr")
+pipe = KokoroPipeline(
+    PipelineConfig(voice="ff_siwis", generation=GenerationConfig(lang="fr-fr"))
+)
+res = pipe.run(text)
 # TTS says: "cent vingt-trois"
 
 # German ordinal
 text = "[3](as: ordinal)"
-audio, sr = tts.create(text, voice="gf_maria", lang="de-de")
+pipe = KokoroPipeline(
+    PipelineConfig(voice="gf_maria", generation=GenerationConfig(lang="de-de"))
+)
+res = pipe.run(text)
 # TTS says: "dritte"
 ```
 
@@ -441,24 +491,27 @@ handles this using a "repeat-and-cut" technique:
 3. TTS generates audio with more context (better prosody)
 4. Audio is trimmed to extract only the first instance
 
-This happens automatically during `kokoro.create()` - no configuration needed!
+This happens automatically during `pipe.run()` - no configuration needed!
 
 **Customizing the Behavior:**
 
 You can customize the thresholds using `ShortSentenceConfig`:
 
 ```python
-from pykokoro import Kokoro
+from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.short_sentence_handler import ShortSentenceConfig
 
 # More aggressive short sentence handling
-config = ShortSentenceConfig(
+short_sentence_config = ShortSentenceConfig(
     min_phoneme_length=50,    # Treat segments <50 phonemes as short
     target_phoneme_length=150, # Repeat until ~150 phonemes
     max_repetitions=7,         # Allow up to 7 repetitions
 )
 
-tts = Kokoro(short_sentence_config=config)
+pipe = KokoroPipeline(
+    PipelineConfig(voice="af_sarah", short_sentence_config=short_sentence_config)
+)
+res = pipe.run("Why?")
 ```
 
 **Default Configuration:**
@@ -470,8 +523,14 @@ tts = Kokoro(short_sentence_config=config)
 **Disabling Short Sentence Handling:**
 
 ```python
-config = ShortSentenceConfig(min_phoneme_length=0)  # No segment is "short"
-tts = Kokoro(short_sentence_config=config)
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.short_sentence_handler import ShortSentenceConfig
+
+short_sentence_config = ShortSentenceConfig(min_phoneme_length=0)
+pipe = KokoroPipeline(
+    PipelineConfig(voice="af_sarah", short_sentence_config=short_sentence_config)
+)
+res = pipe.run("Why?")
 ```
 
 See `examples/optimal_phoneme_length_demo.py` for a demonstration.
@@ -501,14 +560,29 @@ Includes all voices from v1.0 plus additional Chinese voices:
 **Example - Using v1.1-zh with English:**
 
 ```python
-tts = pykokoro.Kokoro(model_source="github", model_variant="v1.1-zh")
-audio, sr = tts.create("Hello world!", voice="af_maple", lang="en-us")
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
+
+config = PipelineConfig(
+    voice="af_maple",
+    model_source="github",
+    model_variant="v1.1-zh",
+    generation=GenerationConfig(lang="en-us"),
+)
+pipe = KokoroPipeline(config)
+res = pipe.run("Hello world!")
+audio = res.audio
 ```
 
 List all available voices:
 
 ```python
-voices = tts.get_voices()
+from pykokoro import KokoroPipeline, PipelineConfig
+
+pipe = KokoroPipeline(PipelineConfig(voice="af_sarah"))
+pipe.run("Hello")
+# Voices are loaded lazily by the backend after the first run.
+voices = pipe.synth._kokoro.get_voices()
 print(voices)
 ```
 
@@ -521,10 +595,16 @@ PyKokoro supports downloading models from multiple sources:
 The default source with 54 multi-language voices:
 
 ```python
-tts = pykokoro.Kokoro(
-    model_source="huggingface",
-    model_quality="fp32"  # fp32, fp16, q8, q8f16, q4, q4f16, uint8, uint8f16
+from pykokoro import KokoroPipeline, PipelineConfig
+
+pipe = KokoroPipeline(
+    PipelineConfig(
+        voice="af_sarah",
+        model_source="huggingface",
+        model_quality="fp32",  # fp32, fp16, q8, q8f16, q4, q4f16, uint8, uint8f16
+    )
 )
+res = pipe.run("Hello world")
 ```
 
 ### GitHub v1.0
@@ -532,11 +612,17 @@ tts = pykokoro.Kokoro(
 54 voices with additional `fp16-gpu` optimized quality:
 
 ```python
-tts = pykokoro.Kokoro(
-    model_source="github",
-    model_variant="v1.0",
-    model_quality="fp16-gpu"  # fp32, fp16, fp16-gpu, q8
+from pykokoro import KokoroPipeline, PipelineConfig
+
+pipe = KokoroPipeline(
+    PipelineConfig(
+        voice="af_sarah",
+        model_source="github",
+        model_variant="v1.0",
+        model_quality="fp16-gpu",  # fp32, fp16, fp16-gpu, q8
+    )
 )
+res = pipe.run("Hello world")
 ```
 
 ### GitHub v1.1-zh (English + Chinese)
@@ -544,15 +630,20 @@ tts = pykokoro.Kokoro(
 103 voices including English and Chinese speakers:
 
 ```python
-tts = pykokoro.Kokoro(
-    model_source="github",
-    model_variant="v1.1-zh",
-    model_quality="fp32"  # Only fp32 available
-)
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
-# Use English voices from v1.1-zh
-voices = tts.get_voices()  # Returns 103 voices
-audio, sr = tts.create("Hello world", voice="af_maple", lang="en-us")
+pipe = KokoroPipeline(
+    PipelineConfig(
+        voice="af_maple",
+        model_source="github",
+        model_variant="v1.1-zh",
+        model_quality="fp32",  # Only fp32 available
+        generation=GenerationConfig(lang="en-us"),
+    )
+)
+res = pipe.run("Hello world")
+audio = res.audio
 ```
 
 **Note:** Chinese text generation requires proper phonemization support (currently in
@@ -585,11 +676,22 @@ Available quality options vary by source:
 - `fp32`: Full precision only
 
 ```python
+from pykokoro import KokoroPipeline, PipelineConfig
+
 # HuggingFace with q8
-tts = pykokoro.Kokoro(model_source="huggingface", model_quality="q8")
+pipe = KokoroPipeline(
+    PipelineConfig(voice="af_sarah", model_source="huggingface", model_quality="q8")
+)
 
 # GitHub v1.0 with GPU-optimized fp16
-tts = pykokoro.Kokoro(model_source="github", model_variant="v1.0", model_quality="fp16-gpu")
+pipe = KokoroPipeline(
+    PipelineConfig(
+        voice="af_sarah",
+        model_source="github",
+        model_variant="v1.0",
+        model_quality="fp16-gpu",
+    )
+)
 ```
 
 ## Configuration
@@ -601,17 +703,17 @@ Configuration is stored in a platform-specific directory:
 - Windows: `%APPDATA%\pykokoro\config.json`
 
 ```python
-import pykokoro
+from pykokoro.utils import load_config, save_config
 
 # Load config
-config = pykokoro.load_config()
+config = load_config()
 
 # Modify config
 config["model_quality"] = "fp16"
 config["use_gpu"] = True
 
 # Save config
-pykokoro.save_config(config)
+save_config(config)
 ```
 
 ## Advanced Features
@@ -619,28 +721,36 @@ pykokoro.save_config(config)
 ### Custom Phoneme Dictionary
 
 ```python
-from pykokoro import Tokenizer, TokenizerConfig
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.tokenizer import TokenizerConfig
 
 # Create config with custom phoneme dictionary
-config = TokenizerConfig(
+tokenizer_config = TokenizerConfig(
     phoneme_dictionary_path="my_pronunciations.json"
 )
 
-tokenizer = Tokenizer(config=config)
+pipe = KokoroPipeline(
+    PipelineConfig(voice="af_sarah", tokenizer_config=tokenizer_config)
+)
+res = pipe.run("Hello")
 ```
 
 ### Mixed Language Support
 
 ```python
-from pykokoro import TokenizerConfig
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.tokenizer import TokenizerConfig
 
-config = TokenizerConfig(
+tokenizer_config = TokenizerConfig(
     use_mixed_language=True,
     mixed_language_primary="en-us",
     mixed_language_allowed=["en-us", "de", "fr"]
 )
 
-tokenizer = Tokenizer(config=config)
+pipe = KokoroPipeline(
+    PipelineConfig(voice="af_sarah", tokenizer_config=tokenizer_config)
+)
+res = pipe.run("Ich gehe zum Meeting")
 ```
 
 ### Backend Configuration
@@ -648,10 +758,11 @@ tokenizer = Tokenizer(config=config)
 Control which phonemization backend and dictionaries to use:
 
 ```python
-from pykokoro import TokenizerConfig
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.tokenizer import TokenizerConfig
 
 # Default: Full dictionaries with espeak fallback (best quality)
-config = TokenizerConfig(
+tokenizer_config = TokenizerConfig(
     backend="espeak",
     load_gold=True,
     load_silver=True,
@@ -659,7 +770,7 @@ config = TokenizerConfig(
 )
 
 # Memory-optimized: Gold dictionary only
-config = TokenizerConfig(
+tokenizer_config = TokenizerConfig(
     backend="espeak",
     load_gold=True,
     load_silver=False,  # Saves ~22-31 MB
@@ -667,7 +778,7 @@ config = TokenizerConfig(
 )
 
 # Fastest initialization: Pure espeak
-config = TokenizerConfig(
+tokenizer_config = TokenizerConfig(
     backend="espeak",
     load_gold=False,
     load_silver=False,
@@ -675,11 +786,14 @@ config = TokenizerConfig(
 )
 
 # Alternative backend (requires pygoruut)
-config = TokenizerConfig(
+tokenizer_config = TokenizerConfig(
     backend="goruut"
 )
 
-tokenizer = Tokenizer(config=config)
+pipe = KokoroPipeline(
+    PipelineConfig(voice="af_sarah", tokenizer_config=tokenizer_config)
+)
+res = pipe.run("Hello")
 ```
 
 **Note**: `use_dictionary` parameter is deprecated. Use `load_gold` and `load_silver`
@@ -690,7 +804,8 @@ instead for finer control.
 
 ```python
 from misaki import en, espeak
-import pykokoro
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 
 # Misaki G2P with espeak-ng fallback
 fallback = espeak.EspeakFallback(british=False)
@@ -698,12 +813,14 @@ g2p = en.G2P(trf=False, british=False, fallback=fallback)
 phonemes, _ = g2p("Hello, world!")
 
 # Generate audio from phonemes
-kokoro = pykokoro.Kokoro()
-samples, sample_rate = kokoro.create(
-    phonemes,
-    voice="af_bella",
-    is_phonemes=True
+pipe = KokoroPipeline(
+    PipelineConfig(
+        voice="af_bella",
+        generation=GenerationConfig(is_phonemes=True, lang="en-us"),
+    )
 )
+res = pipe.run(phonemes)
+samples = res.audio
 ```
 
 ## License

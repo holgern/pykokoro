@@ -1,12 +1,16 @@
 from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
-from ..pipeline_config import PipelineConfig
-from ..types import AnnotationSpan, BoundaryEvent, PhonemeSegment, Segment, Trace
+from ..types import AnnotationSpan, BoundaryEvent, Segment, Trace
+
+if TYPE_CHECKING:
+    from ..pipeline_config import PipelineConfig
+    from .g2p.kokorog2p import PhonemeSegment
 
 
 @dataclass

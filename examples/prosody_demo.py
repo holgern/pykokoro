@@ -30,9 +30,13 @@ Features demonstrated:
 
 import soundfile as sf
 
-import pykokoro
-from pykokoro.phonemes import PhonemeSegment
+from pykokoro import PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 from pykokoro.ssmd_parser import SSMDMetadata
+from pykokoro.stages.g2p.kokorog2p import PhonemeSegment
+from pykokoro.stages.synth.onnx import OnnxSynthesizerAdapter
+from pykokoro.tokenizer import Tokenizer
+from pykokoro.types import Trace
 
 # Check if prosody libraries are available
 try:
@@ -93,7 +97,7 @@ def create_segment_with_prosody(
     return segment
 
 
-def demo_volume(kokoro, tokenizer, voice_style, lang):
+def demo_volume(synth, cfg, tokenizer, lang):
     """Demonstrate volume control."""
     print("\n--- Volume Control Demo ---")
     print("Testing different volume levels...")
@@ -149,14 +153,12 @@ def demo_volume(kokoro, tokenizer, voice_style, lang):
     )
 
     # Generate audio
-    audio = kokoro._audio_generator.generate_from_segments(
-        segments, voice_style, speed=1.0, trim_silence=True
-    )
+    audio = synth.synthesize(segments, cfg, Trace())
 
     return audio
 
 
-def demo_pitch(kokoro, tokenizer, voice_style, lang):
+def demo_pitch(synth, cfg, tokenizer, lang):
     """Demonstrate pitch control."""
     print("\n--- Pitch Control Demo ---")
 
@@ -201,14 +203,12 @@ def demo_pitch(kokoro, tokenizer, voice_style, lang):
     )
 
     # Generate audio
-    audio = kokoro._audio_generator.generate_from_segments(
-        segments, voice_style, speed=1.0, trim_silence=True
-    )
+    audio = synth.synthesize(segments, cfg, Trace())
 
     return audio
 
 
-def demo_rate(kokoro, tokenizer, voice_style, lang):
+def demo_rate(synth, cfg, tokenizer, lang):
     """Demonstrate rate/speed control."""
     print("\n--- Rate/Speed Control Demo ---")
 
@@ -253,14 +253,12 @@ def demo_rate(kokoro, tokenizer, voice_style, lang):
     )
 
     # Generate audio
-    audio = kokoro._audio_generator.generate_from_segments(
-        segments, voice_style, speed=1.0, trim_silence=True
-    )
+    audio = synth.synthesize(segments, cfg, Trace())
 
     return audio
 
 
-def demo_combined(kokoro, tokenizer, voice_style, lang):
+def demo_combined(synth, cfg, tokenizer, lang):
     """Demonstrate combined prosody effects."""
     print("\n--- Combined Prosody Demo ---")
 
@@ -324,9 +322,7 @@ def demo_combined(kokoro, tokenizer, voice_style, lang):
     )
 
     # Generate audio
-    audio = kokoro._audio_generator.generate_from_segments(
-        segments, voice_style, speed=1.0, trim_silence=True
-    )
+    audio = synth.synthesize(segments, cfg, Trace())
 
     return audio
 
@@ -344,17 +340,15 @@ def main():
     print(f"\nVoice: {VOICE}")
     print(f"Language: {LANG}")
 
-    # Initialize Kokoro
-    kokoro = pykokoro.Kokoro()
-
-    # Get voice style
-    voice_style = kokoro.get_voice_style(VOICE)
-
-    # Get tokenizer for manual segment creation
-    tokenizer = kokoro._tokenizer
+    config = PipelineConfig(
+        voice=VOICE,
+        generation=GenerationConfig(lang=LANG, pause_mode="manual"),
+    )
+    synth = OnnxSynthesizerAdapter()
+    tokenizer = Tokenizer()
 
     # Demo 1: Volume
-    audio_volume = demo_volume(kokoro, tokenizer, voice_style, LANG)
+    audio_volume = demo_volume(synth, config, tokenizer, LANG)
     if audio_volume is not None:
         output_file = "prosody_volume_demo.wav"
         sf.write(output_file, audio_volume, SAMPLE_RATE)
@@ -362,7 +356,7 @@ def main():
         print(f"Created: {output_file} ({duration:.2f}s)")
 
     # Demo 2: Pitch
-    audio_pitch = demo_pitch(kokoro, tokenizer, voice_style, LANG)
+    audio_pitch = demo_pitch(synth, config, tokenizer, LANG)
     if audio_pitch is not None:
         output_file = "prosody_pitch_demo.wav"
         sf.write(output_file, audio_pitch, SAMPLE_RATE)
@@ -370,7 +364,7 @@ def main():
         print(f"Created: {output_file} ({duration:.2f}s)")
 
     # Demo 3: Rate
-    audio_rate = demo_rate(kokoro, tokenizer, voice_style, LANG)
+    audio_rate = demo_rate(synth, config, tokenizer, LANG)
     if audio_rate is not None:
         output_file = "prosody_rate_demo.wav"
         sf.write(output_file, audio_rate, SAMPLE_RATE)
@@ -378,14 +372,12 @@ def main():
         print(f"Created: {output_file} ({duration:.2f}s)")
 
     # Demo 4: Combined
-    audio_combined = demo_combined(kokoro, tokenizer, voice_style, LANG)
+    audio_combined = demo_combined(synth, config, tokenizer, LANG)
     if audio_combined is not None:
         output_file = "prosody_combined_demo.wav"
         sf.write(output_file, audio_combined, SAMPLE_RATE)
         duration = len(audio_combined) / SAMPLE_RATE
         print(f"Created: {output_file} ({duration:.2f}s)")
-
-    kokoro.close()
 
     print("\n" + "=" * 70)
     print("Prosody Demo Complete!")

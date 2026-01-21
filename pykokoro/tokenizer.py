@@ -296,6 +296,7 @@ class Tokenizer:
                 load_gold=self.config.load_gold,
                 load_silver=self.config.load_silver,
                 version=self._kokorog2p_model,
+                phoneme_quotes="curly",
             )
 
         return self._g2p_cache[lang]
@@ -392,9 +393,11 @@ class Tokenizer:
                 load_silver=False,  # Skip silver dictionary
                 backend=self.config.backend,
                 version=self._kokorog2p_model,
+                phoneme_quotes="curly",
             )
             phonemes = g2p_fallback.phonemize(text)
             logger.info(f"Espeak-only phonemization result: '{phonemes[:50]}...'")
+
 
         # Filter to only characters in vocabulary using variant-specific model
         phonemes = filter_for_kokoro(phonemes, model=self._kokorog2p_model)

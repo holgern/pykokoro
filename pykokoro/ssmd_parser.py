@@ -27,7 +27,6 @@ from ssmd import TTSCapabilities, parse_sentences
 if TYPE_CHECKING:
     from ssmd import SSMDSegment as SSMDParserSegment
 
-    from .phonemes import PhonemeSegment
     from .tokenizer import Tokenizer
 
 ANNOTATION_RE = re.compile(
@@ -44,6 +43,8 @@ ANNOTATION_RE = re.compile(
     """,
     re.VERBOSE,
 )
+
+LANG_SHORTHAND_RE = re.compile(r"\[([^\]]+)\]\(([a-zA-Z]{2,3}(?:-[a-zA-Z]{2})?)\)")
 
 
 @dataclass
@@ -344,6 +345,9 @@ def parse_ssmd_to_segments(
         ...     tokenizer
         ... )
     """
+    # Convert shorthand language annotations like [Bonjour](fr)
+    text = LANG_SHORTHAND_RE.sub(r'[\1]{lang="\2"}', text)
+
     # Use SSMD's parse_sentences to get structured data
     # Enable heading detection for markdown-style headings (# ## ###)
     caps = TTSCapabilities()
@@ -461,88 +465,3 @@ def parse_ssmd_to_segments(
             paragraph_idx += 1
 
     return initial_pause, pykokoro_segments
-
-
-def ssmd_segments_to_phoneme_segments(
-    ssmd_segments: list[SSMDSegment],
-    initial_pause: float,
-    tokenizer: Tokenizer,
-    default_lang: str = "en-us",
-    paragraph: int = 0,
-    sentence_start: int = 0,
-) -> list[PhonemeSegment]:
-    """Convert SSMDSegment list to PhonemeSegment list.
-
-    Args:
-        ssmd_segments: List of parsed SSMD segments
-        initial_pause: Initial pause before first segment
-        tokenizer: Tokenizer for phonemization
-        default_lang: Default language code
-        paragraph: Paragraph index
-        sentence_start: Starting sentence index
-
-    Returns:
-        List of PhonemeSegment instances
-    """
-    from .phonemes import PhonemeSegment
-
-    segments = []
-
-    # Add initial pause as empty segment if present
-    if initial_pause > 0:
-        segments.append(
-            PhonemeSegment(
-                text="",
-                phonemes="",
-                tokens=[],
-                lang=default_lang,
-                paragraph=paragraph,
-                sentence=sentence_start,
-                pause_after=initial_pause,
-            )
-        )
-
-    # Convert each SSMD segment to PhonemeSegment
-    for i, ssmd_seg in enumerate(ssmd_segments):
-        # Determine language
-        lang = ssmd_seg.metadata.language or default_lang
-
-        # Get phonemes - use explicit if provided, otherwise phonemize
-        # Audio segments don't need phonemization (they play pre-recorded audio)
-        if ssmd_seg.metadata.audio_src:
-            # Audio segment - use alt text for display, skip phonemization
-            phonemes = ""
-            tokens = []
-        elif ssmd_seg.metadata.phonemes:
-            # Use explicit phoneme override
-            phonemes = ssmd_seg.metadata.phonemes
-            tokens = tokenizer.tokenize(phonemes)
-        else:
-            # Phonemize text
-            phonemes = tokenizer.phonemize(ssmd_seg.text, lang=lang)
-            tokens = tokenizer.tokenize(phonemes)
-
-        # Create phoneme segment with voice metadata
-        seg = PhonemeSegment(
-            text=ssmd_seg.text,
-            phonemes=phonemes,
-            tokens=tokens,
-            lang=lang,
-            paragraph=ssmd_seg.paragraph,  # Use paragraph from SSMD segment
-            sentence=sentence_start + i,
-            pause_before=ssmd_seg.pause_before,
-            pause_after=ssmd_seg.pause_after,
-        )
-
-        # Attach voice metadata for voice switching
-        seg.voice_name = ssmd_seg.metadata.voice_name
-        seg.voice_language = ssmd_seg.metadata.voice_language
-        seg.voice_gender = ssmd_seg.metadata.voice_gender
-        seg.voice_variant = ssmd_seg.metadata.voice_variant
-
-        # Store full metadata as dict for backward compatibility
-        seg.ssmd_metadata = ssmd_seg.metadata.to_dict()
-
-        segments.append(seg)
-
-    return segments

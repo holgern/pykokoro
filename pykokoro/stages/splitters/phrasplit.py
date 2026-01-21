@@ -102,25 +102,31 @@ class PhrasplitSplitter(Splitter):
         if hasattr(phrasplit_module, "split_with_offsets"):
             try:
                 segments = phrasplit_module.split_with_offsets(text, **kwargs)
-            except TypeError:
-                segments = phrasplit_module.split_with_offsets(
-                    text,
-                    mode="sentence",
-                    language_model=language_model,
-                )
+            except (OSError, TypeError):
+                try:
+                    segments = phrasplit_module.split_with_offsets(
+                        text,
+                        mode="sentence",
+                        language_model=language_model,
+                    )
+                except OSError:
+                    return []
         elif hasattr(phrasplit_module, "iter_split_with_offsets"):
             try:
                 segments = list(
                     phrasplit_module.iter_split_with_offsets(text, **kwargs)
                 )
-            except TypeError:
-                segments = list(
-                    phrasplit_module.iter_split_with_offsets(
-                        text,
-                        mode="sentence",
-                        language_model=language_model,
+            except (OSError, TypeError):
+                try:
+                    segments = list(
+                        phrasplit_module.iter_split_with_offsets(
+                            text,
+                            mode="sentence",
+                            language_model=language_model,
+                        )
                     )
-                )
+                except OSError:
+                    return []
         else:
             return []
 

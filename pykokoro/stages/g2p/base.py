@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ...types import Annotation, PhonemeSegment, Segment
+from ...types import Annotation, Segment
+from .kokorog2p import PhonemeSegment
 
 
 class G2P(Protocol):
