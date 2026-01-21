@@ -3,7 +3,7 @@
 
 from pykokoro import PipelineConfig
 from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
-from pykokoro.stages.g2p.tokenizer import TokenizerAdapter
+from pykokoro.stages.g2p.kokorog2p import KokoroG2PAdapter
 from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import Trace
 
@@ -54,7 +54,7 @@ People walk to work. Cars fill the streets. The city comes alive."""
     trace = Trace()
     parser = SsmdDocumentParser()
     splitter = PhrasplitSplitter()
-    g2p = TokenizerAdapter()
+    g2p = KokoroG2PAdapter()
 
     try:
         doc = parser.parse(text, cfg, trace)

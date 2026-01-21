@@ -1,16 +1,7 @@
 from __future__ import annotations
 
-from typing import Protocol
+from ..base import G2PAdapter
 
-from ...types import Annotation, Segment
-from .kokorog2p import PhonemeSegment
+G2P = G2PAdapter
 
-
-class G2P(Protocol):
-    def phonemize(
-        self,
-        *,
-        segments: list[Segment],
-        clean_texts: list[str],
-        annotations: list[list[Annotation]],
-    ) -> list[PhonemeSegment]: ...
+__all__ = ["G2P", "G2PAdapter"]

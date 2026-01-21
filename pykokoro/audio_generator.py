@@ -247,6 +247,8 @@ class AudioGenerator:
         # Check for SSMD voice metadata override
         if voice_resolver and segment.ssmd_metadata:
             voice_name = segment.ssmd_metadata.get("voice_name")
+            if not voice_name:
+                voice_name = segment.ssmd_metadata.get("voice")
             if voice_name:
                 try:
                     segment_voice_style = voice_resolver(voice_name)

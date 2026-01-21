@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from kokorog2p.base import G2PBase
 
     from ...pipeline_config import PipelineConfig
-    from ...types import Segment, Trace
+    from ...types import AnnotationSpan, Segment, Trace
 
 
 @dataclass
@@ -108,20 +108,19 @@ class KokoroG2PAdapter(G2PAdapter):
             seg_boundaries = slice_boundaries(
                 doc.boundary_events, segment.char_start, segment.char_end
             )
+            phoneme_override = self._resolve_phoneme_override(
+                doc.annotation_spans,
+                segment,
+                span_warnings,
+            )
             trace.warnings.extend(span_warnings)
 
             lang = generation.lang
-            seg_len = max(0, segment.char_end - segment.char_start)
-            phoneme_override = None
             ssmd_metadata: dict[str, str] = {}
             for span in span_list:
                 span_lang = span.attrs.get("lang")
                 if span_lang:
                     lang = span_lang
-                if span.char_start == 0 and span.char_end == seg_len:
-                    phoneme_override = span.attrs.get("ph") or span.attrs.get(
-                        "phonemes"
-                    )
                 self._apply_span_metadata(span.attrs, ssmd_metadata)
 
             cache_key = make_g2p_key(
@@ -229,8 +228,10 @@ class KokoroG2PAdapter(G2PAdapter):
         if not attrs:
             return
         if "voice" in attrs:
+            metadata["voice"] = attrs["voice"]
             metadata["voice_name"] = attrs["voice"]
         if "voice_name" in attrs:
+            metadata["voice"] = attrs["voice_name"]
             metadata["voice_name"] = attrs["voice_name"]
         if "prosody_rate" in attrs:
             metadata["prosody_rate"] = attrs["prosody_rate"]
@@ -245,11 +246,43 @@ class KokoroG2PAdapter(G2PAdapter):
         if "volume" in attrs:
             metadata.setdefault("prosody_volume", attrs["volume"])
         if "lang" in attrs:
-            metadata["language"] = attrs["lang"]
+            metadata["lang"] = attrs["lang"]
         if "ph" in attrs:
-            metadata["phonemes"] = attrs["ph"]
+            metadata["ph"] = attrs["ph"]
         if "phonemes" in attrs:
-            metadata["phonemes"] = attrs["phonemes"]
+            metadata.setdefault("ph", attrs["phonemes"])
+
+    def _resolve_phoneme_override(
+        self,
+        spans: list["AnnotationSpan"],
+        segment: "Segment",
+        warnings: list[str],
+    ) -> str | None:
+        phoneme_override = None
+        for span in spans:
+            if "ph" not in span.attrs and "phonemes" not in span.attrs:
+                continue
+            if (
+                span.char_start == segment.char_start
+                and span.char_end == segment.char_end
+            ):
+                override_value = span.attrs.get("ph") or span.attrs.get("phonemes")
+                if phoneme_override and override_value != phoneme_override:
+                    warnings.append(
+                        "Multiple phoneme override spans match segment "
+                        f"{segment.char_start}:{segment.char_end}."
+                    )
+                phoneme_override = override_value
+            elif (
+                span.char_end > segment.char_start
+                and span.char_start < segment.char_end
+            ):
+                warnings.append(
+                    "Skipped phoneme override span at "
+                    f"{span.char_start}:{span.char_end} for segment "
+                    f"{segment.char_start}:{segment.char_end}."
+                )
+        return phoneme_override
 
     def _resolve_pauses(self, boundaries, generation):
         pause_before = 0.0
