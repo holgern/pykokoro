@@ -29,7 +29,13 @@ def slice_spans(
         else:
             start = max(span.char_start, seg_start) - seg_start
             end = min(span.char_end, seg_end) - seg_start
-        sliced.append(AnnotationSpan(char_start=start, char_end=end, attrs=span.attrs))
+        sliced.append(
+            AnnotationSpan(
+                char_start=start,
+                char_end=end,
+                attrs=dict(span.attrs),
+            )
+        )
     return sliced
 
 
@@ -40,13 +46,15 @@ def slice_boundaries(
 ) -> list[BoundaryEvent]:
     sliced: list[BoundaryEvent] = []
     for boundary in boundaries:
-        if seg_start <= boundary.pos <= seg_end:
+        if (seg_start == 0 and boundary.pos == 0) or (
+            seg_start < boundary.pos <= seg_end
+        ):
             sliced.append(
                 BoundaryEvent(
                     pos=boundary.pos - seg_start,
                     kind=boundary.kind,
                     duration_s=boundary.duration_s,
-                    attrs=boundary.attrs,
+                    attrs=dict(boundary.attrs),
                 )
             )
     return sliced

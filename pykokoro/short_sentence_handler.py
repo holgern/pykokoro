@@ -40,7 +40,7 @@ class ShortSentenceConfig:
 
     Attributes:
         min_phoneme_length: Threshold below which sentences are considered "short"
-            and will use context extraction. Default: 10 phonemes.
+            based on token count and will use context extraction. Default: 10.
         phoneme_pretext: Phoneme(s) to add before and after the target word
             when generating combined audio for context. Default: "—".
         enabled: Whether short sentence handling is enabled. Default: True.
@@ -55,7 +55,7 @@ class ShortSentenceConfig:
         """Check if segment should use pause surrounding.
 
         Args:
-            phoneme_length: Number of phonemes in the segment
+            phoneme_length: Token count for the segment
             text: The text content to check for single-word status
 
         Returns:
@@ -130,4 +130,5 @@ def is_segment_short(
     if not segment.phonemes.strip():
         return False
 
-    return config.should_use_pause_surrounding(len(segment.phonemes), segment.text)
+    token_length = len(segment.tokens) if segment.tokens else len(segment.phonemes)
+    return config.should_use_pause_surrounding(token_length, segment.text)

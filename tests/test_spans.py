@@ -1,5 +1,5 @@
-from pykokoro.runtime.spans import slice_spans
-from pykokoro.types import AnnotationSpan
+from pykokoro.runtime.spans import slice_boundaries, slice_spans
+from pykokoro.types import AnnotationSpan, BoundaryEvent
 
 
 def test_slice_spans_snap_punctuation_and_adjacent():
@@ -27,3 +27,35 @@ def test_slice_spans_strict_drops_partial_with_warning():
 
     assert sliced == []
     assert any("Dropped partial annotation span" in warning for warning in warnings)
+
+
+def test_slice_boundaries_assigns_to_left_segment():
+    boundaries = [BoundaryEvent(pos=5, kind="pause", duration_s=0.5, attrs={"a": "b"})]
+
+    left = slice_boundaries(boundaries, 0, 5)
+    right = slice_boundaries(boundaries, 5, 10)
+
+    assert [(b.pos, b.duration_s) for b in left] == [(5, 0.5)]
+    assert right == []
+
+
+def test_slice_boundaries_keeps_initial_pause():
+    boundaries = [BoundaryEvent(pos=0, kind="pause", duration_s=0.2, attrs={})]
+
+    sliced = slice_boundaries(boundaries, 0, 4)
+
+    assert [(b.pos, b.duration_s) for b in sliced] == [(0, 0.2)]
+
+
+def test_slice_helpers_copy_attrs():
+    span = AnnotationSpan(char_start=0, char_end=2, attrs={"lang": "en"})
+    boundary = BoundaryEvent(pos=1, kind="pause", duration_s=0.1, attrs={"k": "v"})
+
+    sliced_span = slice_spans([span], 0, 2)[0]
+    sliced_boundary = slice_boundaries([boundary], 0, 2)[0]
+
+    span.attrs["lang"] = "fr"
+    boundary.attrs["k"] = "changed"
+
+    assert sliced_span.attrs["lang"] == "en"
+    assert sliced_boundary.attrs["k"] == "v"

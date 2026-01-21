@@ -146,7 +146,8 @@ class KokoroG2PAdapter(G2PAdapter):
                     tokens = g2p.phonemes_to_ids(phonemes, model=model_version)
                 elif phoneme_override:
                     phonemes = phoneme_override
-                    tokens = []
+                    model_version = self._get_model_version(cfg)
+                    tokens = g2p.phonemes_to_ids(phonemes, model=model_version)
                 else:
                     g2p_instance = self._get_g2p_instance(lang, cfg)
                     result = g2p.phonemize_to_result(

@@ -133,60 +133,81 @@ class AudioGenerator:
         Returns:
             List of phoneme batches, each <= MAX_PHONEME_LENGTH
         """
+        def token_len(text: str) -> int:
+            if not text:
+                return 0
+            return len(self._tokenizer.tokenize(text))
+
         # Split on sentence-ending punctuation (., !, ?) while keeping them
         # Use lookbehind to split AFTER the punctuation
         sentences = re.split(r"(?<=[.!?])\s*", phonemes)
 
-        batches = []
+        batches: list[str] = []
         current = ""
+        current_tokens = 0
 
         for sentence in sentences:
             sentence = sentence.strip()
             if not sentence:
                 continue
 
+            sentence_tokens = token_len(sentence)
+
             # If adding sentence would exceed limit, save current batch, start new
-            if current and len(current) + len(sentence) + 1 > MAX_PHONEME_LENGTH:
+            if current and current_tokens + sentence_tokens > MAX_PHONEME_LENGTH:
                 batches.append(current.strip())
                 current = sentence
+                current_tokens = sentence_tokens
             # If the sentence itself is too long, we need to split it further
-            elif len(sentence) > MAX_PHONEME_LENGTH:
+            elif sentence_tokens > MAX_PHONEME_LENGTH:
                 # Save current batch if any
                 if current:
                     batches.append(current.strip())
                     current = ""
+                    current_tokens = 0
                 # Split long sentence on any punctuation or spaces
                 words = re.split(r"([.,;:!?\s])", sentence)
-                # If there's no punctuation or spaces, force chunk by character count
-                if len(words) == 1 and len(words[0]) > MAX_PHONEME_LENGTH:
-                    # Chunk the string at MAX_PHONEME_LENGTH boundaries
-                    chunk = words[0]
-                    while len(chunk) > MAX_PHONEME_LENGTH:
-                        batches.append(chunk[:MAX_PHONEME_LENGTH])
-                        chunk = chunk[MAX_PHONEME_LENGTH:]
-                    if chunk:
-                        current = chunk
-                else:
-                    for word in words:
-                        if not word or word.isspace():
-                            if current:
-                                current += " "
-                            continue
-                        if len(current) + len(word) + 1 > MAX_PHONEME_LENGTH:
-                            if current:
-                                batches.append(current.strip())
-                            current = word
-                        else:
-                            if current and not current.endswith(
-                                (".", "!", "?", ",", ";", ":")
-                            ):
-                                current += " "
-                            current += word
+                if len(words) == 1:
+                    word_tokens = self._tokenizer.tokenize(words[0]) if words[0] else []
+                    if len(word_tokens) > MAX_PHONEME_LENGTH:
+                        for i in range(0, len(word_tokens), MAX_PHONEME_LENGTH):
+                            chunk_tokens = word_tokens[i : i + MAX_PHONEME_LENGTH]
+                            batches.append(self._tokenizer.detokenize(chunk_tokens))
+                        continue
+                for word in words:
+                    if not word or word.isspace():
+                        if current:
+                            current += " "
+                            current_tokens = token_len(current)
+                        continue
+                    word_tokens = self._tokenizer.tokenize(word)
+                    if len(word_tokens) > MAX_PHONEME_LENGTH:
+                        if current:
+                            batches.append(current.strip())
+                            current = ""
+                            current_tokens = 0
+                        for i in range(0, len(word_tokens), MAX_PHONEME_LENGTH):
+                            chunk_tokens = word_tokens[i : i + MAX_PHONEME_LENGTH]
+                            batches.append(self._tokenizer.detokenize(chunk_tokens))
+                        continue
+                    if current_tokens + len(word_tokens) > MAX_PHONEME_LENGTH:
+                        if current:
+                            batches.append(current.strip())
+                        current = word
+                        current_tokens = token_len(current)
+                    else:
+                        if current and not current.endswith(
+                            (".", "!", "?", ",", ";", ":")
+                        ):
+                            current += " "
+                        current += word
+                        current_tokens = token_len(current)
             else:
                 # Add sentence to current batch
                 if current:
                     current += " "
                 current += sentence
+                current_tokens = token_len(current)
 
         if current:
             batches.append(current.strip())
@@ -260,6 +281,13 @@ class AudioGenerator:
 
         return segment_voice_style
 
+    def _segment_token_length(self, segment: PhonemeSegment) -> int:
+        if segment.tokens:
+            return len(segment.tokens)
+        if not segment.phonemes:
+            return 0
+        return len(self._tokenizer.tokenize(segment.phonemes))
+
     def _generate_single_segment_audio(
         self,
         segment: PhonemeSegment,
@@ -324,7 +352,7 @@ class AudioGenerator:
             return audio_parts
 
         # Handle long phonemes by splitting
-        if len(segment.phonemes) > MAX_PHONEME_LENGTH:
+        if self._segment_token_length(segment) > MAX_PHONEME_LENGTH:
             batches = self.split_phonemes(segment.phonemes)
             for batch in batches:
                 audio = self._generate_and_process_audio(

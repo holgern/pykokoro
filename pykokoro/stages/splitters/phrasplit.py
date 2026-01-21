@@ -16,16 +16,18 @@ class PhrasplitSplitter(Splitter):
         except Exception:
             return [
                 Segment(
-                    id="seg_0",
+                    id="p0_s0_c0_seg0",
                     text=text,
                     char_start=0,
                     char_end=len(text),
                     paragraph_idx=0,
                     sentence_idx=0,
+                    clause_idx=0,
                 )
             ]
 
-        ranges = self._hard_ranges(text, doc.boundary_events)
+        override_ranges = self._override_ranges(doc.annotation_spans)
+        ranges = self._hard_ranges(text, doc.boundary_events, override_ranges)
         segments: list[Segment] = []
         seg_idx = 0
         sentence_idx = 0
@@ -34,9 +36,12 @@ class PhrasplitSplitter(Splitter):
             if end <= start:
                 continue
             chunk = text[start:end]
-            split_items = self._split_with_offsets(phrasplit, chunk, language_model)
-            if not split_items:
+            if (start, end) in override_ranges:
                 split_items = [(chunk, 0, len(chunk), None, None, None)]
+            else:
+                split_items = self._split_with_offsets(phrasplit, chunk, language_model)
+                if not split_items:
+                    split_items = [(chunk, 0, len(chunk), None, None, None)]
 
             cursor = 0
 
@@ -67,38 +72,58 @@ class PhrasplitSplitter(Splitter):
 
                 abs_start = start + seg_start
                 abs_end = start + seg_end
+                resolved_sentence = sent if sent is not None else sentence_idx
+                if sent is None:
+                    sentence_idx += 1
+                else:
+                    sentence_idx = max(sentence_idx, sent + 1)
+                resolved_paragraph = para if para is not None else 0
+                resolved_clause = clause if clause is not None else 0
+                segment_id = (
+                    f"p{resolved_paragraph}"
+                    f"_s{resolved_sentence}"
+                    f"_c{resolved_clause}"
+                    f"_seg{seg_idx}"
+                )
                 segments.append(
                     Segment(
-                        id=f"seg_{seg_idx}",
+                        id=segment_id,
                         text=text[abs_start:abs_end],
                         char_start=abs_start,
                         char_end=abs_end,
-                        paragraph_idx=para,
-                        sentence_idx=sent if sent is not None else sentence_idx,
-                        clause_idx=clause,
+                        paragraph_idx=resolved_paragraph,
+                        sentence_idx=resolved_sentence,
+                        clause_idx=resolved_clause,
                     )
                 )
                 seg_idx += 1
-                sentence_idx += 1
                 cursor = max(cursor, seg_end)
 
         if not segments:
             segments.append(
                 Segment(
-                    id="seg_0",
+                    id="p0_s0_c0_seg0",
                     text=text,
                     char_start=0,
                     char_end=len(text),
                     paragraph_idx=0,
                     sentence_idx=0,
+                    clause_idx=0,
                 )
             )
         return segments
 
     def _hard_ranges(
-        self, text: str, boundaries: list[BoundaryEvent]
+        self,
+        text: str,
+        boundaries: list[BoundaryEvent],
+        override_ranges: set[tuple[int, int]],
     ) -> list[tuple[int, int]]:
-        positions = sorted({b.pos for b in boundaries})
+        positions = {b.pos for b in boundaries}
+        for start, end in override_ranges:
+            positions.add(start)
+            positions.add(end)
+        positions = sorted(positions)
         ranges: list[tuple[int, int]] = []
         start = 0
         for pos in positions:
@@ -110,6 +135,13 @@ class PhrasplitSplitter(Splitter):
             ranges.append((start, len(text)))
         if not ranges:
             ranges.append((0, len(text)))
+        return ranges
+
+    def _override_ranges(self, spans) -> set[tuple[int, int]]:
+        ranges: set[tuple[int, int]] = set()
+        for span in spans:
+            if "ph" in span.attrs or "phonemes" in span.attrs:
+                ranges.add((span.char_start, span.char_end))
         return ranges
 
     def _split_with_offsets(self, phrasplit_module, text: str, language_model: str):
