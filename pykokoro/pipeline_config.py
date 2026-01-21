@@ -21,7 +21,6 @@ from .tokenizer import EspeakConfig, TokenizerConfig
 class PipelineConfig:
     """User-facing configuration for the end-to-end pipeline."""
 
-    mode: Literal["compat", "modular"] = "compat"
     voice: str | VoiceBlend = "af"
     generation: GenerationConfig = field(default_factory=GenerationConfig)
 

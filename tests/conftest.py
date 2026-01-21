@@ -28,7 +28,7 @@ def pytest_configure(config):
         print(f"espeak-ng check failed: {e}", file=sys.stderr)
 
     try:
-        from pykokoro import create_tokenizer
+        from pykokoro.tokenizer import create_tokenizer
 
         tokenizer = create_tokenizer()
         result = tokenizer.phonemize("test", lang="en-us")

@@ -3,7 +3,8 @@ import os
 import numpy as np
 import pytest
 
-from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.generation_config import GenerationConfig
 from pykokoro.pipeline_config import PipelineConfig as PipelineConfigType
 from pykokoro.phonemes import PhonemeSegment
 from pykokoro.stages.base import DocumentResult
@@ -43,18 +44,9 @@ def test_pipeline_imports():
     assert PipelineConfig is not None
 
 
-def test_compat_pipeline_runs_with_dummy_synth():
-    cfg = PipelineConfig(mode="compat", return_trace=True)
-    pipe = KokoroPipeline(cfg, synth=DummySynth())
-    res = pipe.run("Hello ...500ms world")
-    assert res.audio.size > 0
-    assert res.trace is not None
-    assert any(event.name == "ssmd_boundary" for event in res.trace.events)
-
-
 def test_modular_ssmd_parser_spans_and_breaks():
     parser = SsmdDocumentParser()
-    cfg = PipelineConfigType(mode="modular")
+    cfg = PipelineConfigType()
     trace = Trace()
     doc = parser.parse("[Bonjour](fr) le monde.", cfg, trace)
     assert doc.clean_text == "Bonjour le monde."
@@ -69,7 +61,7 @@ def test_modular_ssmd_parser_spans_and_breaks():
 def test_phrasplit_offsets_match_slices():
     pytest.importorskip("phrasplit")
     parser = SsmdDocumentParser()
-    cfg = PipelineConfigType(mode="modular")
+    cfg = PipelineConfigType()
     trace = Trace()
     doc = parser.parse("Hello world. Second sentence.", cfg, trace)
     splitter = PhrasplitSplitter()
@@ -87,7 +79,7 @@ def test_phrasplit_language_model_from_lang():
 
 
 def test_pipeline_run_overrides_lang():
-    cfg = PipelineConfig(mode="compat")
+    cfg = PipelineConfig()
     g2p = DummyG2P()
     pipe = KokoroPipeline(
         cfg,
@@ -109,6 +101,6 @@ def test_pipeline_run_overrides_lang():
     reason="Enable with PYKOKORO_ONNX_SMOKE=1",
 )
 def test_onnx_smoke():
-    cfg = PipelineConfig(mode="compat")
+    cfg = PipelineConfig()
     res = KokoroPipeline(cfg).run("Hello")
     assert res.audio.size > 0

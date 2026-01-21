@@ -280,7 +280,7 @@ class TestBugFix3Integration:
     def test_no_code_duplication_between_modules(self):
         """Verify that onnx_session and onnx_backend use same logic."""
         # Both modules should import and use ProviderConfigManager
-        from pykokoro import onnx_session
+        import pykokoro.onnx_session as onnx_session
 
         # Check that both use the shared manager (by checking method signatures)
         # This is a smoke test to ensure refactoring didn't break anything

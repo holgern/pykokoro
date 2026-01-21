@@ -1,7 +1,7 @@
 """Configuration for audio generation in PyKokoro.
 
 This module provides the GenerationConfig dataclass for configuring
-audio generation parameters in Kokoro.create() and create_from_phonemes().
+audio generation parameters in the KokoroPipeline.
 """
 
 from dataclasses import dataclass
@@ -10,15 +10,14 @@ from typing import Any, Literal
 
 @dataclass(frozen=True)
 class GenerationConfig:
-    """Configuration for audio generation in Kokoro.create().
+    """Configuration for audio generation in the KokoroPipeline.
 
     Groups all generation-time parameters for easier reuse and documentation.
     Instances are immutable (frozen) to prevent accidental modification.
 
-    This config simplifies the Kokoro.create() API by grouping related parameters
-    into a reusable configuration object. You can create a config once and reuse
-    it across multiple generations, with the ability to override individual
-    parameters using kwargs.
+    This config groups generation parameters into a reusable configuration object
+    for PipelineConfig. You can create a config once and reuse it across multiple
+    runs, with the ability to override individual parameters using kwargs.
 
     Priority order when using both config and kwargs:
         1. kwargs (highest priority - explicit per-call overrides)
@@ -57,8 +56,8 @@ class GenerationConfig:
         random_seed: Optional random seed for reproducible pause variance.
             If None, pauses will vary between runs. If set to an integer,
             pause variance will be reproducible. Default: None
-        enable_short_sentence: Override short sentence handling for this call.
-            - None (default): Use config setting from Kokoro initialization
+        enable_short_sentence: Override short sentence handling for this run.
+            - None (default): Use config setting from PipelineConfig
             - True: Force enable short sentence handling (phoneme pretext)
             - False: Force disable short sentence handling
             Default: None
@@ -66,10 +65,10 @@ class GenerationConfig:
     Example:
         Basic usage with config:
 
-        >>> from pykokoro import Kokoro, GenerationConfig
-        >>> tts = Kokoro()
+        >>> from pykokoro import KokoroPipeline, PipelineConfig
         >>> config = GenerationConfig(speed=1.2, pause_mode="manual")
-        >>> audio, sr = tts.create("Hello world", voice="af_sarah", config=config)
+        >>> pipe = KokoroPipeline(PipelineConfig(voice="af_sarah", generation=config))
+        >>> res = pipe.run("Hello world")
 
         Reuse config across multiple generations:
 
@@ -79,25 +78,14 @@ class GenerationConfig:
         ...     pause_clause=0.25,
         ...     pause_sentence=0.5,
         ... )
-        >>> audio1, sr = tts.create("First sentence.", voice="af_sarah", config=config)
-        >>> audio2, sr = tts.create("Second sentence.", voice="af_sarah", config=config)
+        >>> res1 = pipe.run("First sentence.")
+        >>> res2 = pipe.run("Second sentence.")
 
         Override specific parameters using kwargs:
 
-        >>> audio, sr = tts.create(
+        >>> res = pipe.run(
         ...     "Fast speech",
-        ...     voice="af_sarah",
-        ...     config=config,
-        ...     speed=2.0  # Override just the speed
-        ... )
-
-        Backward compatibility - old API still works:
-
-        >>> audio, sr = tts.create(
-        ...     "Hello",
-        ...     voice="af_sarah",
-        ...     speed=1.2,
-        ...     pause_mode="manual"
+        ...     generation=GenerationConfig(speed=2.0, pause_mode="manual"),
         ... )
     """
 
@@ -159,7 +147,7 @@ class GenerationConfig:
     def merge_with_kwargs(self, **kwargs: Any) -> dict[str, Any]:
         """Merge config with kwargs, with kwargs taking priority.
 
-        This is used internally by Kokoro.create() to merge the config
+        This is used internally by KokoroPipeline to merge the config
         object with individual parameter overrides. Only non-None kwargs
         will override config values.
 

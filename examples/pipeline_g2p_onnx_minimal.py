@@ -49,7 +49,6 @@ def main() -> None:
     text = ("'That's ridiculous!' I protested. 'I'm not gonna stand here and let you insult me! What's your problem anyway?'")
 
     cfg = PipelineConfig(
-        mode="modular",
         voice="af",
         generation=GenerationConfig(lang="en-us"),
         return_trace=True,
@@ -77,6 +76,7 @@ def main() -> None:
 
     doc = pipeline.doc_parser.parse(text, cfg, Trace())
     segments = pipeline.splitter.split(doc, cfg, Trace())
+    print(segments)
     phoneme_segments = pipeline.g2p.phonemize(segments, doc, cfg, Trace())
     print(f"Text: {text}")
     print("Phonemes:")

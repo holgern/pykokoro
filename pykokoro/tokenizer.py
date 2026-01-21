@@ -7,7 +7,6 @@ kokorog2p (dictionary + espeak fallback) as the phonemizer backend.
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -19,12 +18,6 @@ from .constants import MAX_PHONEME_LENGTH, SUPPORTED_LANGUAGES
 from .mixed_language_handler import MixedLanguageHandler
 from .phoneme_dictionary import PhonemeDictionary
 
-ANNOTATION_REGEX = getattr(
-    _kokorog2p, "ANNOTATION_REGEX", re.compile(r"\[[^\]]+\]\{[^}]+\}")
-)
-SPEECHMARKDOWN_ATTR_REGEX = getattr(
-    _kokorog2p, "SPEECHMARKDOWN_ATTR_REGEX", re.compile(r"\[[^\]]+\]\([^)]*\)")
-)
 N_TOKENS = _kokorog2p.N_TOKENS
 BackendType = _kokorog2p.BackendType
 GToken = _kokorog2p.GToken
@@ -33,10 +26,6 @@ get_g2p = _kokorog2p.get_g2p
 get_kokoro_vocab = _kokorog2p.get_kokoro_vocab
 ids_to_phonemes = _kokorog2p.ids_to_phonemes
 phonemes_to_ids = _kokorog2p.phonemes_to_ids
-phonemize_with_speechmarkdown = getattr(
-    _kokorog2p, "phonemize_with_speechmarkdown", None
-)
-phonemize_with_ssmd = getattr(_kokorog2p, "phonemize_with_ssmd", None)
 validate_for_kokoro = _kokorog2p.validate_for_kokoro
 
 if TYPE_CHECKING:
@@ -377,48 +366,10 @@ class Tokenizer:
             text = self._mixed_language_handler.preprocess_text(
                 text, default_language=lang
             )
-
         # Apply custom phoneme dictionary first
         processed_text = self._apply_phoneme_dictionary(text)
-
-        # Use phonemize_with_ssmd if we have custom phonemes
-        # Otherwise use standard phonemization
-        if ANNOTATION_REGEX.search(processed_text) and processed_text != text:
-            if phonemize_with_ssmd is not None:
-                phonemize_with_ssmd_func = phonemize_with_ssmd
-                try:
-                    phonemes = phonemize_with_ssmd_func(processed_text, lang)
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to use phonemize_with_ssmd, "
-                        f"falling back to standard phonemization: {e}"
-                    )
-                    g2p = self._get_g2p(lang)
-                    phonemes = g2p.phonemize(text)
-            else:
-                g2p = self._get_g2p(lang)
-                phonemes = g2p.phonemize(text)
-        elif (
-            SPEECHMARKDOWN_ATTR_REGEX.search(processed_text) and processed_text != text
-        ):
-            if phonemize_with_speechmarkdown is not None:
-                phonemize_with_speechmarkdown_func = phonemize_with_speechmarkdown
-                try:
-                    phonemes = phonemize_with_speechmarkdown_func(processed_text, lang)
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to use phonemize_with_speechmarkdown, "
-                        f"falling back to standard phonemization: {e}"
-                    )
-                    g2p = self._get_g2p(lang)
-                    phonemes = g2p.phonemize(text)
-            else:
-                g2p = self._get_g2p(lang)
-                phonemes = g2p.phonemize(text)
-        else:
-            # Standard phonemization
-            g2p = self._get_g2p(lang)
-            phonemes = g2p.phonemize(text)
+        g2p = self._get_g2p(lang)
+        phonemes = g2p.phonemize(processed_text)
 
         # WORKAROUND: kokorog2p 0.3.1 may return empty strings in CI environments
         # (likely due to dictionary initialization issues). Retry with espeak-only.
