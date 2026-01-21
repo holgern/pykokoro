@@ -93,6 +93,38 @@ audio, sample_rate = tts.create(text, voice="af_sarah", speed=1.0, lang="en-us")
 sf.write("output.wav", audio, sample_rate)
 ```
 
+## Pipeline API (Recommended)
+
+The new pipeline API provides a structured, API-first interface while preserving
+existing behavior in `mode="compat"`.
+
+```python
+from pykokoro import KokoroPipeline, PipelineConfig
+
+pipe = KokoroPipeline(PipelineConfig(mode="compat", voice="af_sarah"))
+res = pipe.run("Hello")
+audio = res.audio
+```
+
+### Migration
+
+Old:
+
+```python
+from pykokoro import Kokoro
+k = Kokoro(voice="af")
+audio = k("Hello")
+```
+
+New:
+
+```python
+from pykokoro import KokoroPipeline, PipelineConfig
+pipe = KokoroPipeline(PipelineConfig(mode="compat", voice="af"))
+res = pipe.run("Hello")
+audio = res.audio
+```
+
 ## Hardware Acceleration
 
 ### Automatic Provider Selection (Recommended)

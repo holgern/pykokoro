@@ -1,24 +1,40 @@
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 
-from ...config import PipelineConfig
-from ...types import PhonemeSegment, Segment
+from ...onnx_backend import Kokoro
+from ...pipeline_config import PipelineConfig
+from ...types import PhonemeSegment, Trace
 
 
-class OnnxSynthesizer:
-    """Stub ONNX synthesizer.
+class OnnxSynthesizerAdapter:
+    def __init__(self, kokoro: Kokoro | None = None) -> None:
+        self._kokoro = kokoro
 
-    Wire this to your existing ONNX backend implementation.
-    """
+    def synthesize(
+        self, phoneme_segments: list[PhonemeSegment], cfg: PipelineConfig, trace: Trace
+    ) -> np.ndarray:
+        kokoro = self._kokoro or Kokoro(
+            model_quality=cfg.model_quality,
+            model_source=cfg.model_source,
+            model_variant=cfg.model_variant,
+            provider=cfg.provider,
+            provider_options=cfg.provider_options,
+            session_options=cfg.session_options,
+            tokenizer_config=cfg.tokenizer_config,
+            espeak_config=cfg.espeak_config,
+            short_sentence_config=cfg.short_sentence_config,
+        )
+        self._kokoro = kokoro
 
-    def __init__(self, config: PipelineConfig) -> None:
-        self.config = config
+        generation = cfg.generation
+        voice_style = kokoro._resolve_voice_style(cfg.voice)
+        trim_silence = generation.pause_mode == "manual"
 
-    def synth(self, items: list[PhonemeSegment], *, segments: list[Segment]) -> tuple[np.ndarray, int]:
-        # TODO: integrate your existing ONNX backend.
-        # For now, return 0.1s of silence at 24kHz.
-        sr = 24000
-        return np.zeros(int(0.1 * sr), dtype=np.float32), sr
+        return kokoro._generate_from_segments(
+            phoneme_segments,
+            voice_style,
+            generation.speed,
+            trim_silence,
+            generation.enable_short_sentence,
+        )

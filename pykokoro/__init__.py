@@ -6,6 +6,8 @@ with support for multiple languages, voices, and quality levels.
 
 from .constants import DEFAULT_CONFIG, PROGRAM_NAME
 from .generation_config import GenerationConfig
+from .pipeline import KokoroPipeline
+from .pipeline_config import PipelineConfig
 from .onnx_backend import (
     Kokoro,
     ModelQuality,
@@ -69,6 +71,8 @@ __all__ = [
     "SSMDSegment",
     # Config classes
     "GenerationConfig",
+    "PipelineConfig",
+    "KokoroPipeline",
     "TokenizerConfig",
     "EspeakConfig",
     "PhonemeResult",

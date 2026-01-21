@@ -1,29 +1,49 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+from typing import Any, Literal
+
+from .generation_config import GenerationConfig
+from .onnx_backend import (
+    DEFAULT_MODEL_SOURCE,
+    DEFAULT_MODEL_VARIANT,
+    ModelQuality,
+    ModelSource,
+    ModelVariant,
+    ProviderType,
+    VoiceBlend,
+)
+from .short_sentence_handler import ShortSentenceConfig
+from .tokenizer import EspeakConfig, TokenizerConfig
 
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    """User-facing configuration for the end-to-end pipeline.
+    """User-facing configuration for the end-to-end pipeline."""
 
-    Keep this frozen+hashable so it can be used as part of cache keys.
-    """
+    mode: Literal["compat", "modular"] = "compat"
+    voice: str | VoiceBlend = "af"
+    generation: GenerationConfig = field(default_factory=GenerationConfig)
 
-    voice: str = "af"
-    lang: str = "en"
+    # Model + provider configuration
+    model_quality: ModelQuality | None = None
+    model_source: ModelSource = DEFAULT_MODEL_SOURCE
+    model_variant: ModelVariant = DEFAULT_MODEL_VARIANT
+    provider: ProviderType | None = None
+    provider_options: dict[str, Any] | None = None
+    session_options: Any | None = None
 
-    speed: float = 1.0
-    max_chars: int | None = 400
+    # Tokenizer configuration
+    tokenizer_config: TokenizerConfig | None = None
+    espeak_config: EspeakConfig | None = None
+    short_sentence_config: ShortSentenceConfig | None = None
 
-    # Stage selection
-    split: Literal["auto", "phrasplit", "none"] = "auto"
-    markup: Literal["auto", "ssmd", "none"] = "auto"
+    # Span slicing
+    overlap_mode: Literal["snap", "strict"] = "snap"
 
     # Behavior toggles
     return_trace: bool = False
-    legacy_alignment: bool = False
+    enable_deprecation_warnings: bool = False
 
     # Caching
     cache_dir: str | None = None

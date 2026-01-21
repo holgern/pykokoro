@@ -1,0 +1,121 @@
+from __future__ import annotations
+
+from ...pipeline_config import PipelineConfig
+from ...ssmd_parser import parse_ssmd_to_segments
+from ...tokenizer import Tokenizer
+from ...types import AnnotationSpan, BoundaryEvent, Trace
+from ..base import DocumentResult
+
+
+class SsmdDocumentParser:
+    def parse(self, text: str, cfg: PipelineConfig, trace: Trace) -> DocumentResult:
+        tokenizer = Tokenizer(
+            config=cfg.tokenizer_config,
+            espeak_config=cfg.espeak_config,
+        )
+        generation = cfg.generation
+        initial_pause, segments = parse_ssmd_to_segments(
+            text,
+            tokenizer,
+            lang=generation.lang,
+            pause_none=0.0,
+            pause_weak=0.15,
+            pause_clause=generation.pause_clause,
+            pause_sentence=generation.pause_sentence,
+            pause_paragraph=generation.pause_paragraph,
+        )
+        clean_text, spans, boundaries = self._build_document(segments, initial_pause)
+        return DocumentResult(
+            clean_text=clean_text,
+            annotation_spans=spans,
+            boundary_events=boundaries,
+        )
+
+    def _build_document(self, segments, initial_pause: float):
+        clean_parts: list[str] = []
+        spans: list[AnnotationSpan] = []
+        boundaries: list[BoundaryEvent] = []
+        cursor = 0
+
+        if initial_pause > 0:
+            boundaries.append(
+                BoundaryEvent(pos=0, kind="pause", duration_s=initial_pause, attrs={})
+            )
+
+        for segment in segments:
+            start, end, cursor = self._append_text(clean_parts, segment.text, cursor)
+            attrs = self._metadata_to_attrs(segment.metadata)
+            if attrs and end > start:
+                spans.append(AnnotationSpan(char_start=start, char_end=end, attrs=attrs))
+            if segment.pause_before > 0:
+                boundaries.append(
+                    BoundaryEvent(
+                        pos=start,
+                        kind="pause",
+                        duration_s=segment.pause_before,
+                        attrs={},
+                    )
+                )
+            if segment.pause_after > 0:
+                boundaries.append(
+                    BoundaryEvent(
+                        pos=end,
+                        kind="pause",
+                        duration_s=segment.pause_after,
+                        attrs={},
+                    )
+                )
+
+        clean_text = "".join(clean_parts)
+        return clean_text, spans, boundaries
+
+    def _append_text(self, clean_parts: list[str], text: str, cursor: int):
+        if not text:
+            return cursor, cursor, cursor
+        if clean_parts:
+            previous = clean_parts[-1]
+            if previous and not previous[-1].isspace() and not text[0].isspace():
+                clean_parts.append(" ")
+                cursor += 1
+        start = cursor
+        clean_parts.append(text)
+        cursor += len(text)
+        return start, cursor, cursor
+
+    def _metadata_to_attrs(self, metadata) -> dict[str, str]:
+        attrs: dict[str, str] = {}
+        if metadata.language:
+            attrs["lang"] = metadata.language
+        if metadata.phonemes:
+            attrs["ph"] = metadata.phonemes
+        if metadata.voice_name:
+            attrs["voice_name"] = metadata.voice_name
+        if metadata.voice_language:
+            attrs["voice_language"] = metadata.voice_language
+        if metadata.voice_gender:
+            attrs["voice_gender"] = metadata.voice_gender
+        if metadata.voice_variant:
+            attrs["voice_variant"] = metadata.voice_variant
+        if metadata.prosody_rate:
+            attrs["prosody_rate"] = metadata.prosody_rate
+        if metadata.prosody_pitch:
+            attrs["prosody_pitch"] = metadata.prosody_pitch
+        if metadata.prosody_volume:
+            attrs["prosody_volume"] = metadata.prosody_volume
+        if metadata.emphasis:
+            attrs["emphasis"] = metadata.emphasis
+        if metadata.say_as_interpret:
+            attrs["say_as_interpret"] = metadata.say_as_interpret
+        if metadata.say_as_format:
+            attrs["say_as_format"] = metadata.say_as_format
+        if metadata.say_as_detail:
+            attrs["say_as_detail"] = metadata.say_as_detail
+        if metadata.substitution:
+            attrs["substitution"] = metadata.substitution
+        if metadata.markers:
+            attrs["markers"] = ",".join(metadata.markers)
+        if metadata.audio_src:
+            attrs["audio_src"] = metadata.audio_src
+        if metadata.audio_alt_text:
+            attrs["audio_alt_text"] = metadata.audio_alt_text
+        return attrs

@@ -8,5 +8,6 @@ from ...types import PhonemeSegment, Segment
 
 
 class Synthesizer(Protocol):
-    def synth(self, items: list[PhonemeSegment], *, segments: list[Segment]) -> tuple[np.ndarray, int]:
-        ...
+    def synth(
+        self, items: list[PhonemeSegment], *, segments: list[Segment]
+    ) -> tuple[np.ndarray, int]: ...

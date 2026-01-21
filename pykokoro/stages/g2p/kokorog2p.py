@@ -1,24 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
+from ...phonemes import PhonemeSegment
+from ...pipeline_config import PipelineConfig
+from ...runtime.cache import cache_from_dir, make_g2p_key
+from ...runtime.spans import slice_spans
+from ...types import Segment, Trace
+from ..base import DocumentResult, G2PAdapter
 
-import numpy as np
 
-from ...config import PipelineConfig
-from ...types import Annotation, PhonemeSegment, Segment
-
-
-class KokoroG2PAdapter:
-    """Adapter around kokorog2p.
-
-    Goals:
-    - accept clean_text + span annotations (already parsed)
-    - apply overrides by spans (NOT by word-string matching)
-    - output token_ids when possible
-    """
-
-    def __init__(self, config: PipelineConfig) -> None:
-        self.config = config
+class KokoroG2PAdapter(G2PAdapter):
+    def __init__(self) -> None:
         self._g2p = None
 
     def _load(self):
@@ -26,41 +17,86 @@ class KokoroG2PAdapter:
             return self._g2p
         try:
             import kokorog2p  # type: ignore
-        except Exception as e:
-            raise RuntimeError("kokorog2p is not installed") from e
-
-        # Placeholder: adapt to kokorog2p public API
+        except Exception as exc:
+            raise RuntimeError("kokorog2p is not installed") from exc
         self._g2p = kokorog2p
         return self._g2p
 
     def phonemize(
         self,
-        *,
         segments: list[Segment],
-        clean_texts: list[str],
-        annotations: list[list[Annotation]],
+        doc: DocumentResult,
+        cfg: PipelineConfig,
+        trace: Trace,
     ) -> list[PhonemeSegment]:
         g2p = self._load()
-
+        cache = cache_from_dir(cfg.cache_dir)
+        generation = cfg.generation
         out: list[PhonemeSegment] = []
-        for seg, clean, ann in zip(segments, clean_texts, annotations):
-            # TODO: implement span-based overrides.
-            # Temporary: just phonemize whole string.
-            phonemes = g2p.phonemize(clean, lang=self.config.lang) if hasattr(g2p, "phonemize") else clean
 
-            token_ids = None
-            if hasattr(g2p, "phonemes_to_ids"):
-                try:
-                    token_ids = np.asarray(g2p.phonemes_to_ids(phonemes), dtype=np.int64)
-                except Exception:
-                    token_ids = None
+        for segment in segments:
+            span_list = slice_spans(
+                doc.annotation_spans,
+                segment.char_start,
+                segment.char_end,
+                overlap_mode=cfg.overlap_mode,
+            )
+            lang = generation.lang
+            seg_len = max(0, segment.char_end - segment.char_start)
+            phoneme_override = None
+            for span in span_list:
+                if span.attrs.get("lang"):
+                    lang = span.attrs["lang"]
+                if span.char_start == 0 and span.char_end == seg_len:
+                    phoneme_override = span.attrs.get("ph") or span.attrs.get(
+                        "phonemes"
+                    )
+
+            cache_key = make_g2p_key(
+                text=segment.text,
+                lang=lang,
+                tokenizer_config=None,
+                phoneme_override=phoneme_override,
+                kokorog2p_version=getattr(g2p, "__version__", None),
+                model_quality=cfg.model_quality,
+                model_source=cfg.model_source,
+                model_variant=cfg.model_variant,
+            )
+            cached = cache.get(cache_key)
+            if cached is not None:
+                phonemes = cached.get("phonemes", "")
+                tokens = cached.get("tokens", [])
+            else:
+                if phoneme_override:
+                    phonemes = phoneme_override
+                    tokens = []
+                else:
+                    result = g2p.phonemize_to_result(
+                        segment.text,
+                        lang=lang,
+                        return_phonemes=True,
+                        return_ids=True,
+                    )
+                    phonemes = getattr(result, "phonemes", None) or getattr(
+                        result, "phoneme", ""
+                    )
+                    tokens = getattr(result, "ids", None) or getattr(
+                        result, "token_ids", []
+                    )
+                    warnings = getattr(result, "warnings", None)
+                    if warnings:
+                        trace.warnings.extend(list(warnings))
+                cache.set(cache_key, {"phonemes": phonemes, "tokens": tokens})
 
             out.append(
                 PhonemeSegment(
-                    segment_id=seg.id,
-                    phonemes=None if token_ids is not None else str(phonemes),
-                    token_ids=token_ids,
-                    meta={"lang": seg.meta.get("lang", self.config.lang)},
+                    text=segment.text,
+                    phonemes=str(phonemes),
+                    tokens=list(tokens),
+                    lang=lang,
+                    paragraph=segment.paragraph_idx or 0,
+                    sentence=segment.sentence_idx,
                 )
             )
+
         return out

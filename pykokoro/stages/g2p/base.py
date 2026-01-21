@@ -12,5 +12,4 @@ class G2P(Protocol):
         segments: list[Segment],
         clean_texts: list[str],
         annotations: list[list[Annotation]],
-    ) -> list[PhonemeSegment]:
-        ...
+    ) -> list[PhonemeSegment]: ...

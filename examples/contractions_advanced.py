@@ -312,9 +312,6 @@ LANG = "en-us"  # American English
 
 def main():
     """Generate English speech with extensive dialogue and contractions."""
-    print("Initializing TTS engine...")
-    kokoro = pykokoro.Kokoro()
-
     print("=" * 70)
     print("ADVANCED CONTRACTIONS WITH DIRECT SPEECH")
     print("=" * 70)
@@ -333,7 +330,9 @@ def main():
     print("Estimated duration: ~15-20 minutes")
 
     print("\nGenerating audio (this may take a while for long text)...")
-    if True:
+    if False:
+        print("Initializing TTS engine...")
+        kokoro = pykokoro.Kokoro()
         samples, sample_rate = kokoro.create(
             TEXT,
             voice=VOICE,
@@ -346,6 +345,17 @@ def main():
 
         output_file = "contractions_advanced_demo.wav"
         sf.write(output_file, samples, sample_rate)
+        kokoro.close()
+    elif  True:
+        from pykokoro import KokoroPipeline, PipelineConfig
+        # pipe = KokoroPipeline(PipelineConfig(voice=VOICE, mode="modular"))
+        pipe = KokoroPipeline(PipelineConfig(voice=VOICE, mode="compat"))
+        res = pipe.run(TEXT, lang=LANG)
+        samples = res.audio
+        sample_rate = res.sample_rate
+        output_file = "contractions_advanced_demo.wav"
+        sf.write(output_file, samples, sample_rate)
+ 
     else:
         from misaki import en, espeak
 
@@ -361,7 +371,8 @@ def main():
         )
         output_file = "contractions_advanced_demo_misaki.wav"
         sf.write(output_file, samples, sample_rate)
-
+        kokoro.close()
+        
     duration = len(samples) / sample_rate
     print(f"\nCreated {output_file}")
     print(f"Actual duration: {duration:.2f} seconds ({duration / 60:.2f} minutes)")
@@ -371,8 +382,6 @@ def main():
     print("  - Complex: I'd've, you'd've, wouldn't've, shouldn't've")
     print("  - Natural speech patterns with mixed contractions")
     print("  - Contractions with quotation marks and attribution")
-
-    kokoro.close()
 
 
 if __name__ == "__main__":

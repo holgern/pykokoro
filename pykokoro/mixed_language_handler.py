@@ -7,9 +7,10 @@ conversion using kokorog2p's preprocess_multilang capability.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
-from kokorog2p import ANNOTATION_REGEX
+import kokorog2p as _kokorog2p
 from kokorog2p.multilang import preprocess_multilang
 
 from .constants import SUPPORTED_LANGUAGES
@@ -18,6 +19,9 @@ if TYPE_CHECKING:
     from .tokenizer import TokenizerConfig
 
 logger = logging.getLogger(__name__)
+ANNOTATION_REGEX = getattr(
+    _kokorog2p, "ANNOTATION_REGEX", re.compile(r"\[[^\]]+\]\{[^}]+\}")
+)
 
 
 class MixedLanguageHandler:
@@ -129,17 +133,58 @@ class MixedLanguageHandler:
         ]
 
         try:
-            return preprocess_multilang(
-                text,
-                markdown_syntax="ssmd",
-                default_language=kokorog2p_primary,
-                allowed_languages=allowed_langs,
-                confidence_threshold=self.config.mixed_language_confidence,
-            )
+            kwargs = {
+                "text": text,
+                "default_language": kokorog2p_primary,
+                "allowed_languages": allowed_langs,
+                "confidence_threshold": self.config.mixed_language_confidence,
+            }
+            try:
+                import inspect
+
+                params = inspect.signature(preprocess_multilang).parameters
+                if "markdown_syntax" in params:
+                    kwargs["markdown_syntax"] = "ssmd"
+            except (TypeError, ValueError):
+                pass
+
+            overrides = preprocess_multilang(**kwargs)
+            if isinstance(overrides, str):
+                return overrides
+            return self._apply_overrides(text, overrides)
         except ImportError:
-            # lingua-language-detector not available, return text as-is
             logger.warning(
                 "Mixed-language mode requested but lingua-language-detector "
                 "not available. Returning text without preprocessing."
             )
             return text
+
+    def _apply_overrides(self, text: str, overrides: list[object]) -> str:
+        if not overrides:
+            return text
+
+        try:
+            from kokorog2p.types import OverrideSpan
+        except Exception:
+            return text
+
+        spans = [s for s in overrides if isinstance(s, OverrideSpan)]
+        spans.sort(key=lambda s: s.char_start)
+        if not spans:
+            return text
+
+        out: list[str] = []
+        cursor = 0
+        for span in spans:
+            if span.char_start < cursor:
+                continue
+            out.append(text[cursor : span.char_start])
+            chunk = text[span.char_start : span.char_end]
+            lang = span.attrs.get("lang")
+            if lang:
+                out.append(f'[{chunk}]{{lang="{lang}"}}')
+            else:
+                out.append(chunk)
+            cursor = span.char_end
+        out.append(text[cursor:])
+        return "".join(out)

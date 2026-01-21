@@ -5,9 +5,11 @@ from typing import Any, Literal
 
 import numpy as np
 
+from .phonemes import PhonemeSegment as PhonemeSegment
+
 
 @dataclass(frozen=True)
-class Annotation:
+class AnnotationSpan:
     """Span-based markup annotation (character offsets refer to clean_text)."""
 
     char_start: int
@@ -16,33 +18,32 @@ class Annotation:
 
 
 @dataclass(frozen=True)
+class BoundaryEvent:
+    """Boundary event for SSMD breaks or markers."""
+
+    pos: int
+    kind: Literal["pause", "marker"]
+    duration_s: float | None = None
+    attrs: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class Segment:
-    """A chunk of input text with stable offsets into the *original* document."""
+    """A chunk of input text with stable offsets into the document."""
 
     id: str
     text: str
     char_start: int
     char_end: int
+    meta: dict[str, Any] = field(default_factory=dict)
     paragraph_idx: int | None = None
     sentence_idx: int | None = None
     clause_idx: int | None = None
-    meta: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class PhonemeSegment:
-    """A segment ready for synthesis."""
-
-    segment_id: str
-    # Exactly one of these should be provided.
-    phonemes: str | None = None
-    token_ids: np.ndarray | None = None
-    meta: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class TraceEvent:
-    stage: Literal["split", "markup", "g2p", "synth", "cache"]
+    stage: str
     name: str
     ms: float
     details: dict[str, Any] = field(default_factory=dict)
@@ -52,14 +53,8 @@ class TraceEvent:
 class Trace:
     """Structured debugging output."""
 
-    events: list[TraceEvent] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-
-    # Optional snapshots
-    segments: list[Segment] | None = None
-    clean_texts: list[str] | None = None
-    annotations: list[list[Annotation]] | None = None
-    phoneme_segments: list[PhonemeSegment] | None = None
+    events: list[TraceEvent] = field(default_factory=list)
 
 
 @dataclass
@@ -73,7 +68,6 @@ class AudioResult:
         """Save 16-bit PCM WAV. Minimal dependency implementation."""
         import wave
 
-        # Convert to int16 PCM
         x = self.audio
         if x.dtype != np.int16:
             x = np.clip(x, -1.0, 1.0)
@@ -84,3 +78,7 @@ class AudioResult:
             wf.setsampwidth(2)
             wf.setframerate(self.sample_rate)
             wf.writeframes(x.tobytes())
+
+
+# Backward compatibility aliases
+Annotation = AnnotationSpan
