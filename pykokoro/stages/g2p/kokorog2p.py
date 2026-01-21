@@ -9,6 +9,8 @@ from ...runtime.spans import slice_boundaries, slice_spans
 from ..base import DocumentResult, G2PAdapter
 
 if TYPE_CHECKING:
+    from kokorog2p.base import G2PBase
+
     from ...pipeline_config import PipelineConfig
     from ...types import Segment, Trace
 
@@ -70,7 +72,7 @@ class PhonemeSegment:
 class KokoroG2PAdapter(G2PAdapter):
     def __init__(self) -> None:
         self._g2p = None
-        self._g2p_instances: dict[str, object] = {}
+        self._g2p_instances: dict[str, G2PBase] = {}
 
     def _load(self):
         if self._g2p is not None:
@@ -182,16 +184,16 @@ class KokoroG2PAdapter(G2PAdapter):
 
         return out
 
-    def _get_g2p_instance(self, lang: str, cfg: PipelineConfig) -> object:
+    def _get_g2p_instance(self, lang: str, cfg: PipelineConfig) -> G2PBase:
         cache_key = lang
         if cache_key in self._g2p_instances:
             return self._g2p_instances[cache_key]
 
         tokenizer_config = cfg.tokenizer_config
         kokorog2p_lang = SUPPORTED_LANGUAGES.get(lang, lang)
-        version = "1.1" if cfg.model_variant == "v1.1-zh" else "1.0"
+        version = self._get_model_version(cfg)
 
-        kwargs: dict[str, object] = {
+        kwargs: dict[str, Any] = {
             "language": kokorog2p_lang,
             "version": version,
             "phoneme_quotes": "curly",
@@ -212,6 +214,10 @@ class KokoroG2PAdapter(G2PAdapter):
         g2p_instance = g2p_module.get_g2p(**kwargs)
         self._g2p_instances[cache_key] = g2p_instance
         return g2p_instance
+
+    @staticmethod
+    def _get_model_version(cfg: PipelineConfig) -> str:
+        return "1.1" if cfg.model_variant == "v1.1-zh" else "1.0"
 
     def _apply_span_metadata(
         self, attrs: dict[str, str], metadata: dict[str, str]
