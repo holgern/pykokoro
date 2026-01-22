@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 from pykokoro.pipeline_config import PipelineConfig
-from pykokoro.stages.base import DocumentResult
+from pykokoro.stages.protocols import DocumentResult
 from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import Trace
 
@@ -24,7 +24,9 @@ def test_phrasplit_fallback_uses_cursor(monkeypatch):
     text = "Hello world. Hello world."
     first = FakeSplitSegment(text="Hello world.", start=0, end=12)
     second = FakeSplitSegment(text="Hello world.", start=None, end=None)
-    fake_module = SimpleNamespace(split_with_offsets=lambda *_args, **_kwargs: [first, second])
+    fake_module = SimpleNamespace(
+        split_with_offsets=lambda *_args, **_kwargs: [first, second]
+    )
     monkeypatch.setitem(sys.modules, "phrasplit", fake_module)
 
     splitter = PhrasplitSplitter()
@@ -42,7 +44,9 @@ def test_phrasplit_fallback_uses_cursor(monkeypatch):
 def test_phrasplit_fallback_clamps_invalid_offsets(monkeypatch):
     text = "Hello world."
     fake_segment = FakeSplitSegment(text="Hello world.", start=0, end=100)
-    fake_module = SimpleNamespace(split_with_offsets=lambda *_args, **_kwargs: [fake_segment])
+    fake_module = SimpleNamespace(
+        split_with_offsets=lambda *_args, **_kwargs: [fake_segment]
+    )
     monkeypatch.setitem(sys.modules, "phrasplit", fake_module)
 
     splitter = PhrasplitSplitter()

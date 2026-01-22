@@ -133,6 +133,7 @@ class AudioGenerator:
         Returns:
             List of phoneme batches, each <= MAX_PHONEME_LENGTH
         """
+
         def token_len(text: str) -> int:
             if not text:
                 return 0

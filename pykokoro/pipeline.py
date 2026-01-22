@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from typing import Any
 
 from .constants import SAMPLE_RATE
 from .pipeline_config import PipelineConfig
 from .runtime.tracing import trace_timing
-from .stages.base import DocumentParser, G2PAdapter, Splitter, Synthesizer
 from .stages.doc_parsers.ssmd import SsmdDocumentParser
 from .stages.g2p.kokorog2p import KokoroG2PAdapter
+from .stages.protocols import DocumentParser, G2PAdapter, Splitter, Synthesizer
 from .stages.splitters.phrasplit import PhrasplitSplitter
 from .stages.synth.onnx import OnnxSynthesizerAdapter
 from .types import AudioResult, Trace
+
+logger = logging.getLogger(__name__)
 
 
 class KokoroPipeline:
@@ -46,16 +49,20 @@ class KokoroPipeline:
         trace = Trace()
 
         with trace_timing(trace, "doc", "parse"):
+            logger.debug("Parsing document")
             doc = self.doc_parser.parse(text, cfg, trace)
             trace.warnings.extend(doc.warnings)
 
         with trace_timing(trace, "split", "split"):
+            logger.debug("Splitting document text")
             segments = self.splitter.split(doc, cfg, trace)
 
         with trace_timing(trace, "g2p", "phonemize"):
+            logger.debug("Phonemizing %d segments", len(segments))
             phoneme_segments = self.g2p.phonemize(segments, doc, cfg, trace)
 
         with trace_timing(trace, "synth", "synthesize"):
+            logger.debug("Synthesizing %d phoneme segments", len(phoneme_segments))
             audio = self.synth.synthesize(phoneme_segments, cfg, trace)
 
         return AudioResult(

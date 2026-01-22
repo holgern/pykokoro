@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 from ...constants import SUPPORTED_LANGUAGES
 from ...runtime.cache import cache_from_dir, make_g2p_key
 from ...runtime.spans import slice_boundaries, slice_spans
-from ..base import DocumentResult, G2PAdapter
+from ..protocols import DocumentResult, G2PAdapter
 
 if TYPE_CHECKING:
     from kokorog2p.base import G2PBase

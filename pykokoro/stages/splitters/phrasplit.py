@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
+import os
+
 from ...pipeline_config import PipelineConfig
 from ...types import BoundaryEvent, Segment, Trace
-from ..base import DocumentResult, Splitter
+from ..protocols import DocumentResult, Splitter
+
+logger = logging.getLogger(__name__)
 
 
 class PhrasplitSplitter(Splitter):
@@ -52,13 +57,27 @@ class PhrasplitSplitter(Splitter):
                 if seg_text is None:
                     continue
 
-                if (
-                    seg_start is None
-                    or seg_end is None
-                    or seg_start < 0
-                    or seg_end < seg_start
-                    or seg_end > chunk_len
-                ):
+                offsets_valid = True
+                reason = ""
+                if seg_start is None or seg_end is None:
+                    offsets_valid = False
+                    reason = "missing offsets"
+                elif seg_start < 0 or seg_end < seg_start or seg_end > chunk_len:
+                    offsets_valid = False
+                    reason = "invalid offsets"
+                else:
+                    slice_text = chunk[seg_start:seg_end]
+                    if (
+                        slice_text != seg_text
+                        and slice_text.strip() != seg_text.strip()
+                    ):
+                        offsets_valid = False
+                        reason = "offset slice mismatch"
+                    elif seg_start < cursor:
+                        offsets_valid = False
+                        reason = "overlapping offsets"
+
+                if not offsets_valid:
                     found = chunk.find(seg_text, cursor) if seg_text else -1
                     if found >= 0:
                         seg_start = found
@@ -66,9 +85,23 @@ class PhrasplitSplitter(Splitter):
                     else:
                         seg_start = cursor
                         seg_end = cursor + len(seg_text)
+                    trace.warnings.append(
+                        "Adjusted splitter offsets for segment "
+                        f"{seg_idx} ({seg_text!r}): {reason}."
+                    )
 
                 seg_start = max(0, min(seg_start, chunk_len))
                 seg_end = max(seg_start, min(seg_end, chunk_len))
+
+                if seg_start < cursor:
+                    adjusted_start = cursor
+                    adjusted_end = min(chunk_len, adjusted_start + len(seg_text))
+                    trace.warnings.append(
+                        "Clamped splitter offsets to avoid overlap for segment "
+                        f"{seg_idx} ({seg_text!r})."
+                    )
+                    seg_start = adjusted_start
+                    seg_end = max(seg_start, adjusted_end)
 
                 abs_start = start + seg_start
                 abs_end = start + seg_end
@@ -111,6 +144,29 @@ class PhrasplitSplitter(Splitter):
                     clause_idx=0,
                 )
             )
+        if os.getenv("PYKOKORO_DEBUG_SEGMENTS"):
+            logger.debug("Splitter clean_text: %r", text)
+            for segment in segments:
+                logger.debug(
+                    "Segment %s: %d:%d %r",
+                    segment.id,
+                    segment.char_start,
+                    segment.char_end,
+                    segment.text,
+                )
+            recon = "".join(
+                text[segment.char_start : segment.char_end] for segment in segments
+            )
+            if recon != text:
+                mismatch = _first_mismatch(recon, text)
+                logger.debug(
+                    "Segment reconstruction mismatch at %d (recon=%r text=%r)",
+                    mismatch,
+                    recon[mismatch : mismatch + 40],
+                    text[mismatch : mismatch + 40],
+                )
+            else:
+                logger.debug("Segment reconstruction matches clean_text")
         return segments
 
     def _hard_ranges(
@@ -188,9 +244,19 @@ class PhrasplitSplitter(Splitter):
             seg_text = getattr(seg, "text", None)
             start = getattr(seg, "start", None)
             end = getattr(seg, "end", None)
+            if start is None:
+                start = getattr(seg, "char_start", None)
+            if end is None:
+                end = getattr(seg, "char_end", None)
             para = getattr(seg, "paragraph", None)
             sent = getattr(seg, "sentence", None)
             clause = getattr(seg, "clause", None)
+            if para is None:
+                para = getattr(seg, "paragraph_idx", None)
+            if sent is None:
+                sent = getattr(seg, "sentence_idx", None)
+            if clause is None:
+                clause = getattr(seg, "clause_idx", None)
             if seg_text is None and start is not None and end is not None:
                 seg_text = text[start:end]
             if seg_text is None:
@@ -211,3 +277,11 @@ class PhrasplitSplitter(Splitter):
         if lang_code in web_langs:
             return f"{lang_code}_core_web_{size}"
         return f"{lang_code}_core_news_{size}"
+
+
+def _first_mismatch(left: str, right: str) -> int:
+    limit = min(len(left), len(right))
+    for idx in range(limit):
+        if left[idx] != right[idx]:
+            return idx
+    return limit

@@ -4,7 +4,7 @@ from ...pipeline_config import PipelineConfig
 from ...ssmd_parser import parse_ssmd_to_segments
 from ...tokenizer import Tokenizer
 from ...types import AnnotationSpan, BoundaryEvent, Trace
-from ..base import DocumentResult
+from ..protocols import DocumentResult
 
 
 class SsmdDocumentParser:

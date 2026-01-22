@@ -4,7 +4,7 @@ import sys
 from types import SimpleNamespace
 
 from pykokoro.pipeline_config import PipelineConfig
-from pykokoro.stages.base import DocumentResult
+from pykokoro.stages.protocols import DocumentResult
 from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import AnnotationSpan, Trace
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..base import G2PAdapter
+from ..protocols import G2PAdapter
 
 G2P = G2PAdapter
 

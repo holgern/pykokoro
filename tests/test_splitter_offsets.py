@@ -1,9 +1,9 @@
 import sys
-from types import SimpleNamespace
+from types import ModuleType
 
 from pykokoro.generation_config import GenerationConfig
 from pykokoro.pipeline_config import PipelineConfig
-from pykokoro.stages.base import DocumentResult
+from pykokoro.stages.protocols import DocumentResult
 from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import Trace
 
@@ -21,7 +21,7 @@ def test_phrasplit_splitter_handles_missing_offsets():
             ]
 
     splitter = DummySplitter()
-    dummy_module = SimpleNamespace()
+    dummy_module = ModuleType("phrasplit")
 
     with patch_sys_modules({"phrasplit": dummy_module}):
         segments = splitter.split(doc, cfg, Trace())
@@ -33,10 +33,39 @@ def test_phrasplit_splitter_handles_missing_offsets():
     assert segments[1].char_start == segments[0].char_end + 1
 
 
+def test_phrasplit_splitter_reads_char_offsets():
+    text = "Hello world. Goodbye world."
+    cfg = PipelineConfig(generation=GenerationConfig(lang="en-us"))
+    doc = DocumentResult(clean_text=text)
+
+    class FakeSegment:
+        def __init__(self, text: str, start: int, end: int) -> None:
+            self.text = text
+            self.char_start = start
+            self.char_end = end
+            self.paragraph_idx = 0
+            self.sentence_idx = 0
+            self.clause_idx = 0
+
+    first = FakeSegment("Hello world.", 0, 12)
+    second = FakeSegment("Goodbye world.", 13, 27)
+    dummy_module = ModuleType("phrasplit")
+    dummy_module.split_with_offsets = lambda *_args, **_kwargs: [first, second]
+
+    splitter = PhrasplitSplitter()
+
+    with patch_sys_modules({"phrasplit": dummy_module}):
+        segments = splitter.split(doc, cfg, Trace())
+
+    assert [segment.text for segment in segments] == ["Hello world.", "Goodbye world."]
+    assert [segment.char_start for segment in segments] == [0, 13]
+    assert [segment.char_end for segment in segments] == [12, 27]
+
+
 class patch_sys_modules:
-    def __init__(self, updates: dict[str, object]) -> None:
+    def __init__(self, updates: dict[str, ModuleType]) -> None:
         self._updates = updates
-        self._originals: dict[str, object | None] = {}
+        self._originals: dict[str, ModuleType | None] = {}
 
     def __enter__(self):
         for key, value in self._updates.items():

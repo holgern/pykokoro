@@ -15,7 +15,7 @@ Output:
 """
 
 from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
-from pykokoro.stages.base import DocumentResult
+from pykokoro.stages.protocols import DocumentResult
 from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import Segment, Trace
 

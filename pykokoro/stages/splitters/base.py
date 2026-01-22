@@ -1,5 +1,5 @@
 from __future__ import annotations
 
-from ..base import Splitter
+from ..protocols import Splitter
 
 __all__ = ["Splitter"]
