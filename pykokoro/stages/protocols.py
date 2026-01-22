@@ -5,11 +5,10 @@ from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
-from ..types import AnnotationSpan, BoundaryEvent, Segment, Trace
+from ..types import AnnotationSpan, BoundaryEvent, PhonemeSegment, Segment, Trace
 
 if TYPE_CHECKING:
     from ..pipeline_config import PipelineConfig
-    from .g2p.kokorog2p import PhonemeSegment
 
 
 @dataclass

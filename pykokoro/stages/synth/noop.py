@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ...constants import SAMPLE_RATE
-from ...types import Trace
-from ..g2p.kokorog2p import PhonemeSegment
+from ...types import PhonemeSegment, Trace
 
 if TYPE_CHECKING:
     from ...pipeline_config import PipelineConfig

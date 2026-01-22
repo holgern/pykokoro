@@ -7,10 +7,9 @@ from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.generation_config import GenerationConfig
 from pykokoro.pipeline_config import PipelineConfig as PipelineConfigType
 from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
-from pykokoro.stages.g2p.kokorog2p import PhonemeSegment
 from pykokoro.stages.protocols import DocumentResult
 from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
-from pykokoro.types import Trace
+from pykokoro.types import PhonemeSegment, Trace
 
 
 class DummySynth:
@@ -31,10 +30,18 @@ class DummyG2P:
         self.last_lang = cfg.generation.lang
         return [
             PhonemeSegment(
+                id=f"{segments[0].id}_ph0",
+                segment_id=segments[0].id,
+                phoneme_id=0,
                 text=doc.clean_text,
                 phonemes="a",
                 tokens=[],
                 lang=cfg.generation.lang,
+                char_start=segments[0].char_start,
+                char_end=segments[0].char_end,
+                paragraph_idx=segments[0].paragraph_idx,
+                sentence_idx=segments[0].sentence_idx,
+                clause_idx=segments[0].clause_idx,
             )
         ]
 
@@ -88,10 +95,12 @@ def test_pipeline_run_overrides_lang():
     res = pipe.run("Hallo", lang="de")
     assert g2p.last_lang == "de"
     assert res.segments[0].text == "Hallo"
+    assert res.phoneme_segments
 
     res = pipe.run("Salut", generation=GenerationConfig(lang="fr"), lang="it")
     assert g2p.last_lang == "it"
     assert res.segments[0].text == "Salut"
+    assert res.phoneme_segments
 
 
 @pytest.mark.skipif(

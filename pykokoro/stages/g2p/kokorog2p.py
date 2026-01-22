@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, cast
 
-from ...constants import SUPPORTED_LANGUAGES
+from ...constants import MAX_PHONEME_LENGTH, SUPPORTED_LANGUAGES
 from ...runtime.cache import cache_from_dir, make_g2p_key
 from ...runtime.spans import slice_boundaries, slice_spans
+from ...types import PhonemeSegment
 from ..protocols import DocumentResult, G2PAdapter
 
 if TYPE_CHECKING:
@@ -13,60 +14,6 @@ if TYPE_CHECKING:
 
     from ...pipeline_config import PipelineConfig
     from ...types import AnnotationSpan, Segment, Trace
-
-
-@dataclass
-class PhonemeSegment:
-    """A segment of text with its phoneme representation."""
-
-    text: str
-    phonemes: str
-    tokens: list[int]
-    lang: str = "en-us"
-    paragraph: int = 0
-    sentence: int | str | None = None
-    pause_before: float = 0.0
-    pause_after: float = 0.0
-    ssmd_metadata: dict[str, Any] | None = field(default=None, repr=False)
-    voice_name: str | None = None
-    voice_language: str | None = None
-    voice_gender: str | None = None
-    voice_variant: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
-        result = {
-            "text": self.text,
-            "phonemes": self.phonemes,
-            "tokens": self.tokens,
-            "lang": self.lang,
-            "paragraph": self.paragraph,
-            "sentence": self.sentence,
-            "pause_before": self.pause_before,
-            "pause_after": self.pause_after,
-        }
-        if self.ssmd_metadata is not None:
-            result["ssmd_metadata"] = self.ssmd_metadata
-        return result
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> PhonemeSegment:
-        """Create from dictionary."""
-        return cls(
-            text=data["text"],
-            phonemes=data["phonemes"],
-            tokens=data["tokens"],
-            lang=data.get("lang", "en-us"),
-            paragraph=data.get("paragraph", 0),
-            sentence=data.get("sentence"),
-            pause_before=data.get("pause_before", 0.0),
-            pause_after=data.get("pause_after", 0.0),
-            ssmd_metadata=data.get("ssmd_metadata"),
-        )
-
-    def format_readable(self) -> str:
-        """Format as human-readable string: text [phonemes]."""
-        return f"{self.text} [{self.phonemes}]"
 
 
 class KokoroG2PAdapter(G2PAdapter):
@@ -94,6 +41,7 @@ class KokoroG2PAdapter(G2PAdapter):
         g2p = self._load()
         cache = cache_from_dir(cfg.cache_dir)
         generation = cfg.generation
+        model_version = self._get_model_version(cfg)
         out: list[PhonemeSegment] = []
 
         for segment in segments:
@@ -138,15 +86,13 @@ class KokoroG2PAdapter(G2PAdapter):
             cached = cache.get(cache_key)
             if cached is not None:
                 phonemes = cached.get("phonemes", "")
-                tokens = cached.get("tokens", [])
+                tokens = cached.get("tokens", []) or []
             else:
                 if generation.is_phonemes:
                     phonemes = segment.text
-                    model_version = self._get_model_version(cfg)
                     tokens = g2p.phonemes_to_ids(phonemes, model=model_version)
                 elif phoneme_override:
                     phonemes = phoneme_override
-                    model_version = self._get_model_version(cfg)
                     tokens = g2p.phonemes_to_ids(phonemes, model=model_version)
                 else:
                     g2p_instance = self._get_g2p_instance(lang, cfg)
@@ -171,20 +117,36 @@ class KokoroG2PAdapter(G2PAdapter):
                 cache.set(cache_key, {"phonemes": phonemes, "tokens": tokens})
 
             pause_before, pause_after = self._resolve_pauses(seg_boundaries, generation)
-
-            out.append(
-                PhonemeSegment(
-                    text=segment.text,
-                    phonemes=str(phonemes),
-                    tokens=list(tokens),
-                    lang=lang,
-                    paragraph=segment.paragraph_idx or 0,
-                    sentence=segment.sentence_idx,
-                    pause_before=pause_before,
-                    pause_after=pause_after,
-                    ssmd_metadata=ssmd_metadata or None,
-                )
+            phoneme_batches = self._split_phoneme_batches(
+                g2p, str(phonemes), list(tokens), model_version
             )
+            total_batches = len(phoneme_batches)
+            for idx, (batch_phonemes, batch_tokens) in enumerate(
+                phoneme_batches, start=0
+            ):
+                batch_pause_before = pause_before if idx == 1 else 0.0
+                batch_pause_after = pause_after if idx == total_batches else 0.0
+                phoneme_id = idx
+                phoneme_segment_id = f"{segment.id}_ph{phoneme_id}"
+                out.append(
+                    PhonemeSegment(
+                        id=phoneme_segment_id,
+                        segment_id=segment.id,
+                        phoneme_id=phoneme_id,
+                        text=segment.text,
+                        phonemes=str(batch_phonemes),
+                        tokens=list(batch_tokens),
+                        lang=lang,
+                        char_start=segment.char_start,
+                        char_end=segment.char_end,
+                        paragraph_idx=segment.paragraph_idx,
+                        sentence_idx=segment.sentence_idx,
+                        clause_idx=segment.clause_idx,
+                        pause_before=batch_pause_before,
+                        pause_after=batch_pause_after,
+                        ssmd_metadata=ssmd_metadata or None,
+                    )
+                )
 
         return out
 
@@ -222,6 +184,26 @@ class KokoroG2PAdapter(G2PAdapter):
     @staticmethod
     def _get_model_version(cfg: PipelineConfig) -> str:
         return "1.1" if cfg.model_variant == "v1.1-zh" else "1.0"
+
+    def _split_phoneme_batches(
+        self,
+        g2p_module,
+        phonemes: str,
+        tokens: list[int],
+        model_version: str,
+    ) -> list[tuple[str, list[int]]]:
+        if not tokens:
+            return [(phonemes, tokens)]
+        if len(tokens) <= MAX_PHONEME_LENGTH:
+            return [(phonemes, tokens)]
+        batches: list[tuple[str, list[int]]] = []
+        for start in range(0, len(tokens), MAX_PHONEME_LENGTH):
+            chunk_tokens = tokens[start : start + MAX_PHONEME_LENGTH]
+            chunk_phonemes = g2p_module.ids_to_phonemes(
+                chunk_tokens, model=model_version
+            )
+            batches.append((chunk_phonemes, chunk_tokens))
+        return batches
 
     def _apply_span_metadata(
         self, attrs: dict[str, str], metadata: dict[str, str]

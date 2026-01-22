@@ -230,8 +230,8 @@ class TestSSMDVoiceSwitching:
         import numpy as np
 
         from pykokoro.audio_generator import AudioGenerator
-        from pykokoro.stages.g2p.kokorog2p import PhonemeSegment
         from pykokoro.tokenizer import create_tokenizer
+        from pykokoro.types import PhonemeSegment
 
         tokenizer = create_tokenizer()
 
@@ -245,15 +245,31 @@ class TestSSMDVoiceSwitching:
         # Create segments with voice metadata
         segments = [
             PhonemeSegment(
+                id="seg_0_ph0",
+                segment_id="seg_0",
+                phoneme_id=0,
                 text="Hello",
                 phonemes="hɛˈloʊ",
                 tokens=[1, 2, 3],
+                char_start=0,
+                char_end=5,
+                paragraph_idx=0,
+                sentence_idx=0,
+                clause_idx=0,
                 ssmd_metadata={"voice_name": "af_sarah"},
             ),
             PhonemeSegment(
+                id="seg_1_ph0",
+                segment_id="seg_1",
+                phoneme_id=0,
                 text="World",
                 phonemes="wɝld",
                 tokens=[4, 5],
+                char_start=6,
+                char_end=11,
+                paragraph_idx=0,
+                sentence_idx=0,
+                clause_idx=0,
                 ssmd_metadata={"voice_name": "am_michael"},
             ),
         ]
@@ -291,8 +307,8 @@ class TestSSMDVoiceSwitching:
         import numpy as np
 
         from pykokoro.audio_generator import AudioGenerator
-        from pykokoro.stages.g2p.kokorog2p import PhonemeSegment
         from pykokoro.tokenizer import create_tokenizer
+        from pykokoro.types import PhonemeSegment
 
         tokenizer = create_tokenizer()
 
@@ -306,9 +322,17 @@ class TestSSMDVoiceSwitching:
         # Create segment with voice metadata
         segments = [
             PhonemeSegment(
+                id="seg_0_ph0",
+                segment_id="seg_0",
+                phoneme_id=0,
                 text="Hello",
                 phonemes="hɛˈloʊ",
                 tokens=[1, 2, 3],
+                char_start=0,
+                char_end=5,
+                paragraph_idx=0,
+                sentence_idx=0,
+                clause_idx=0,
                 ssmd_metadata={"voice_name": "af_sarah"},
             ),
         ]

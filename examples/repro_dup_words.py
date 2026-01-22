@@ -63,6 +63,13 @@ def print_segments(segments: list[Segment]) -> None:
         print(f"  {seg.id}: {seg.char_start}:{seg.char_end} text={seg.text!r}")
 
 
+def print_phoneme_segments(phoneme_segments: list) -> None:
+    print("Phoneme Segments:")
+    for seg in phoneme_segments:
+        print(f"  {seg.char_start}:{seg.char_end} text={seg.text!r}")
+        print(seg)
+
+
 def main() -> None:
     args = parse_args()
     logging.basicConfig(
@@ -99,6 +106,7 @@ def main() -> None:
 
     print(f"clean_text length: {len(doc.clean_text)}")
     print_segments(result.segments)
+    print_phoneme_segments(result.phoneme_segments)
     check_segment_invariants(result.segments, doc.clean_text)
 
     if result.trace and result.trace.warnings:

@@ -16,17 +16,30 @@ Usage:
 Output:
     contractions_advanced_demo.wav - Generated speech with dialogue-heavy text
 """
+import argparse
+import logging
+
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.debug.segment_invariants import check_segment_invariants
+from pykokoro.generation_config import GenerationConfig
+from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
+from pykokoro.stages.g2p.noop import NoopG2PAdapter
+from pykokoro.stages.splitters.noop import NoopSplitter
+from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
+from pykokoro.stages.synth.noop import NoopSynthesizerAdapter
+from pykokoro.types import Segment, Trace
+
 
 import soundfile as sf
 
 # Extensive text with lots of direct speech and contractions
 TEXT = """
-# The Conversation
+#The Conversation
 
-## Chapter One: The Meeting
+##Chapter One: The Meeting
 
 'I don't like you,' a man told me once, standing in the doorway of an old café.
-His words hung in the air like smoke...
+His words hung in the air like smoke ... .
 
 "I can't... or shouldn't," I replied, confused by his hostility. "We've never even met before!"
 
@@ -35,7 +48,7 @@ understand. You'll never get it, no matter how hard you'll try!"
 
 I felt my face flush. "I'll have you know that's completely unfair! You don't know anything about me!"
 
-"Don't I?" He smirked. "I'd've thought you'd've figured it out by now... People like you—you're
+"Don't I?" He smirked. "I'd've thought you'd've figured it out by now... . People like you—you're
 all the same. You won't listen, you can't comprehend, and you shouldn't even bother trying!"
 
 "That's ridiculous!" I protested. "I'm not gonna stand here and let you insult me! What's your
@@ -54,7 +67,7 @@ take it out on strangers! That's not fair, and it won't make you feel better."
 "Won't it?" he challenged. "You're telling me what'll make me feel better? That's rich,
 coming from someone who doesn't know me!"
 
-"You're right—I don't know you!" I admitted. "But I'd've listened if you'd've given me a chance...
+"You're right—I don't know you!" I admitted. "But I'd've listened if you'd've given me a chance... .
 I would've understood if you'd've explained. But you're not gonna do that, are you?"
 
 He shook his head. 'Why should I? You'll just say what everyone says: "It's gonna be okay!"
@@ -308,8 +321,71 @@ VOICE = "af_bella"  # American Female voice for narrative
 LANG = "en-us"  # American English
 
 
-def main():
-    """Generate English speech with extensive dialogue and contractions."""
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Reproduce duplicate-word audio with full segment tracing."
+    )
+    parser.add_argument("--voice", default=VOICE, help="Voice name to use.")
+    parser.add_argument("--lang", default=LANG, help="Language code.")
+    parser.add_argument(
+        "--pause-mode",
+        default="tts",
+        choices=("tts", "manual"),
+        help="Pause handling mode.",
+    )
+    parser.add_argument(
+        "--noop-splitter",
+        action="store_true",
+        help="Replace the splitter with a single-segment no-op.",
+    )
+    parser.add_argument(
+        "--noop-g2p",
+        action="store_true",
+        help="Replace g2p with a no-op adapter (forces no-op synth).",
+    )
+    parser.add_argument(
+        "--noop-synth",
+        action="store_true",
+        help="Replace synth with silence output.",
+    )
+    return parser.parse_args()
+
+
+def print_segments(segments: list[Segment]) -> None:
+    print("Segments:")
+    for seg in segments:
+        print(f"  {seg.id}: {seg.char_start}:{seg.char_end} text={seg.text!r}")
+
+
+def main() -> None:
+    args = parse_args()
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(levelname)s [%(name)s] %(message)s",
+    )
+
+    generation = GenerationConfig(lang=args.lang, pause_mode=args.pause_mode)
+    cfg = PipelineConfig(voice=args.voice, generation=generation, return_trace=True)
+
+    doc_parser = SsmdDocumentParser()
+    splitter = NoopSplitter() if args.noop_splitter else PhrasplitSplitter()
+
+    noop_synth = args.noop_synth
+    if args.noop_g2p and not args.noop_synth:
+        print("Forcing no-op synth because no-op g2p omits tokens.")
+        noop_synth = True
+
+    g2p = NoopG2PAdapter() if args.noop_g2p else None
+    synth = NoopSynthesizerAdapter() if noop_synth else None
+
+    pipeline = KokoroPipeline(
+        cfg,
+        doc_parser=doc_parser,
+        splitter=splitter,
+        g2p=g2p,
+        synth=synth,
+    )
+
     print("=" * 70)
     print("ADVANCED CONTRACTIONS WITH DIRECT SPEECH")
     print("=" * 70)
@@ -328,20 +404,27 @@ def main():
     print("Estimated duration: ~15-20 minutes")
 
     print("\nGenerating audio (this may take a while for long text)...")
-    from pykokoro import KokoroPipeline, PipelineConfig
-    from pykokoro.generation_config import GenerationConfig
-
-    generation = GenerationConfig(lang=LANG, pause_mode="tts", speed=1.0)
-    pipe = KokoroPipeline(PipelineConfig(voice=VOICE, generation=generation))
-    res = pipe.run(TEXT)
-    samples = res.audio
-    sample_rate = res.sample_rate
+ 
+    
     output_file = "contractions_advanced_demo.wav"
-    sf.write(output_file, samples, sample_rate)
+    result = pipeline.run(TEXT)
+    result.save_wav(output_file)
 
-    duration = len(samples) / sample_rate
+    doc = doc_parser.parse(TEXT, cfg, Trace())
+
+    print(f"clean_text length: {len(doc.clean_text)}")
+    print_segments(result.segments)
+    check_segment_invariants(result.segments, doc.clean_text)
+
+    if result.trace and result.trace.warnings:
+        print("Warnings:")
+        for warning in result.trace.warnings:
+            print(f"  - {warning}")
+
+    print(f"Wrote WAV to: {output_file}")
+    duration = len(result.audio) / result.sample_rate
     print(f"\nCreated {output_file}")
-    print(f"Actual duration: {duration:.2f} seconds ({duration / 60:.2f} minutes)")
+    print(f"Duration: {duration:.2f} seconds")
     print("\nNote: This is a long narrative with extensive dialogue.")
     print("Listen to verify correct pronunciation of contractions in context:")
     print("  - Dialogue: 'I don't like you,' 'I can't or shouldn't'")

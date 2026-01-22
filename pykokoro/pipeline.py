@@ -69,6 +69,7 @@ class KokoroPipeline:
             audio=audio,
             sample_rate=SAMPLE_RATE,
             segments=segments,
+            phoneme_segments=phoneme_segments,
             trace=trace if cfg.return_trace else None,
         )
 

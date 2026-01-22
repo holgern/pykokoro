@@ -21,7 +21,7 @@ from .voice_manager import VoiceBlend, VoiceManager, slerp_voices
 
 if TYPE_CHECKING:
     from .short_sentence_handler import ShortSentenceConfig
-    from .stages.g2p.kokorog2p import PhonemeSegment
+    from .types import PhonemeSegment
 
 # Logger for debugging
 logger = logging.getLogger(__name__)

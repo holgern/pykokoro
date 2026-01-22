@@ -12,9 +12,9 @@ import onnxruntime as rt
 
 from .constants import MAX_PHONEME_LENGTH, SAMPLE_RATE
 from .prosody import apply_prosody
-from .stages.g2p.kokorog2p import PhonemeSegment
 from .tokenizer import Tokenizer
 from .trim import trim as trim_audio
+from .types import PhonemeSegment
 from .utils import generate_silence
 
 if TYPE_CHECKING:

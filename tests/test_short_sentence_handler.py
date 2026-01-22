@@ -5,12 +5,24 @@ from pykokoro.short_sentence_handler import (
     is_segment_empty,
     is_segment_short,
 )
-from pykokoro.stages.g2p.kokorog2p import PhonemeSegment
+from pykokoro.types import PhonemeSegment
 
 
 def make_segment(text: str, phonemes: str) -> PhonemeSegment:
     """Create a PhonemeSegment for tests."""
-    return PhonemeSegment(text=text, phonemes=phonemes, tokens=[])
+    return PhonemeSegment(
+        id="seg_0_ph0",
+        segment_id="seg_0",
+        phoneme_id=0,
+        text=text,
+        phonemes=phonemes,
+        tokens=[],
+        char_start=0,
+        char_end=len(text),
+        paragraph_idx=0,
+        sentence_idx=0,
+        clause_idx=0,
+    )
 
 
 class TestIsSegmentEmpty:
