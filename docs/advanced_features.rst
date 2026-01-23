@@ -562,13 +562,7 @@ Custom Tokenizer Settings
 
 .. code-block:: python
 
-   from pykokoro import create_tokenizer, TokenizerConfig, EspeakConfig
-
-   # Custom espeak settings
-   espeak_config = EspeakConfig(
-       backend="espeak-ng",
-       voice="en-us"
-   )
+   from pykokoro import create_tokenizer, TokenizerConfig
 
    # Custom tokenizer config
    tokenizer_config = TokenizerConfig(

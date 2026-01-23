@@ -587,26 +587,11 @@ Configuration Classes
    :undoc-members:
    :show-inheritance:
 
-**EspeakConfig Examples:**
+.. warning::
 
-.. code-block:: python
+   ``EspeakConfig`` is deprecated and will be removed in a future release. Prefer
+   ``TokenizerConfig`` options for controlling phonemization behavior.
 
-   from pykokoro import EspeakConfig
-
-   # Custom espeak configuration
-   config = EspeakConfig(
-       voice="en-us",
-       speed=1.0,
-       pitch=50,
-       volume=100
-   )
-
-   # Adjust speaking parameters
-   config = EspeakConfig(
-       voice="en-gb",
-       speed=1.2,   # Faster speech for phonemization
-       pitch=60     # Higher pitch
-   )
 
 .. autoclass:: pykokoro.PhonemeResult
    :members:
