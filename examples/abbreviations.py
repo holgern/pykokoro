@@ -18,11 +18,12 @@ import logging
 from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.debug.segment_invariants import check_segment_invariants
 from pykokoro.generation_config import GenerationConfig
+from pykokoro.stages.audio_generation.noop import NoopAudioGenerationAdapter
+from pykokoro.stages.audio_postprocessing.noop import NoopAudioPostprocessingAdapter
 from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
 from pykokoro.stages.g2p.noop import NoopG2PAdapter
 from pykokoro.stages.splitters.noop import NoopSplitter
 from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
-from pykokoro.stages.synth.noop import NoopSynthesizerAdapter
 from pykokoro.types import Segment, Trace
 
 # Text with comprehensive abbreviations coverage
@@ -97,6 +98,13 @@ def print_segments(segments: list[Segment]) -> None:
         print(f"  {seg.id}: {seg.char_start}:{seg.char_end} text={seg.text!r}")
 
 
+def print_phoneme_segments(phoneme_segments: list) -> None:
+    print("Phoneme Segments:")
+    for seg in phoneme_segments:
+        print(f"  {seg.char_start}:{seg.char_end} text={seg.text!r}")
+        print(seg)
+
+
 def main() -> None:
     args = parse_args()
     logging.basicConfig(
@@ -116,14 +124,16 @@ def main() -> None:
         noop_synth = True
 
     g2p = NoopG2PAdapter() if args.noop_g2p else None
-    synth = NoopSynthesizerAdapter() if noop_synth else None
+    audio_generation = NoopAudioGenerationAdapter() if noop_synth else None
+    audio_postprocessing = NoopAudioPostprocessingAdapter() if noop_synth else None
 
     pipeline = KokoroPipeline(
         cfg,
         doc_parser=doc_parser,
         splitter=splitter,
         g2p=g2p,
-        synth=synth,
+        audio_generation=audio_generation,
+        audio_postprocessing=audio_postprocessing,
     )
 
     # List of abbreviations being tested
@@ -184,6 +194,7 @@ def main() -> None:
 
     print(f"clean_text length: {len(doc.clean_text)}")
     print_segments(result.segments)
+    print_phoneme_segments(result.phoneme_segments)
     check_segment_invariants(result.segments, doc.clean_text)
 
     if result.trace and result.trace.warnings:

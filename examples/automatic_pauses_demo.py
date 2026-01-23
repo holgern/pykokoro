@@ -27,7 +27,7 @@ def main():
         pause_mode="manual",
         pause_clause=0.25,
         pause_sentence=0.5,
-        pause_paragraph=1.0,
+        pause_paragraph=2.0,
         pause_variance=0.05,
         random_seed=None,
     )

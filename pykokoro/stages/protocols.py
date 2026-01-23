@@ -39,6 +39,33 @@ class G2PAdapter(Protocol):
     ) -> list[PhonemeSegment]: ...
 
 
+class PhonemeProcessor(Protocol):
+    def process(
+        self,
+        phoneme_segments: list[PhonemeSegment],
+        cfg: PipelineConfig,
+        trace: Trace,
+    ) -> list[PhonemeSegment]: ...
+
+
+class AudioGeneratorStage(Protocol):
+    def generate(
+        self,
+        phoneme_segments: list[PhonemeSegment],
+        cfg: PipelineConfig,
+        trace: Trace,
+    ) -> list[PhonemeSegment]: ...
+
+
+class AudioPostprocessor(Protocol):
+    def postprocess(
+        self,
+        phoneme_segments: list[PhonemeSegment],
+        cfg: PipelineConfig,
+        trace: Trace,
+    ) -> np.ndarray: ...
+
+
 class Synthesizer(Protocol):
     def synthesize(
         self, phoneme_segments: list[PhonemeSegment], cfg: PipelineConfig, trace: Trace

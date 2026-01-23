@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 from collections.abc import Callable
@@ -282,55 +283,15 @@ class AudioGenerator:
 
         return segment_voice_style
 
-    def _segment_token_length(self, segment: PhonemeSegment) -> int:
-        if segment.tokens:
-            return len(segment.tokens)
-        if not segment.phonemes:
-            return 0
-        return len(self._tokenizer.tokenize(segment.phonemes))
-
-    def _generate_single_segment_audio(
-        self,
-        segment: PhonemeSegment,
-        voice_style: np.ndarray,
-        speed: float,
-        trim_silence: bool,
-        enable_short_sentence_override: bool | None = None,
-    ) -> list[np.ndarray]:
-        """Generate audio for a single segment with phonemes.
-
-        Handles splitting long phonemes and applying prosody modifications.
-
-        Args:
-            segment: Phoneme segment to process
-            voice_style: Voice style to use
-            speed: Speech speed multiplier
-            trim_silence: Whether to trim silence from segment boundaries
-            enable_short_sentence_override: Override short sentence handling.
-                None (default): Use config setting
-                True: Force enable short sentence handling
-                False: Force disable short sentence handling
-
-        Returns:
-            List of audio arrays (may be multiple if phonemes were split)
-        """
-        from .short_sentence_handler import ShortSentenceConfig, is_segment_empty
-
-        audio_parts: list[np.ndarray] = []
-
-        # Skip empty phoneme segments
-        if not segment.phonemes.strip():
-            return audio_parts
-
-        # Determine effective short sentence config with override support
-        import dataclasses
+    def _resolve_short_sentence_config(
+        self, enable_short_sentence_override: bool | None
+    ) -> ShortSentenceConfig | None:
+        from .short_sentence_handler import ShortSentenceConfig
 
         effective_config = self._short_sentence_config
 
         if enable_short_sentence_override is not None:
-            # Override requested
             if enable_short_sentence_override:
-                # Force enable: create config if None, or ensure enabled=True
                 if effective_config is None:
                     effective_config = ShortSentenceConfig(enabled=True)
                 else:
@@ -338,67 +299,140 @@ class AudioGenerator:
                         effective_config, enabled=True
                     )
             else:
-                # Force disable: ensure enabled=False if config exists
                 if effective_config is not None:
                     effective_config = dataclasses.replace(
                         effective_config, enabled=False
                     )
-                # If config is None and override is False, keep it None
         elif effective_config is None:
-            # No override, no config: use default
             effective_config = ShortSentenceConfig()
 
-        if effective_config and is_segment_empty(segment, effective_config):
-            logger.debug(f"Skipping phoneme segment: '{segment.text[:50]}'")
-            return audio_parts
+        return effective_config
 
-        # Handle long phonemes by splitting
-        if self._segment_token_length(segment) > MAX_PHONEME_LENGTH:
-            batches = self.split_phonemes(segment.phonemes)
-            for batch in batches:
-                audio = self._generate_and_process_audio(
-                    batch, voice_style, speed, trim_silence, segment
-                )
-                audio_parts.append(audio)
-        else:
-            audio = self._generate_and_process_audio(
-                segment.phonemes, voice_style, speed, trim_silence, segment
-            )
-            audio_parts.append(audio)
-
-        return audio_parts
-
-    def _generate_and_process_audio(
+    def _preprocess_segments(
         self,
-        phonemes: str,
+        segments: list[PhonemeSegment],
+        enable_short_sentence_override: bool | None,
+    ) -> list[PhonemeSegment]:
+        from .short_sentence_handler import is_segment_empty
+
+        effective_config = self._resolve_short_sentence_config(
+            enable_short_sentence_override
+        )
+        processed: list[PhonemeSegment] = []
+
+        for segment in segments:
+            phonemes = segment.phonemes or ""
+            tokens = self._tokenizer.tokenize(phonemes) if phonemes.strip() else []
+            skip_audio = False
+
+            if effective_config and is_segment_empty(segment, effective_config):
+                logger.debug(f"Skipping phoneme segment: '{segment.text[:50]}'")
+                skip_audio = True
+
+            if skip_audio or not phonemes.strip():
+                processed.append(
+                    dataclasses.replace(
+                        segment,
+                        phonemes="",
+                        tokens=[],
+                        raw_audio=None,
+                        processed_audio=None,
+                    )
+                )
+                continue
+
+            if len(tokens) > MAX_PHONEME_LENGTH:
+                batches = [
+                    tokens[i : i + MAX_PHONEME_LENGTH]
+                    for i in range(0, len(tokens), MAX_PHONEME_LENGTH)
+                ]
+                total_batches = len(batches)
+                for idx, batch_tokens in enumerate(batches):
+                    batch_phonemes = self._tokenizer.detokenize(batch_tokens)
+                    processed.append(
+                        dataclasses.replace(
+                            segment,
+                            id=f"{segment.id}_ph{idx}",
+                            phoneme_id=idx,
+                            phonemes=batch_phonemes,
+                            tokens=list(batch_tokens),
+                            pause_before=segment.pause_before if idx == 0 else 0.0,
+                            pause_after=(
+                                segment.pause_after if idx == total_batches - 1 else 0.0
+                            ),
+                            raw_audio=None,
+                            processed_audio=None,
+                        )
+                    )
+            else:
+                processed.append(
+                    dataclasses.replace(
+                        segment,
+                        tokens=tokens,
+                        raw_audio=None,
+                        processed_audio=None,
+                    )
+                )
+
+        return processed
+
+    def _generate_raw_audio_segments(
+        self,
+        segments: list[PhonemeSegment],
         voice_style: np.ndarray,
         speed: float,
-        trim_silence: bool,
-        segment: PhonemeSegment,
-    ) -> np.ndarray:
-        """Generate audio from phonemes and apply processing.
+        voice_resolver: Callable[[str], np.ndarray] | None,
+    ) -> list[PhonemeSegment]:
+        for segment in segments:
+            if not segment.phonemes.strip():
+                segment.raw_audio = None
+                continue
 
-        Args:
-            phonemes: Phoneme string to generate
-            voice_style: Voice style to use
-            speed: Speech speed multiplier
-            trim_silence: Whether to trim silence
-            segment: Original segment for prosody metadata
+            segment_voice_style = self._resolve_segment_voice(
+                segment, voice_style, voice_resolver
+            )
+            audio, _ = self.generate_from_phonemes(
+                segment.phonemes, segment_voice_style, speed
+            )
+            segment.raw_audio = audio
 
-        Returns:
-            Processed audio array
-        """
-        # Generate raw audio
-        audio, _ = self.generate_from_phonemes(phonemes, voice_style, speed)
+        return segments
 
-        # Trim silence if requested
-        if trim_silence:
-            audio, _ = trim_audio(audio)
+    def _postprocess_audio_segments(
+        self, segments: list[PhonemeSegment], trim_silence: bool
+    ) -> list[PhonemeSegment]:
+        for segment in segments:
+            if segment.raw_audio is None:
+                segment.processed_audio = None
+                continue
 
-        # Apply prosody modifications if present
-        audio = self._apply_segment_prosody(audio, segment)
+            if not trim_silence and not segment.ssmd_metadata:
+                segment.processed_audio = segment.raw_audio
+                continue
 
-        return audio
+            audio = segment.raw_audio
+            if trim_silence:
+                audio, _ = trim_audio(audio)
+            segment.processed_audio = self._apply_segment_prosody(audio, segment)
+
+        return segments
+
+    def _concatenate_audio_segments(self, segments: list[PhonemeSegment]) -> np.ndarray:
+        audio_parts: list[np.ndarray] = []
+
+        for segment in segments:
+            if segment.pause_before > 0:
+                audio_parts.append(generate_silence(segment.pause_before, SAMPLE_RATE))
+            if segment.processed_audio is not None:
+                audio_parts.append(segment.processed_audio)
+            if segment.pause_after > 0:
+                audio_parts.append(generate_silence(segment.pause_after, SAMPLE_RATE))
+
+        return (
+            np.concatenate(audio_parts)
+            if audio_parts
+            else np.array([], dtype=np.float32)
+        )
 
     def generate_from_segments(
         self,
@@ -435,37 +469,14 @@ class AudioGenerator:
         Returns:
             Concatenated audio array
         """
-        audio_parts = []
-
-        for segment in segments:
-            # Add pause before segment (if specified) - used for headings
-            if segment.pause_before > 0:
-                audio_parts.append(generate_silence(segment.pause_before, SAMPLE_RATE))
-
-            # Resolve voice style for this segment (may use SSMD metadata)
-            segment_voice_style = self._resolve_segment_voice(
-                segment, voice_style, voice_resolver
-            )
-
-            # Generate audio for segment phonemes
-            segment_audio = self._generate_single_segment_audio(
-                segment,
-                segment_voice_style,
-                speed,
-                trim_silence,
-                enable_short_sentence_override,
-            )
-            audio_parts.extend(segment_audio)
-
-            # Add pause after segment (if specified)
-            if segment.pause_after > 0:
-                audio_parts.append(generate_silence(segment.pause_after, SAMPLE_RATE))
-
-        return (
-            np.concatenate(audio_parts)
-            if audio_parts
-            else np.array([], dtype=np.float32)
+        preprocessed = self._preprocess_segments(
+            segments, enable_short_sentence_override
         )
+        generated = self._generate_raw_audio_segments(
+            preprocessed, voice_style, speed, voice_resolver
+        )
+        processed = self._postprocess_audio_segments(generated, trim_silence)
+        return self._concatenate_audio_segments(processed)
 
     def _apply_segment_prosody(
         self, audio: np.ndarray, segment: PhonemeSegment

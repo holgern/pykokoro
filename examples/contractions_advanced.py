@@ -16,21 +16,20 @@ Usage:
 Output:
     contractions_advanced_demo.wav - Generated speech with dialogue-heavy text
 """
+
 import argparse
 import logging
 
 from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.debug.segment_invariants import check_segment_invariants
 from pykokoro.generation_config import GenerationConfig
+from pykokoro.stages.audio_generation.noop import NoopAudioGenerationAdapter
+from pykokoro.stages.audio_postprocessing.noop import NoopAudioPostprocessingAdapter
 from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
 from pykokoro.stages.g2p.noop import NoopG2PAdapter
 from pykokoro.stages.splitters.noop import NoopSplitter
 from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
-from pykokoro.stages.synth.noop import NoopSynthesizerAdapter
 from pykokoro.types import Segment, Trace
-
-
-import soundfile as sf
 
 # Extensive text with lots of direct speech and contractions
 TEXT = """
@@ -39,7 +38,7 @@ TEXT = """
 ##Chapter One: The Meeting
 
 'I don't like you,' a man told me once, standing in the doorway of an old café.
-His words hung in the air like smoke ... .
+His words hung in the air like smoke...
 
 "I can't... or shouldn't," I replied, confused by his hostility. "We've never even met before!"
 
@@ -48,7 +47,7 @@ understand. You'll never get it, no matter how hard you'll try!"
 
 I felt my face flush. "I'll have you know that's completely unfair! You don't know anything about me!"
 
-"Don't I?" He smirked. "I'd've thought you'd've figured it out by now... . People like you—you're
+"Don't I?" He smirked. "I'd've thought you'd've figured it out by now... People like you—you're
 all the same. You won't listen, you can't comprehend, and you shouldn't even bother trying!"
 
 "That's ridiculous!" I protested. "I'm not gonna stand here and let you insult me! What's your
@@ -67,7 +66,7 @@ take it out on strangers! That's not fair, and it won't make you feel better."
 "Won't it?" he challenged. "You're telling me what'll make me feel better? That's rich,
 coming from someone who doesn't know me!"
 
-"You're right—I don't know you!" I admitted. "But I'd've listened if you'd've given me a chance... .
+"You're right—I don't know you!" I admitted. "But I'd've listened if you'd've given me a chance...
 I would've understood if you'd've explained. But you're not gonna do that, are you?"
 
 He shook his head. 'Why should I? You'll just say what everyone says: "It's gonna be okay!"
@@ -357,6 +356,13 @@ def print_segments(segments: list[Segment]) -> None:
         print(f"  {seg.id}: {seg.char_start}:{seg.char_end} text={seg.text!r}")
 
 
+def print_phoneme_segments(phoneme_segments: list) -> None:
+    print("Phoneme Segments:")
+    for seg in phoneme_segments:
+        print(f"  {seg.char_start}:{seg.char_end} text={seg.text!r}")
+        print(seg)
+
+
 def main() -> None:
     args = parse_args()
     logging.basicConfig(
@@ -376,14 +382,16 @@ def main() -> None:
         noop_synth = True
 
     g2p = NoopG2PAdapter() if args.noop_g2p else None
-    synth = NoopSynthesizerAdapter() if noop_synth else None
+    audio_generation = NoopAudioGenerationAdapter() if noop_synth else None
+    audio_postprocessing = NoopAudioPostprocessingAdapter() if noop_synth else None
 
     pipeline = KokoroPipeline(
         cfg,
         doc_parser=doc_parser,
         splitter=splitter,
         g2p=g2p,
-        synth=synth,
+        audio_generation=audio_generation,
+        audio_postprocessing=audio_postprocessing,
     )
 
     print("=" * 70)
@@ -404,8 +412,7 @@ def main() -> None:
     print("Estimated duration: ~15-20 minutes")
 
     print("\nGenerating audio (this may take a while for long text)...")
- 
-    
+
     output_file = "contractions_advanced_demo.wav"
     result = pipeline.run(TEXT)
     result.save_wav(output_file)
@@ -414,6 +421,7 @@ def main() -> None:
 
     print(f"clean_text length: {len(doc.clean_text)}")
     print_segments(result.segments)
+    print_phoneme_segments(result.phoneme_segments)
     check_segment_invariants(result.segments, doc.clean_text)
 
     if result.trace and result.trace.warnings:

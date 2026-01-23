@@ -12,8 +12,21 @@ from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import PhonemeSegment, Trace
 
 
-class DummySynth:
-    def synthesize(self, phoneme_segments, cfg, trace):
+class DummyPhonemeProcessor:
+    def process(self, phoneme_segments, cfg, trace):
+        _ = (cfg, trace)
+        return phoneme_segments
+
+
+class DummyAudioGeneration:
+    def generate(self, phoneme_segments, cfg, trace):
+        _ = (cfg, trace)
+        return phoneme_segments
+
+
+class DummyAudioPostprocessing:
+    def postprocess(self, phoneme_segments, cfg, trace):
+        _ = (phoneme_segments, cfg, trace)
         return np.zeros(240, dtype=np.float32)
 
 
@@ -90,7 +103,9 @@ def test_pipeline_run_overrides_lang():
         cfg,
         doc_parser=DummyDocParser(),
         g2p=g2p,
-        synth=DummySynth(),
+        phoneme_processing=DummyPhonemeProcessor(),
+        audio_generation=DummyAudioGeneration(),
+        audio_postprocessing=DummyAudioPostprocessing(),
     )
     res = pipe.run("Hallo", lang="de")
     assert g2p.last_lang == "de"

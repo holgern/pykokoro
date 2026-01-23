@@ -66,6 +66,8 @@ class PhonemeSegment:
     voice_language: str | None = None
     voice_gender: str | None = None
     voice_variant: str | None = None
+    raw_audio: np.ndarray | None = field(default=None, repr=False)
+    processed_audio: np.ndarray | None = field(default=None, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
