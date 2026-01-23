@@ -13,6 +13,7 @@ languages, voices, and advanced features like pause control and text splitting.
    installation
    basic_usage
    advanced_features
+   pipeline_stages
    api_reference
    examples
    changelog
@@ -30,29 +31,25 @@ Features
 * **Phoneme-Based Generation**: Generate speech directly from phonemes for precise control
 * **GPU Acceleration**: Optional GPU support for faster generation
 * **Flexible Audio Processing**: Trim silence, adjust speed, and more
+* **Composable Pipeline Stages**: Swap doc parsing, splitting, g2p, and audio stages
 
 Quick Example
 -------------
 
 .. code-block:: python
 
-   from pykokoro import Kokoro
+   from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
 
-   # Initialize TTS engine
-   kokoro = Kokoro()
-
-   # Generate speech
-   audio, sample_rate = kokoro.create(
-       "Hello, world! This is a test.",
+   config = PipelineConfig(
        voice="af_bella",
-       speed=1.0
+       generation=GenerationConfig(speed=1.0),
    )
+   pipe = KokoroPipeline(config)
+   result = pipe.run("Hello, world! This is a test.")
 
    # Save to file
    import soundfile as sf
-   sf.write("output.wav", audio, sample_rate)
-
-   kokoro.close()
+   sf.write("output.wav", result.audio, result.sample_rate)
 
 Installation
 ------------

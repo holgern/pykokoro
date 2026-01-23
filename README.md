@@ -88,6 +88,29 @@ res = pipe.run("Hello")
 audio = res.audio
 ```
 
+## Pipeline Stages
+
+The pipeline is built from composable stages so you can swap behavior without
+rewriting the whole flow:
+
+`doc_parser -> splitter -> g2p -> phoneme_processing -> audio_generation -> audio_postprocessing`
+
+Stages can be replaced with no-op adapters when you want to disable behavior.
+See `examples/pipeline_stage_showcase.py` for a full wiring example.
+
+```python
+from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro.stages.doc_parsers.plain import PlainTextDocumentParser
+from pykokoro.stages.splitters.paragraph import ParagraphSplitter
+
+pipe = KokoroPipeline(
+    PipelineConfig(voice="af"),
+    doc_parser=PlainTextDocumentParser(),
+    splitter=ParagraphSplitter(),
+)
+res = pipe.run("First paragraph.\n\nSecond paragraph.")
+```
+
 ### Migration
 
 Old (removed):

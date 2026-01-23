@@ -3,46 +3,71 @@ Basic Usage
 
 This guide covers the fundamental usage patterns of PyKokoro.
 
-Initializing Kokoro
--------------------
+.. note::
 
-The main entry point is the ``Kokoro`` class:
+   PyKokoro now uses ``KokoroPipeline`` as the supported API. Replace any legacy
+   ``Kokoro`` usage with the pipeline patterns shown below.
+
+Initializing the Pipeline
+-------------------------
+
+The main entry point is the ``KokoroPipeline`` class:
 
 .. code-block:: python
 
-   from pykokoro import Kokoro
+   from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
 
    # Initialize with defaults (HuggingFace v1.0, q8 quality)
-   kokoro = Kokoro()
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella"))
 
    # Or specify model source and variant
-   kokoro = Kokoro(model_source="huggingface")  # Default
-   kokoro = Kokoro(model_source="huggingface", model_variant="v1.0")  # Default variant
-   kokoro = Kokoro(model_source="huggingface", model_variant="v1.1-zh")  # 103 voices
-   kokoro = Kokoro(model_source="github", model_variant="v1.0")
-   kokoro = Kokoro(model_source="github", model_variant="v1.1-zh")
+   pipe = KokoroPipeline(
+       PipelineConfig(
+           voice="af_bella",
+           model_source="huggingface",
+           model_variant="v1.0",
+       )
+   )
+   pipe = KokoroPipeline(
+       PipelineConfig(
+           voice="af_bella",
+           model_source="huggingface",
+           model_variant="v1.1-zh",
+       )
+   )
+   pipe = KokoroPipeline(
+       PipelineConfig(
+           voice="af_bella",
+           model_source="github",
+           model_variant="v1.0",
+       )
+   )
+   pipe = KokoroPipeline(
+       PipelineConfig(
+           voice="af_bella",
+           model_source="github",
+           model_variant="v1.1-zh",
+       )
+   )
 
    # Or specify model quality
-   kokoro = Kokoro(model_quality="q8")  # Default: q8
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella", model_quality="q8"))
 
-   # Or specify device
-   kokoro = Kokoro(device="cuda")  # cuda, cpu, rocm
+   # Or specify provider
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella", provider="cuda"))
 
-   # Clean up when done
-   kokoro.close()
+Reusing the Pipeline
+~~~~~~~~~~~~~~~~~~~~
 
-Using Context Manager
-~~~~~~~~~~~~~~~~~~~~~
-
-The recommended way is using a context manager:
+Create a pipeline once and reuse it across runs:
 
 .. code-block:: python
 
-   from pykokoro import Kokoro
+   from pykokoro import KokoroPipeline, PipelineConfig
 
-   with Kokoro() as kokoro:
-       audio, sr = kokoro.create("Hello!", voice="af_bella")
-       # Kokoro automatically closed when exiting context
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella"))
+   result = pipe.run("Hello!")
+   print(result.sample_rate)
 
 Model Quality Options
 ~~~~~~~~~~~~~~~~~~~~~

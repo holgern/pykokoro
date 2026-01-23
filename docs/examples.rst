@@ -3,6 +3,18 @@ Examples
 
 This page provides practical examples for common use cases.
 
+.. note::
+
+   The supported interface is ``KokoroPipeline``. If you see legacy ``Kokoro``
+   snippets in older examples, update them to the pipeline style shown below.
+
+Pipeline Stage Showcase
+-----------------------
+
+Use the stage showcase script to see how the new pipeline stages fit together:
+
+``examples/pipeline_stage_showcase.py``
+
 Hello World
 -----------
 
@@ -10,12 +22,13 @@ The simplest example:
 
 .. code-block:: python
 
-   from pykokoro import Kokoro
    import soundfile as sf
 
-   with Kokoro() as kokoro:
-       audio, sr = kokoro.create("Hello, world!", voice="af_bella")
-       sf.write("hello.wav", audio, sr)
+   from pykokoro import KokoroPipeline, PipelineConfig
+
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella"))
+   result = pipe.run("Hello, world!")
+   sf.write("hello.wav", result.audio, result.sample_rate)
 
 Multi-Voice Demo
 ----------------
@@ -24,8 +37,8 @@ Generate the same text with different voices:
 
 .. code-block:: python
 
-   from pykokoro import Kokoro
    import soundfile as sf
+   from pykokoro import KokoroPipeline, PipelineConfig
 
    text = "This is a demonstration of different voices."
 
@@ -36,11 +49,11 @@ Generate the same text with different voices:
        ("bm_george", "British Male - George"),
    ]
 
-   with Kokoro() as kokoro:
-       for voice_name, description in voices:
-           print(f"Generating: {description}")
-           audio, sr = kokoro.create(text, voice=voice_name)
-           sf.write(f"voice_{voice_name}.wav", audio, sr)
+   for voice_name, description in voices:
+       print(f"Generating: {description}")
+       pipe = KokoroPipeline(PipelineConfig(voice=voice_name))
+       result = pipe.run(text)
+       sf.write(f"voice_{voice_name}.wav", result.audio, result.sample_rate)
 
 Pause Markers Demo
 ------------------

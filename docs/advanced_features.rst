@@ -3,6 +3,11 @@ Advanced Features
 
 This guide covers advanced features of PyKokoro for power users.
 
+.. note::
+
+   Use ``KokoroPipeline`` as the supported interface. Legacy ``Kokoro`` snippets
+   can be updated by replacing ``kokoro.create`` with ``pipe.run``.
+
 Voice Blending
 --------------
 
