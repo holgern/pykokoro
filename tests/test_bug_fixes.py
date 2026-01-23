@@ -44,13 +44,6 @@ class TestBugFix1_DuplicatePhonemeDictionaryLoading:
             assert tokenizer._phoneme_dictionary_obj is not None
             assert tokenizer._phoneme_dictionary_obj.has_entries()
 
-            # Legacy attribute should reference the same dictionary
-            assert tokenizer._phoneme_dictionary is not None
-            assert (
-                tokenizer._phoneme_dictionary
-                == tokenizer._phoneme_dictionary_obj._dictionary
-            )
-
             # Verify _load_phoneme_dictionary was NOT called
             # (dictionary is loaded via PhonemeDictionary constructor)
             mock_load.assert_not_called()
@@ -68,13 +61,8 @@ class TestBugFix1_DuplicatePhonemeDictionaryLoading:
         tokenizer = Tokenizer(config=config)
 
         # Both attributes should reference the same underlying dict
-        assert tokenizer._phoneme_dictionary is not None
         assert tokenizer._phoneme_dictionary_obj is not None
-        assert (
-            tokenizer._phoneme_dictionary
-            == tokenizer._phoneme_dictionary_obj._dictionary
-        )
-        assert tokenizer._phoneme_dictionary["test"] == "tɛst"
+        assert tokenizer._phoneme_dictionary_obj._dictionary["test"] == "tɛst"
 
 
 class TestBugFix2_VoiceStyleBoundsChecking:

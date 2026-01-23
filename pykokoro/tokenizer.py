@@ -223,13 +223,6 @@ class Tokenizer:
                     f"Continuing without custom phoneme dictionary."
                 )
 
-        # Legacy attribute for backward compatibility
-        self._phoneme_dictionary: dict[str, str] | None = (
-            self._phoneme_dictionary_obj._dictionary
-            if self._phoneme_dictionary_obj
-            else None
-        )
-
         # Log if espeak_config was provided (deprecated)
         if espeak_config is not None and (
             espeak_config.lib_path or espeak_config.data_path
@@ -237,24 +230,6 @@ class Tokenizer:
             logger.warning(
                 "EspeakConfig is deprecated. kokorog2p manages espeak internally."
             )
-
-    def __getattribute__(self, name: str) -> object:
-        """Override to warn about deprecated attributes.
-
-        This method intercepts attribute access to provide deprecation warnings
-        for legacy attributes that are maintained for backward compatibility.
-        """
-        # Warn when accessing deprecated _phoneme_dictionary attribute
-        if name == "_phoneme_dictionary":
-            import warnings
-
-            warnings.warn(
-                "_phoneme_dictionary is deprecated and will be removed "
-                "in a future version. Use _phoneme_dictionary_obj instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return super().__getattribute__(name)
 
     def _validate_mixed_language_config(self) -> None:
         """Delegate to MixedLanguageHandler.validate_config (backward compatibility)."""
