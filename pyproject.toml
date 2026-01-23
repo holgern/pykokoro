@@ -23,7 +23,7 @@ authors = [
 keywords = ["tts", "text-to-speech", "kokoro", "phonemizer", "espeak"]
 urls = { Homepage = "https://github.com/holgern/pykokoro" }
 dependencies = [
-    "kokorog2p>=0.5.4",
+    "kokorog2p[espeak]>=0.5.4",
     "phrasplit>=0.3.1",
     "numpy",
     "onnxruntime>=1.17.0",
@@ -34,6 +34,7 @@ dependencies = [
     "ssmd>=0.6.1",
     "num2words>=0.5.12",
     "babel>=2.12.0",
+    "soundfile"
 ]
 classifiers=[
     'Development Status :: 4 - Beta',
