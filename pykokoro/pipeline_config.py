@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 from .generation_config import GenerationConfig
@@ -28,6 +29,8 @@ class PipelineConfig:
     model_quality: ModelQuality | None = None
     model_source: ModelSource = DEFAULT_MODEL_SOURCE
     model_variant: ModelVariant = DEFAULT_MODEL_VARIANT
+    model_path: Path | str | None = None
+    voices_path: Path | str | None = None
     provider: ProviderType | None = None
     provider_options: dict[str, Any] | None = None
     session_options: Any | None = None

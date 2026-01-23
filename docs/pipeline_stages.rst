@@ -41,3 +41,24 @@ It demonstrates:
 * SSMD + phrasplit + kokorog2p + phoneme processing + audio generation + audio postprocessing
 * plain text + paragraph splitter + g2p + phoneme processing + audio generation
 * plain text + no-op splitter + g2p + audio generation (no phoneme or audio postprocessing)
+
+Local model files
+~~~~~~~~~~~~~~~~~
+
+To load a local ONNX model and voices file, set ``model_path`` and
+``voices_path`` in ``PipelineConfig``. The pipeline will pass them through to
+the backend when building the default ONNX stages.
+
+.. code-block:: python
+
+   from pathlib import Path
+
+   from pykokoro import KokoroPipeline, PipelineConfig
+
+   config = PipelineConfig(
+       voice="af_bella",
+       model_path=Path("/models/kokoro.onnx"),
+       voices_path=Path("/models/voices.bin.npz"),
+   )
+   pipe = KokoroPipeline(config)
+   result = pipe.run("Hello from local files.")

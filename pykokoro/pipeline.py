@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from .constants import SAMPLE_RATE
@@ -85,7 +86,11 @@ class KokoroPipeline:
         ):
             from .onnx_backend import Kokoro
 
+            model_path = Path(cfg.model_path) if cfg.model_path else None
+            voices_path = Path(cfg.voices_path) if cfg.voices_path else None
             kokoro = Kokoro(
+                model_path=model_path,
+                voices_path=voices_path,
                 model_quality=cfg.model_quality,
                 model_source=cfg.model_source,
                 model_variant=cfg.model_variant,

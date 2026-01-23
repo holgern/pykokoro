@@ -69,6 +69,27 @@ Create a pipeline once and reuse it across runs:
    result = pipe.run("Hello!")
    print(result.sample_rate)
 
+Using Local Model Files
+~~~~~~~~~~~~~~~~~~~~~~~
+
+If you already have the ONNX model and voices files locally, pass their paths
+through ``PipelineConfig``:
+
+.. code-block:: python
+
+   from pathlib import Path
+
+   from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
+
+   config = PipelineConfig(
+       voice="af_bella",
+       generation=GenerationConfig(lang="en-us"),
+       model_path=Path("/models/kokoro.onnx"),
+       voices_path=Path("/models/voices.bin.npz"),
+   )
+   pipe = KokoroPipeline(config)
+   result = pipe.run("Using local model files.")
+
 Model Quality Options
 ~~~~~~~~~~~~~~~~~~~~~
 

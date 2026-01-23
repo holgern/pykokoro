@@ -6,6 +6,8 @@ Usage:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
 from pykokoro.onnx_backend import Kokoro
 from pykokoro.stages.audio_generation.onnx import OnnxAudioGenerationAdapter
@@ -34,7 +36,11 @@ SIMPLE_TEXT = "This is a minimal pipeline with only g2p and audio generation."
 
 
 def build_kokoro(cfg: PipelineConfig) -> Kokoro:
+    model_path = Path(cfg.model_path) if cfg.model_path else None
+    voices_path = Path(cfg.voices_path) if cfg.voices_path else None
     return Kokoro(
+        model_path=model_path,
+        voices_path=voices_path,
         model_quality=cfg.model_quality,
         model_source=cfg.model_source,
         model_variant=cfg.model_variant,
