@@ -327,6 +327,25 @@ VOICE_NAMES_BY_VARIANT = {
 }
 
 
+# Language code mapping for kokoro-onnx
+LANG_CODE_TO_ONNX = {
+    "a": "en-us",  # American English
+    "b": "en-gb",  # British English
+    "e": "es",  # Spanish
+    "f": "fr",  # French
+    "h": "hi",  # Hindi
+    "i": "it",  # Italian
+    "j": "ja",  # Japanese
+    "p": "pt",  # Portuguese
+    "z": "zh",  # Chinese
+}
+
+
+def get_onnx_lang_code(ttsforge_lang: str) -> str:
+    """Convert ttsforge language code to kokoro-onnx language code."""
+    return LANG_CODE_TO_ONNX.get(ttsforge_lang, "en-us")
+
+
 # =============================================================================
 # Path helper functions
 # =============================================================================
