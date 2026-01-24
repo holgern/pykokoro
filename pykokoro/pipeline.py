@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from .constants import SAMPLE_RATE
+from .generation_config import GenerationConfig
+from .onnx_backend import LANG_CODE_TO_ONNX
 from .pipeline_config import PipelineConfig
 from .runtime.tracing import trace_timing
 from .stages.audio_generation.onnx import OnnxAudioGenerationAdapter
@@ -25,6 +27,24 @@ from .stages.splitters.phrasplit import PhrasplitSplitter
 from .types import AudioResult, Trace
 
 logger = logging.getLogger(__name__)
+
+
+def _default_lang_from_voice(cfg: PipelineConfig) -> PipelineConfig:
+    if not isinstance(cfg.voice, str):
+        return cfg
+    if "," in cfg.voice or ":" in cfg.voice:
+        return cfg
+    default_lang = GenerationConfig().lang
+    if cfg.generation.lang != default_lang:
+        return cfg
+    voice_key = cfg.voice.split("_", 1)[0].strip().lower()
+    if not voice_key:
+        return cfg
+    voice_lang = LANG_CODE_TO_ONNX.get(voice_key[0])
+    if not voice_lang or voice_lang == cfg.generation.lang:
+        return cfg
+    generation = replace(cfg.generation, lang=voice_lang)
+    return replace(cfg, generation=generation)
 
 
 class KokoroPipeline:
@@ -60,6 +80,7 @@ class KokoroPipeline:
             cfg = replace(self.config, **overrides)
         else:
             cfg = self.config
+        cfg = _default_lang_from_voice(cfg)
         trace = Trace()
 
         with trace_timing(trace, "doc", "parse"):

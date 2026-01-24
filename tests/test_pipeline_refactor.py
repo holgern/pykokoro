@@ -68,7 +68,7 @@ def test_modular_ssmd_parser_spans_and_breaks():
     parser = SsmdDocumentParser()
     cfg = PipelineConfigType()
     trace = Trace()
-    doc = parser.parse("[Bonjour](fr) le monde.", cfg, trace)
+    doc = parser.parse("[Bonjour]{lang='fr'} le monde.", cfg, trace)
     assert doc.clean_text == "Bonjour le monde."
     assert any(span.attrs.get("lang") == "fr" for span in doc.annotation_spans)
 
@@ -115,6 +115,22 @@ def test_pipeline_run_overrides_lang():
     res = pipe.run("Salut", generation=GenerationConfig(lang="fr"), lang="it")
     assert g2p.last_lang == "it"
     assert res.segments[0].text == "Salut"
+    assert res.phoneme_segments
+
+
+def test_pipeline_defaults_lang_from_voice():
+    cfg = PipelineConfig(voice="bf_lily")
+    g2p = DummyG2P()
+    pipe = KokoroPipeline(
+        cfg,
+        doc_parser=DummyDocParser(),
+        g2p=g2p,
+        phoneme_processing=DummyPhonemeProcessor(),
+        audio_generation=DummyAudioGeneration(),
+        audio_postprocessing=DummyAudioPostprocessing(),
+    )
+    res = pipe.run("Hello")
+    assert g2p.last_lang == "en-gb"
     assert res.phoneme_segments
 
 
