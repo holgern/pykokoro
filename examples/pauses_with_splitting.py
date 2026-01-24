@@ -34,7 +34,9 @@ def main():
 
     # Long text with SSMD pauses and natural sentence breaks
     text = """
-    Welcome to our podcast ...p The Future of AI.
+    Welcome to our podcast!
+
+    The Future of AI.
 
     Today's episode covers three main topics. ...c First, we'll explore neural
     networks and how they learn from data to make increasingly accurate predictions.
