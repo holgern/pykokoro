@@ -1,8 +1,13 @@
 """ONNX backend for pykokoro - native ONNX TTS without external dependencies."""
 
+import contextlib
 import io
 import logging
+import os
+import shutil
 import sqlite3
+import tempfile
+import time
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -17,7 +22,12 @@ from .onnx_session import OnnxSessionManager
 from .provider_config import ProviderConfigManager
 from .tokenizer import EspeakConfig, Tokenizer, TokenizerConfig
 from .utils import get_user_cache_path
-from .voice_manager import VoiceBlend, VoiceManager, slerp_voices
+from .voice_manager import (
+    DEFAULT_VOICE_STYLE_LENGTH,
+    VoiceBlend,
+    VoiceManager,
+    normalize_voice_style,
+)
 
 if TYPE_CHECKING:
     from .short_sentence_handler import ShortSentenceConfig
@@ -25,6 +35,15 @@ if TYPE_CHECKING:
 
 # Logger for debugging
 logger = logging.getLogger(__name__)
+
+DOWNLOAD_CHUNK_SIZE = 1024 * 1024
+DOWNLOAD_RETRIES = 3
+DOWNLOAD_TIMEOUT_SECONDS = 30
+DOWNLOAD_LOCK_TIMEOUT_SECONDS = 30
+MIN_ONNX_BYTES = 1_000_000
+MIN_VOICE_ARCHIVE_BYTES = 1_000_000
+MIN_VOICE_BIN_BYTES = 100_000
+MIN_CONFIG_BYTES = 100
 
 # Model quality type
 ModelQuality = Literal[
@@ -492,12 +511,182 @@ def are_models_downloaded(quality: ModelQuality = DEFAULT_MODEL_QUALITY) -> bool
 # =============================================================================
 
 
+def _validate_min_size(path: Path, min_size: int) -> None:
+    size = path.stat().st_size
+    if size < min_size:
+        raise RuntimeError(
+            f"Downloaded file {path.name} is too small ({size} bytes). "
+            f"Expected at least {min_size} bytes."
+        )
+
+
+def _validate_onnx_file(path: Path) -> None:
+    _validate_min_size(path, MIN_ONNX_BYTES)
+
+    if "CPUExecutionProvider" not in rt.get_available_providers():
+        logger.debug("CPUExecutionProvider unavailable; skipping ONNX validation")
+        return
+
+    try:
+        rt.InferenceSession(
+            str(path),
+            providers=["CPUExecutionProvider"],
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            f"Downloaded ONNX model '{path.name}' is invalid: {exc}"
+        ) from exc
+
+
+def _validate_voice_archive(path: Path) -> None:
+    _validate_min_size(path, MIN_VOICE_ARCHIVE_BYTES)
+
+    try:
+        with np.load(str(path), allow_pickle=False) as voices:
+            if not voices.files:
+                raise RuntimeError("Voice archive is empty")
+            first_key = voices.files[0]
+            normalize_voice_style(
+                voices[first_key],
+                expected_length=DEFAULT_VOICE_STYLE_LENGTH,
+                require_dtype=True,
+                voice_name=first_key,
+            )
+    except Exception as exc:
+        raise RuntimeError(
+            f"Downloaded voice archive '{path.name}' is invalid: {exc}"
+        ) from exc
+
+
+def _validate_voice_bin(path: Path) -> None:
+    _validate_min_size(path, MIN_VOICE_BIN_BYTES)
+
+    size = path.stat().st_size
+    if size % 4 != 0:
+        raise RuntimeError(
+            f"Downloaded voice file '{path.name}' has invalid byte size {size}."
+        )
+
+
+@contextlib.contextmanager
+def _download_lock(
+    target_path: Path,
+    timeout: float = DOWNLOAD_LOCK_TIMEOUT_SECONDS,
+) -> Any:
+    lock_path = target_path.with_suffix(target_path.suffix + ".lock")
+    start = time.monotonic()
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            break
+        except FileExistsError as e:
+            if time.monotonic() - start > timeout:
+                raise RuntimeError(
+                    f"Timed out waiting for download lock on {target_path}"
+                ) from e
+            time.sleep(0.1)
+
+    try:
+        yield
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            lock_path.unlink()
+
+
+def _run_with_retries(
+    action: Callable[[], Path],
+    *,
+    description: str,
+    retries: int = DOWNLOAD_RETRIES,
+) -> Path:
+    last_error: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            return action()
+        except Exception as exc:
+            last_error = exc
+            if attempt == retries:
+                break
+            delay = 2 ** (attempt - 1)
+            logger.warning(
+                f"{description} failed on attempt {attempt}/{retries}: {exc}. "
+                f"Retrying in {delay}s."
+            )
+            time.sleep(delay)
+
+    raise RuntimeError(f"{description} failed after {retries} attempts: {last_error}")
+
+
+def _stream_download(
+    url: str,
+    local_path: Path,
+    *,
+    timeout: float,
+    min_size: int | None = None,
+    validator: Callable[[Path], None] | None = None,
+) -> Path:
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        dir=local_path.parent,
+        prefix=f"{local_path.name}.",
+        suffix=".tmp",
+    ) as tmp_file:
+        tmp_path = Path(tmp_file.name)
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as response:
+                for chunk in iter(lambda: response.read(DOWNLOAD_CHUNK_SIZE), b""):
+                    tmp_file.write(chunk)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        except Exception:
+            with contextlib.suppress(FileNotFoundError):
+                tmp_path.unlink()
+            raise
+
+    try:
+        if min_size is not None:
+            _validate_min_size(tmp_path, min_size)
+        if validator is not None:
+            validator(tmp_path)
+        os.replace(tmp_path, local_path)
+    except Exception:
+        with contextlib.suppress(FileNotFoundError):
+            tmp_path.unlink()
+        raise
+
+    return local_path
+
+
+def _atomic_copy(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        dir=destination.parent,
+        prefix=f"{destination.name}.",
+        suffix=".tmp",
+    ) as tmp_file:
+        tmp_path = Path(tmp_file.name)
+    try:
+        shutil.copyfile(source, tmp_path)
+        os.replace(tmp_path, destination)
+    except Exception:
+        with contextlib.suppress(FileNotFoundError):
+            tmp_path.unlink()
+        raise
+
+
 def _download_from_hf(
     repo_id: str,
     filename: str,
     subfolder: str | None = None,
     local_dir: Path | None = None,
     force: bool = False,
+    min_size: int | None = None,
+    validator: Callable[[Path], None] | None = None,
+    retries: int = DOWNLOAD_RETRIES,
 ) -> Path:
     """
     Download a file from Hugging Face Hub.
@@ -514,14 +703,43 @@ def _download_from_hf(
     """
     # Use hf_hub_download to download the file
     # It handles caching automatically
-    downloaded_path = hf_hub_download(
-        repo_id=repo_id,
-        filename=filename,
-        subfolder=subfolder,
-        local_dir=str(local_dir) if local_dir else None,
-        force_download=force,
+    local_dir_path = Path(local_dir) if local_dir else None
+    target_path: Path | None = None
+    if local_dir_path is not None:
+        target_path = local_dir_path / filename
+        if subfolder:
+            target_path = local_dir_path / subfolder / filename
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _download() -> Path:
+        downloaded_path = hf_hub_download(
+            repo_id=repo_id,
+            filename=filename,
+            subfolder=subfolder,
+            local_dir=str(local_dir_path) if local_dir_path else None,
+            force_download=force,
+        )
+        downloaded = Path(downloaded_path)
+        try:
+            if min_size is not None:
+                _validate_min_size(downloaded, min_size)
+            if validator is not None:
+                validator(downloaded)
+        except Exception:
+            with contextlib.suppress(FileNotFoundError):
+                downloaded.unlink()
+            raise
+        return downloaded
+
+    if target_path is not None:
+        with _download_lock(target_path):
+            return _run_with_retries(
+                _download, description=f"HF download of {filename}", retries=retries
+            )
+
+    return _run_with_retries(
+        _download, description=f"HF download of {filename}", retries=retries
     )
-    return Path(downloaded_path)
 
 
 def download_config(
@@ -561,14 +779,13 @@ def download_config(
 
     logger.info(f"Downloading config for {variant} from {repo_id}")
 
-    downloaded_path = hf_hub_download(
+    return _download_from_hf(
         repo_id=repo_id,
         filename=HF_CONFIG_FILENAME,
-        cache_dir=None,
         local_dir=config_path.parent,
+        force=force,
+        min_size=MIN_CONFIG_BYTES,
     )
-
-    return Path(downloaded_path)
 
 
 def load_vocab_from_config(
@@ -666,11 +883,9 @@ def download_model(
         raise ValueError(f"Quality '{quality}' not available. Available: {available}")
 
     filename = MODEL_QUALITY_FILES_HF[quality]
-    remote_path = f"{HF_MODEL_SUBFOLDER}/{filename}"
-
     # Use new path structure
     model_dir = get_model_dir(source="huggingface", variant=variant)
-    local_path = model_dir / filename
+    local_path = model_dir / HF_MODEL_SUBFOLDER / filename
 
     if local_path.exists() and not force:
         logger.debug(f"Model already exists: {local_path}")
@@ -678,14 +893,14 @@ def download_model(
 
     logger.info(f"Downloading {variant} model ({quality}) from {repo_id}")
 
-    downloaded_path = hf_hub_download(
+    return _download_from_hf(
         repo_id=repo_id,
-        filename=remote_path,
-        cache_dir=None,
+        filename=filename,
+        subfolder=HF_MODEL_SUBFOLDER,
         local_dir=model_dir,
+        force=force,
+        validator=_validate_onnx_file,
     )
-
-    return Path(downloaded_path)
 
 
 def download_voice(
@@ -713,8 +928,6 @@ def download_voice(
         raise ValueError(f"Unknown variant: {variant}")
 
     filename = f"{voice_name}.bin"
-    remote_path = f"{HF_VOICES_SUBFOLDER}/{filename}"
-
     # Use new path structure
     voices_dir = get_voices_dir(source="huggingface", variant=variant)
     voices_dir.mkdir(parents=True, exist_ok=True)
@@ -726,14 +939,20 @@ def download_voice(
 
     logger.info(f"Downloading voice {voice_name} for {variant}")
 
-    downloaded_path = hf_hub_download(
+    download_name = f"{HF_VOICES_SUBFOLDER}/{filename}"
+    downloaded_path = _download_from_hf(
         repo_id=repo_id,
-        filename=remote_path,
-        cache_dir=None,
-        local_dir=voices_dir,
+        filename=download_name,
+        local_dir=None,
+        force=force,
+        min_size=MIN_VOICE_BIN_BYTES,
+        validator=_validate_voice_bin,
     )
 
-    return Path(downloaded_path)
+    with _download_lock(local_path):
+        _atomic_copy(downloaded_path, local_path)
+
+    return local_path
 
 
 def download_all_voices(
@@ -791,16 +1010,16 @@ def download_all_voices(
         # Download if not exists or force
         if not voice_path.exists() or force:
             try:
-                # Download to cache, then copy to voices_dir
-                # to avoid subdirectory issues
-                downloaded_path = hf_hub_download(
+                downloaded_path = _download_from_hf(
                     repo_id=repo_id,
                     filename=f"{HF_VOICES_SUBFOLDER}/{voice_name}.bin",
+                    local_dir=None,
+                    force=force,
+                    min_size=MIN_VOICE_BIN_BYTES,
+                    validator=_validate_voice_bin,
                 )
-                # Copy from HF cache to our voices_dir
-                import shutil
-
-                shutil.copy(downloaded_path, voice_path)
+                with _download_lock(voice_path):
+                    _atomic_copy(downloaded_path, voice_path)
                 logger.info(f"Downloaded {voice_name}.bin")
                 downloaded_files.append(voice_name)
             except Exception as e:
@@ -819,16 +1038,36 @@ def download_all_voices(
             try:
                 # HuggingFace .bin files are raw float32 arrays
                 voice_data = np.fromfile(str(voice_path), dtype=np.float32)
-                # Reshape to match expected format: (N, 1, 256) where N = len / 256
-                # Most voices are 131072 floats = 512 * 1 * 256
-                voice_data = voice_data.reshape(-1, 1, 256)
-                voices_data[voice_name] = voice_data
+                if voice_data.size % 256 != 0:
+                    raise ValueError(
+                        f"Voice file length {voice_data.size} not divisible by 256"
+                    )
+                voice_data = voice_data.reshape(-1, 256)
+                voices_data[voice_name] = normalize_voice_style(
+                    voice_data,
+                    expected_length=DEFAULT_VOICE_STYLE_LENGTH,
+                    require_dtype=True,
+                    voice_name=voice_name,
+                )
             except Exception as e:
                 logger.warning(f"Failed to load {voice_name}.bin: {e}")
 
         if voices_data:
             np_savez = cast(Any, np.savez)
-            np_savez(str(voices_bin_path), **voices_data)
+            with tempfile.NamedTemporaryFile(
+                delete=False,
+                dir=voices_bin_path.parent,
+                prefix=f"{voices_bin_path.name}.",
+                suffix=".tmp",
+            ) as tmp_file:
+                tmp_path = Path(tmp_file.name)
+            try:
+                np_savez(str(tmp_path), **voices_data)
+                os.replace(tmp_path, voices_bin_path)
+            except Exception:
+                with contextlib.suppress(FileNotFoundError):
+                    tmp_path.unlink()
+                raise
             logger.info(
                 f"Created combined voices.bin.npz with {len(voices_data)} voices"
             )
@@ -890,6 +1129,11 @@ def _download_from_github(
     url: str,
     local_path: Path,
     force: bool = False,
+    min_size: int | None = None,
+    validator: Callable[[Path], None] | None = None,
+    timeout: float = DOWNLOAD_TIMEOUT_SECONDS,
+    retries: int = DOWNLOAD_RETRIES,
+    lock_timeout: float = DOWNLOAD_LOCK_TIMEOUT_SECONDS,
 ) -> Path:
     """
     Download a file from GitHub releases using urllib.
@@ -907,26 +1151,27 @@ def _download_from_github(
         logger.debug(f"File already exists: {local_path}")
         return local_path
 
-    # Create parent directory if it doesn't exist
-    local_path.parent.mkdir(parents=True, exist_ok=True)
-
     logger.info(f"Downloading from {url} to {local_path}")
 
-    try:
-        # Download the file
-        with urllib.request.urlopen(url) as response:
-            content = response.read()
+    def _download() -> Path:
+        return _stream_download(
+            url,
+            local_path,
+            timeout=timeout,
+            min_size=min_size,
+            validator=validator,
+        )
 
-        # Write to file
-        with open(local_path, "wb") as f:
-            f.write(content)
+    with _download_lock(local_path, timeout=lock_timeout):
+        if local_path.exists() and not force:
+            logger.debug(f"File already exists: {local_path}")
+            return local_path
 
-        logger.info(f"Downloaded {local_path.name} ({len(content)} bytes)")
-        return local_path
-
-    except Exception as e:
-        logger.error(f"Failed to download {url}: {e}")
-        raise
+        return _run_with_retries(
+            _download,
+            description=f"Download {local_path.name}",
+            retries=retries,
+        )
 
 
 def download_model_github(
@@ -975,7 +1220,12 @@ def download_model_github(
     local_path = model_dir / filename
 
     # Download
-    return _download_from_github(url, local_path, force)
+    return _download_from_github(
+        url,
+        local_path,
+        force,
+        validator=_validate_onnx_file,
+    )
 
 
 def download_voices_github(
@@ -1010,7 +1260,12 @@ def download_voices_github(
     local_path = voices_dir / filename
 
     # Download
-    return _download_from_github(url, local_path, force)
+    return _download_from_github(
+        url,
+        local_path,
+        force,
+        validator=_validate_voice_archive,
+    )
 
 
 def download_all_models_github(
@@ -1152,7 +1407,7 @@ class Kokoro:
                     tts = Kokoro(short_sentence_config=config)
         """
         self._session: rt.InferenceSession | None = None
-        self._voices_data: dict[str, np.ndarray] | None = None
+        self._voice_manager: VoiceManager | None = None
         self._audio_generator: AudioGenerator | None = None
         self._np = np
 
@@ -1451,11 +1706,9 @@ class Kokoro:
         self._session = session_manager.create_session(model_path=self._model_path)
 
         # Use VoiceManager to load voices
-        voice_manager = VoiceManager(
-            model_source=self._model_source,
-        )
+        voice_manager = VoiceManager(model_source=self._model_source)
         voice_manager.load_voices(voices_path=self._voices_path)
-        self._voices_data = voice_manager._voices_data
+        self._voice_manager = voice_manager
 
         # Create AudioGenerator
         self._audio_generator = AudioGenerator(
@@ -1468,60 +1721,29 @@ class Kokoro:
     def get_voices(self) -> list[str]:
         """Get list of available voice names."""
         self._init_kokoro()
-        assert self._voices_data is not None
-        return list(sorted(self._voices_data.keys()))
+        assert self._voice_manager is not None
+        return self._voice_manager.get_voices()
 
     def get_voice_style(self, voice_name: str) -> np.ndarray:
         """Get the style vector for a voice."""
         self._init_kokoro()
-        assert self._voices_data is not None
-
-        if voice_name not in self._voices_data:
-            available = ", ".join(sorted(self._voices_data.keys()))
-            raise KeyError(
-                f"Voice '{voice_name}' not found. Available voices: {available}"
-            )
-        return self._voices_data[voice_name]
+        assert self._voice_manager is not None
+        return self._voice_manager.get_voice_style(voice_name)
 
     def create_blended_voice(self, blend: VoiceBlend) -> np.ndarray:
         """Create a blended voice style vector from a VoiceBlend."""
         self._init_kokoro()
-
-        # Optimize: single voice doesn't need blending
-        if len(blend.voices) == 1:
-            voice_name, _ = blend.voices[0]
-            return self.get_voice_style(voice_name)
-
-        # SLERP interpolation (exactly 2 voices)
-        if blend.interpolation == "slerp":
-            (voice_a_name, weight_a), (voice_b_name, weight_b) = blend.voices
-            style_a = self.get_voice_style(voice_a_name)
-            style_b = self.get_voice_style(voice_b_name)
-            return slerp_voices(style_a, style_b, t=weight_b)
-
-        # Linear interpolation (weighted sum) - works with any number of voices
-        blended: np.ndarray | None = None
-        for voice_name, weight in blend.voices:
-            style = self.get_voice_style(voice_name)
-            weighted = style * weight
-            if blended is None:
-                blended = weighted
-            else:
-                blended = np.add(blended, weighted)
-
-        assert blended is not None, "No voices in blend"
-        return blended
+        assert self._voice_manager is not None
+        return self._voice_manager.create_blended_voice(blend)
 
     def _resolve_voice_style(self, voice: str | np.ndarray | VoiceBlend) -> np.ndarray:
         """Resolve voice parameter to a voice style array."""
-        if isinstance(voice, VoiceBlend):
-            return self.create_blended_voice(voice)
-        if isinstance(voice, str):
-            if ":" in voice or "," in voice:
-                blend = VoiceBlend.parse(voice)
-                return self.create_blended_voice(blend)
-            return self.get_voice_style(voice)
-        return voice
+        self._init_kokoro()
+        assert self._voice_manager is not None
+        return self._voice_manager.resolve_voice(
+            voice,
+            voice_db_lookup=self.get_voice_from_database,
+        )
 
     # Voice Database Integration (from kokovoicelab)
 
@@ -1626,16 +1848,15 @@ class Kokoro:
         """
         self._init_kokoro()
 
-        # Resolve to style vectors
-        if isinstance(voice1, str):
-            style1 = self.get_voice_style(voice1)
-        else:
-            style1 = voice1
+        self._init_kokoro()
+        assert self._voice_manager is not None
 
-        if isinstance(voice2, str):
-            style2 = self.get_voice_style(voice2)
-        else:
-            style2 = voice2
+        style1 = self._voice_manager.resolve_voice(
+            voice1, voice_db_lookup=self.get_voice_from_database
+        )
+        style2 = self._voice_manager.resolve_voice(
+            voice2, voice_db_lookup=self.get_voice_from_database
+        )
 
         # Use kokovoicelab's interpolation method
         diff_vector = style2 - style1
@@ -1662,7 +1883,10 @@ class Kokoro:
         # Create voice resolver callback
         def voice_resolver(voice_name: str) -> np.ndarray:
             """Resolve voice name to style vector."""
-            return self.get_voice_style(voice_name)
+            assert self._voice_manager is not None
+            return self._voice_manager.resolve_voice(
+                voice_name, voice_db_lookup=self.get_voice_from_database
+            )
 
         return audio_generator.generate_from_segments(
             segments,

@@ -17,6 +17,7 @@ from .tokenizer import Tokenizer
 from .trim import trim as trim_audio
 from .types import PhonemeSegment
 from .utils import generate_silence
+from .voice_manager import normalize_voice_style
 
 if TYPE_CHECKING:
     from .short_sentence_handler import ShortSentenceConfig
@@ -76,6 +77,8 @@ class AudioGenerator:
         Returns:
             Tuple of (audio samples, sample rate)
         """
+        voice_style = normalize_voice_style(voice_style, expected_length=None)
+
         # Truncate phonemes if too long
         phonemes = phonemes[:MAX_PHONEME_LENGTH]
         tokens = self._tokenizer.tokenize(phonemes)
@@ -85,6 +88,8 @@ class AudioGenerator:
         max_style_idx = voice_style.shape[0] - 1 if len(voice_style.shape) > 0 else 0
         style_idx = min(len(tokens), MAX_PHONEME_LENGTH - 1, max_style_idx)
         voice_style_indexed = voice_style[style_idx]
+        if voice_style_indexed.ndim == 1:
+            voice_style_indexed = voice_style_indexed[None, :]
 
         # Pad tokens with start/end tokens
         tokens_padded = [[0, *tokens, 0]]

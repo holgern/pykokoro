@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 import onnxruntime as rt
 
+from .exceptions import ConfigurationError
 from .provider_config import ProviderConfigManager
 from .utils import get_user_cache_path
 
@@ -48,10 +49,10 @@ class OnnxSessionManager:
     ):
         """Initialize the session manager."""
         self._use_gpu = use_gpu
-        self._provider = provider
+        self._provider: ProviderType | None = provider
         self._session_options = session_options
         self._provider_options = provider_options or {}
-        self._model_quality = model_quality
+        self._model_quality: ModelQuality = model_quality
 
     def create_session(
         self,
@@ -181,6 +182,24 @@ class OnnxSessionManager:
         """
         available = rt.get_available_providers()
 
+        def _provider_key(
+            entry: str | tuple[str, dict[str, str]],
+        ) -> str:
+            return entry[0] if isinstance(entry, tuple) else entry
+
+        def _dedupe_providers(
+            providers: list[str | tuple[str, dict[str, str]]],
+        ) -> list[str | tuple[str, dict[str, str]]]:
+            seen: set[str] = set()
+            deduped: list[str | tuple[str, dict[str, str]]] = []
+            for entry in providers:
+                key = _provider_key(entry)
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(entry)
+            return deduped
+
         # Helper function to create provider list with options
         def _make_provider_list(prov: str) -> list[str | tuple[str, dict[str, str]]]:
             """Create provider list, adding options if needed."""
@@ -199,15 +218,39 @@ class OnnxSessionManager:
 
             if merged_opts:
                 logger.info(f"Using {prov} with options: {merged_opts}")
-                return [(prov, merged_opts), "CPUExecutionProvider"]
-            else:
-                return [prov, "CPUExecutionProvider"]
+                return [(prov, merged_opts)]
+
+            return [prov]
 
         # Environment variable override (highest priority)
         env_provider = os.getenv("ONNX_PROVIDER")
         if env_provider:
-            logger.info(f"Using provider from ONNX_PROVIDER env: {env_provider}")
-            return _make_provider_list(env_provider)
+            env_provider_clean = env_provider.strip()
+            normalized_env = None
+            provider_map = {
+                "cpu": "CPUExecutionProvider",
+                "cuda": "CUDAExecutionProvider",
+                "openvino": "OpenVINOExecutionProvider",
+                "directml": "DmlExecutionProvider",
+                "coreml": "CoreMLExecutionProvider",
+            }
+
+            if env_provider_clean.lower() in provider_map:
+                normalized_env = provider_map[env_provider_clean.lower()]
+            else:
+                for available_provider in available:
+                    if available_provider.lower() == env_provider_clean.lower():
+                        normalized_env = available_provider
+                        break
+
+            if normalized_env is None:
+                raise ConfigurationError(
+                    "ONNX_PROVIDER must match an available provider name. "
+                    f"Got '{env_provider_clean}'. Available: {available}"
+                )
+
+            logger.info(f"Using provider from ONNX_PROVIDER env: {normalized_env}")
+            return _dedupe_providers(_make_provider_list(normalized_env))
 
         # Auto-selection logic
         if provider == "auto" or (provider is None and use_gpu):
@@ -220,7 +263,7 @@ class OnnxSessionManager:
             ]:
                 if prov in available:
                     logger.info(f"Auto-selected provider: {prov}")
-                    return _make_provider_list(prov)
+                    return _dedupe_providers(_make_provider_list(prov))
             logger.info("Auto-selection: No accelerators found, using CPU")
             return ["CPUExecutionProvider"]
 
@@ -263,7 +306,7 @@ class OnnxSessionManager:
             )
 
         logger.info(f"Using explicitly selected provider: {selected}")
-        return _make_provider_list(selected)
+        return _dedupe_providers(_make_provider_list(selected))
 
     def _get_default_provider_options(self, provider: str) -> dict[str, str]:
         """Get sensible default options for a provider.

@@ -434,9 +434,24 @@ def energy_based_vad(
     """
     audio = audio.astype(np.float32)
 
+    if frame_duration_ms <= 0:
+        raise ParameterError("frame_duration_ms must be positive")
+
     # Frame parameters
     frame_length = int(sample_rate * frame_duration_ms / 1000)
-    n_frames = len(audio) // frame_length
+    if frame_length <= 0:
+        raise ParameterError("frame_length must be positive")
+
+    if len(audio) == 0:
+        return np.zeros(0, dtype=bool)
+
+    if len(audio) < frame_length:
+        padded = np.zeros(frame_length, dtype=np.float32)
+        padded[: len(audio)] = audio
+        audio = padded
+        n_frames = 1
+    else:
+        n_frames = len(audio) // frame_length
 
     # Compute short-time energy for each frame
     energy = np.zeros(n_frames)
@@ -508,6 +523,19 @@ def frame_signal(
     """
     frame_length = int(sample_rate * frame_ms / 1000)
     hop_length = int(sample_rate * hop_ms / 1000)
+
+    if frame_length <= 0:
+        raise ParameterError("frame_length must be positive")
+    if hop_length <= 0:
+        raise ParameterError("hop_length must be positive")
+
+    if len(audio) == 0:
+        return np.zeros((0, frame_length), dtype=audio.dtype)
+
+    if len(audio) < frame_length:
+        padded = np.zeros(frame_length, dtype=audio.dtype)
+        padded[: len(audio)] = audio
+        return padded.reshape(1, frame_length)
 
     # Calculate number of frames
     n_frames = (len(audio) - frame_length) // hop_length + 1

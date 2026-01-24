@@ -1,12 +1,14 @@
 """Tests for OnnxSessionManager."""
 
 import logging
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import onnxruntime as rt
 import pytest
 
-from pykokoro.onnx_session import OnnxSessionManager
+from pykokoro.exceptions import ConfigurationError
+from pykokoro.onnx_session import OnnxSessionManager, ProviderType
 
 
 @pytest.fixture
@@ -73,9 +75,10 @@ class TestProviderSelection:
 
     def test_invalid_provider_raises_error(self):
         """Test that invalid provider raises ValueError."""
-        manager = OnnxSessionManager(provider="invalid")
+        invalid_provider = cast(ProviderType, "invalid")
+        manager = OnnxSessionManager(provider=invalid_provider)
         with pytest.raises(ValueError, match="Unknown provider"):
-            manager._select_providers("invalid", False)
+            manager._select_providers(invalid_provider, False)
 
     def test_unavailable_provider_raises_error(self):
         """Test that unavailable provider raises RuntimeError."""
@@ -93,11 +96,12 @@ class TestProviderSelection:
             }
 
             if provider_map[prov] not in available:
-                manager = OnnxSessionManager(provider=prov)
+                provider_value = cast(ProviderType, prov)
+                manager = OnnxSessionManager(provider=provider_value)
                 with pytest.raises(
                     RuntimeError, match="provider requested but not available"
                 ):
-                    manager._select_providers(prov, False)
+                    manager._select_providers(provider_value, False)
                 return
 
         pytest.skip("All providers are available on this system")
@@ -108,6 +112,15 @@ class TestProviderSelection:
         manager = OnnxSessionManager(provider="cpu")
         providers = manager._select_providers("cpu", False)
         assert "CPUExecutionProvider" in providers
+        assert len(providers) == 1
+
+    def test_env_override_invalid(self, monkeypatch):
+        """Test invalid ONNX_PROVIDER override raises error."""
+        monkeypatch.setenv("ONNX_PROVIDER", "UnknownExecutionProvider")
+        manager = OnnxSessionManager(provider="cpu")
+
+        with pytest.raises(ConfigurationError, match="ONNX_PROVIDER"):
+            manager._select_providers("cpu", False)
 
 
 class TestProviderOptions:

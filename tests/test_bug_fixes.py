@@ -156,6 +156,37 @@ class TestBugFix2_VoiceStyleBoundsChecking:
         assert audio is not None
         assert sample_rate == 24000
 
+    def test_voice_style_input_shape(self):
+        """Test that style input is normalized to 2D float32."""
+        mock_session = Mock()
+        mock_session.get_inputs.return_value = [Mock(name="input_ids")]
+        captured_inputs = {}
+
+        def _run(_, inputs):
+            captured_inputs.update(inputs)
+            return [np.zeros((1, 100), dtype=np.float32)]
+
+        mock_session.run.side_effect = _run
+
+        mock_tokenizer = Mock()
+        mock_tokenizer.tokenize.return_value = [1, 2, 3]
+
+        generator = AudioGenerator(
+            session=mock_session,
+            tokenizer=mock_tokenizer,
+            model_source="huggingface",
+        )
+
+        voice_style = np.random.randn(512, 256).astype(np.float32)
+        generator.generate_from_phonemes(
+            phonemes="test", voice_style=voice_style, speed=1.0
+        )
+
+        assert "style" in captured_inputs
+        style_input = np.asarray(captured_inputs["style"])
+        assert style_input.shape == (1, 256)
+        assert style_input.dtype == np.float32
+
 
 class TestBugFix3_ProviderConfigExtraction:
     """Test that provider configuration is properly extracted and deduplicated."""

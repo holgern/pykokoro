@@ -342,9 +342,9 @@ class TestSSMDVoiceSwitching:
 
         def mock_voice_resolver(voice_name: str) -> np.ndarray:
             voice_calls.append(voice_name)
-            return np.zeros(512, dtype=np.float32)
+            return np.zeros((512, 1, 256), dtype=np.float32)
 
-        default_voice = np.zeros(512, dtype=np.float32)
+        default_voice = np.zeros((512, 1, 256), dtype=np.float32)
 
         # Generate with voice resolver
         audio = generator.generate_from_segments(
@@ -400,7 +400,7 @@ class TestSSMDVoiceSwitching:
             ),
         ]
 
-        default_voice = np.zeros(512, dtype=np.float32)
+        default_voice = np.zeros((512, 1, 256), dtype=np.float32)
 
         # Generate WITHOUT voice resolver (should use default)
         audio = generator.generate_from_segments(

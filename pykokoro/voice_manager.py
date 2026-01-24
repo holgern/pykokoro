@@ -1,13 +1,116 @@
 """Voice management for PyKokoro."""
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 
+from .exceptions import ConfigurationError
+
 logger = logging.getLogger(__name__)
+
+DEFAULT_VOICE_STYLE_LENGTH = 512
+VOICE_STYLE_TAIL_SHAPE = (1, 256)
+VOICE_STYLE_DTYPES = (np.float16, np.float32)
+
+
+def normalize_voice_style(
+    voice_style: np.ndarray,
+    *,
+    expected_length: int | None = DEFAULT_VOICE_STYLE_LENGTH,
+    allow_broadcast: bool = False,
+    require_dtype: bool = False,
+    voice_name: str | None = None,
+) -> np.ndarray:
+    """Normalize voice style arrays to (N, 1, 256) with validation.
+
+    Args:
+        voice_style: Input voice array.
+        expected_length: Optional expected length for the first dimension.
+            Use None to accept any length.
+        allow_broadcast: If True, a single (1, 256) or (256,) vector can be
+            broadcast to expected_length.
+        require_dtype: If True, only float16/float32 are accepted.
+        voice_name: Optional label for error context.
+
+    Returns:
+        Normalized voice style array with shape (N, 1, 256).
+
+    Raises:
+        ConfigurationError: If the array is invalid or ambiguous.
+    """
+    label = f"Voice '{voice_name}'" if voice_name else "Voice style"
+    array = np.asarray(voice_style)
+
+    if array.dtype == object:
+        raise ConfigurationError(
+            f"{label} contains object dtype data. "
+            "Re-download voices to fix the archive."
+        )
+
+    if require_dtype:
+        if array.dtype not in VOICE_STYLE_DTYPES:
+            raise ConfigurationError(
+                f"{label} must be float16 or float32, got {array.dtype}."
+            )
+    else:
+        if not np.issubdtype(array.dtype, np.floating):
+            raise ConfigurationError(f"{label} must be a floating point array.")
+
+    normalized: np.ndarray
+    if array.ndim == 3 and array.shape[1:] == VOICE_STYLE_TAIL_SHAPE:
+        normalized = array
+    elif array.ndim == 2 and array.shape[1] == VOICE_STYLE_TAIL_SHAPE[-1]:
+        normalized = array[:, None, :]
+    elif array.ndim == 2 and array.shape == (1, VOICE_STYLE_TAIL_SHAPE[-1]):
+        if not allow_broadcast:
+            raise ConfigurationError(
+                f"{label} has shape {array.shape}. "
+                "Explicit broadcasting is required."
+            )
+        if expected_length is None:
+            raise ConfigurationError(
+                f"{label} broadcast requires expected_length to be set."
+            )
+        normalized = np.tile(array[:, None, :], (expected_length, 1, 1))
+    elif array.ndim == 1 and array.shape == (VOICE_STYLE_TAIL_SHAPE[-1],):
+        if not allow_broadcast:
+            raise ConfigurationError(
+                f"{label} has shape {array.shape}. Explicit broadcasting is required."
+            )
+        if expected_length is None:
+            raise ConfigurationError(
+                f"{label} broadcast requires expected_length to be set."
+            )
+        normalized = np.tile(array.reshape(1, 1, -1), (expected_length, 1, 1))
+    elif (
+        array.ndim == 1
+        and expected_length is not None
+        and array.shape == (expected_length,)
+    ):
+        raise ConfigurationError(
+            f"{label} has ambiguous shape {array.shape}. Expected (N, 1, 256)."
+        )
+    else:
+        raise ConfigurationError(
+            f"{label} has unsupported shape {array.shape}. "
+            "Expected (N, 1, 256) or (N, 256)."
+        )
+
+    if expected_length is not None and normalized.shape[0] != expected_length:
+        raise ConfigurationError(
+            f"{label} length {normalized.shape[0]} does not "
+            f"match expected {expected_length}."
+        )
+
+    if normalized.dtype not in VOICE_STYLE_DTYPES:
+        normalized = normalized.astype(np.float32)
+
+    return normalized
+
 
 # Model source type
 ModelSource = Literal["huggingface", "github"]
@@ -32,7 +135,7 @@ def slerp_voices(
     where θ is the angle between vectors a and b.
 
     Args:
-        a: First voice embedding. Shape: (510, 1, 256) for Kokoro voice embeddings.
+        a: First voice embedding. Shape: (512, 1, 256) for Kokoro voice embeddings.
            Will be normalized internally along the last dimension.
         b: Second voice embedding (same shape as a).
            Will be normalized internally along the last dimension.
@@ -202,17 +305,22 @@ class VoiceManager:
         # Check if it's a GitHub .bin file (which is actually .npz format)
         # or a standard .npz file (for HuggingFace)
         if voices_path.suffix == ".bin" or self._model_source == "github":
-            self._voices_data = self._load_voices_bin_github(voices_path)
+            voices = self._load_voices_bin_github(voices_path)
         else:
             # HuggingFace format: .npz archive with named voice arrays
-            self._voices_data = dict(np.load(str(voices_path), allow_pickle=True))
-            logger.info(
-                f"Successfully loaded {len(self._voices_data)} voices "
-                f"from {voices_path}"
-            )
-            logger.debug(
-                f"Available voices: {', '.join(sorted(self._voices_data.keys()))}"
-            )
+            try:
+                voices = dict(np.load(str(voices_path), allow_pickle=False))
+            except (ValueError, TypeError) as exc:
+                raise ConfigurationError(
+                    "Voice archive contains unsupported data. "
+                    "Re-download voices to fix the archive."
+                ) from exc
+
+        self._voices_data = self._normalize_loaded_voices(voices, voices_path)
+        logger.info(
+            f"Successfully loaded {len(self._voices_data)} voices from {voices_path}"
+        )
+        logger.debug(f"Available voices: {', '.join(sorted(self._voices_data.keys()))}")
 
     def _load_voices_bin_github(self, voices_path: Path) -> dict[str, np.ndarray]:
         """Load voices from GitHub format .bin file.
@@ -227,7 +335,13 @@ class VoiceManager:
             Dictionary mapping voice names to numpy arrays
         """
         # Load the NumPy file - it's actually .npz format despite .bin extension
-        voices_npz = np.load(str(voices_path), allow_pickle=True)
+        try:
+            voices_npz = np.load(str(voices_path), allow_pickle=False)
+        except (ValueError, TypeError) as exc:
+            raise ConfigurationError(
+                "Voice archive contains unsupported data. "
+                "Re-download voices to fix the archive."
+            ) from exc
 
         # Convert NpzFile to dictionary
         voices: dict[str, np.ndarray] = dict(voices_npz)
@@ -236,6 +350,27 @@ class VoiceManager:
         logger.debug(f"Available voices: {', '.join(sorted(voices.keys()))}")
 
         return voices
+
+    def _normalize_loaded_voices(
+        self, voices: dict[str, np.ndarray], voices_path: Path
+    ) -> dict[str, np.ndarray]:
+        normalized: dict[str, np.ndarray] = {}
+
+        for voice_name, voice_style in voices.items():
+            try:
+                normalized[voice_name] = normalize_voice_style(
+                    voice_style,
+                    expected_length=DEFAULT_VOICE_STYLE_LENGTH,
+                    require_dtype=True,
+                    voice_name=voice_name,
+                )
+            except ConfigurationError as exc:
+                raise ConfigurationError(
+                    f"Invalid voice '{voice_name}' in {voices_path}. "
+                    "Re-download voices to fix the archive."
+                ) from exc
+
+        return normalized
 
     def get_voices(self) -> list[str]:
         """Get list of available voice names.
@@ -310,23 +445,30 @@ class VoiceManager:
         if self._voices_data is None:
             raise RuntimeError("Voices not loaded. Call load_voices() first.")
 
+        return self._blend_voices(blend, self.get_voice_style)
+
+    def _blend_voices(
+        self,
+        blend: VoiceBlend,
+        resolver: Callable[[str], np.ndarray],
+    ) -> np.ndarray:
         # Optimize: single voice doesn't need blending
         if len(blend.voices) == 1:
             voice_name, _ = blend.voices[0]
-            return self.get_voice_style(voice_name)
+            return resolver(voice_name)
 
         # SLERP interpolation (exactly 2 voices)
         if blend.interpolation == "slerp":
-            (voice_a_name, weight_a), (voice_b_name, weight_b) = blend.voices
-            style_a = self.get_voice_style(voice_a_name)
-            style_b = self.get_voice_style(voice_b_name)
+            (voice_a_name, _), (voice_b_name, weight_b) = blend.voices
+            style_a = resolver(voice_a_name)
+            style_b = resolver(voice_b_name)
             # Use weight_b as t parameter: t=0 -> voice_a, t=1 -> voice_b
             return slerp_voices(style_a, style_b, t=weight_b)
 
         # Linear interpolation (weighted sum) - works with any number of voices
         blended: np.ndarray | None = None
         for voice_name, weight in blend.voices:
-            style = self.get_voice_style(voice_name)
+            style = resolver(voice_name)
             weighted = style * weight
             if blended is None:
                 blended = weighted
@@ -337,7 +479,13 @@ class VoiceManager:
         assert blended is not None, "No voices in blend"
         return blended
 
-    def resolve_voice(self, voice: str | np.ndarray | VoiceBlend) -> np.ndarray:
+    def resolve_voice(
+        self,
+        voice: str | np.ndarray | VoiceBlend,
+        *,
+        voice_db_lookup: Callable[[str], np.ndarray | None] | None = None,
+        allow_broadcast: bool = False,
+    ) -> np.ndarray:
         """Resolve a voice specification to a style vector.
 
         Convenience method that handles all voice input types:
@@ -356,12 +504,49 @@ class VoiceManager:
             KeyError: If voice name is not found
         """
         if isinstance(voice, VoiceBlend):
-            return self.create_blended_voice(voice)
-        elif isinstance(voice, str):
-            return self.get_voice_style(voice)
-        else:
-            # Already a style vector
-            return voice
+            return self._blend_voices(
+                voice, lambda name: self._resolve_voice_name(name, voice_db_lookup)
+            )
+        if isinstance(voice, str):
+            if ":" in voice or "," in voice:
+                blend = VoiceBlend.parse(voice)
+                return self._blend_voices(
+                    blend,
+                    lambda name: self._resolve_voice_name(name, voice_db_lookup),
+                )
+            return self._resolve_voice_name(voice, voice_db_lookup)
+
+        # Already a style vector
+        return normalize_voice_style(
+            voice,
+            expected_length=DEFAULT_VOICE_STYLE_LENGTH,
+            allow_broadcast=allow_broadcast,
+        )
+
+    def _resolve_voice_name(
+        self,
+        voice_name: str,
+        voice_db_lookup: Callable[[str], np.ndarray | None] | None,
+    ) -> np.ndarray:
+        if voice_db_lookup:
+            db_voice = voice_db_lookup(voice_name)
+            if db_voice is not None:
+                return normalize_voice_style(
+                    db_voice,
+                    expected_length=DEFAULT_VOICE_STYLE_LENGTH,
+                    voice_name=voice_name,
+                )
+
+        if self._voices_data is None:
+            raise RuntimeError("Voices not loaded. Call load_voices() first.")
+
+        if voice_name not in self._voices_data:
+            available = ", ".join(sorted(self._voices_data.keys()))
+            raise KeyError(
+                f"Voice '{voice_name}' not found. Available voices: {available}"
+            )
+
+        return self._voices_data[voice_name]
 
     def is_loaded(self) -> bool:
         """Check if voices have been loaded.

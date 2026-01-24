@@ -5,7 +5,8 @@ import logging
 import numpy as np
 import pytest
 
-from pykokoro.voice_manager import VoiceBlend, VoiceManager
+from pykokoro.exceptions import ConfigurationError
+from pykokoro.voice_manager import VoiceBlend, VoiceManager, normalize_voice_style
 
 
 @pytest.fixture
@@ -84,8 +85,9 @@ class TestVoiceLoading:
         manager.load_voices(mock_npz_file)
 
         assert manager.is_loaded()
-        assert len(manager._voices_data) == 3
-        assert set(manager._voices_data.keys()) == {"voice1", "voice2", "voice3"}
+        voices = manager.get_voices()
+        assert len(voices) == 3
+        assert set(voices) == {"voice1", "voice2", "voice3"}
 
     def test_load_voices_github(self, mock_npz_file):
         """Test loading voices from GitHub .bin format."""
@@ -93,7 +95,7 @@ class TestVoiceLoading:
         manager.load_voices(mock_npz_file)
 
         assert manager.is_loaded()
-        assert len(manager._voices_data) == 3
+        assert len(manager.get_voices()) == 3
 
     def test_load_voices_logging(self, mock_npz_file, caplog):
         """Test that voice loading is logged."""
@@ -135,8 +137,8 @@ class TestGetVoiceStyle:
 
         style = manager.get_voice_style("voice1")
         assert isinstance(style, np.ndarray)
-        assert style.shape == (512, 256)
-        np.testing.assert_array_equal(style, voice_data["voice1"])
+        assert style.shape == (512, 1, 256)
+        np.testing.assert_array_equal(style, voice_data["voice1"][:, None, :])
 
     def test_get_voice_style_not_loaded(self):
         """Test that getting style before loading raises error."""
@@ -173,10 +175,13 @@ class TestCreateBlendedVoice:
         blended = manager.create_blended_voice(blend)
 
         assert isinstance(blended, np.ndarray)
-        assert blended.shape == (512, 256)
+        assert blended.shape == (512, 1, 256)
 
         # Verify blend is correct weighted sum
-        expected = voice_data["voice1"] * 0.6 + voice_data["voice2"] * 0.4
+        expected = (
+            voice_data["voice1"][:, None, :] * 0.6
+            + voice_data["voice2"][:, None, :] * 0.4
+        )
         np.testing.assert_array_almost_equal(blended, expected)
 
     def test_create_blended_voice_single(self, mock_npz_file, voice_data):
@@ -188,7 +193,7 @@ class TestCreateBlendedVoice:
         blended = manager.create_blended_voice(blend)
 
         # Should return original voice, not a copy
-        np.testing.assert_array_equal(blended, voice_data["voice1"])
+        np.testing.assert_array_equal(blended, voice_data["voice1"][:, None, :])
 
     def test_create_blended_voice_three_voices(self, mock_npz_file, voice_data):
         """Test blending three voices."""
@@ -205,9 +210,9 @@ class TestCreateBlendedVoice:
         blended = manager.create_blended_voice(blend)
 
         expected = (
-            voice_data["voice1"] * 0.5
-            + voice_data["voice2"] * 0.3
-            + voice_data["voice3"] * 0.2
+            voice_data["voice1"][:, None, :] * 0.5
+            + voice_data["voice2"][:, None, :] * 0.3
+            + voice_data["voice3"][:, None, :] * 0.2
         )
         np.testing.assert_array_almost_equal(blended, expected)
 
@@ -238,7 +243,7 @@ class TestResolveVoice:
         manager.load_voices(mock_npz_file)
 
         style = manager.resolve_voice("voice1")
-        np.testing.assert_array_equal(style, voice_data["voice1"])
+        np.testing.assert_array_equal(style, voice_data["voice1"][:, None, :])
 
     def test_resolve_voice_blend(self, mock_npz_file, voice_data):
         """Test resolving a VoiceBlend."""
@@ -248,7 +253,10 @@ class TestResolveVoice:
         blend = VoiceBlend(voices=[("voice1", 0.7), ("voice2", 0.3)])
         style = manager.resolve_voice(blend)
 
-        expected = voice_data["voice1"] * 0.7 + voice_data["voice2"] * 0.3
+        expected = (
+            voice_data["voice1"][:, None, :] * 0.7
+            + voice_data["voice2"][:, None, :] * 0.3
+        )
         np.testing.assert_array_almost_equal(style, expected)
 
     def test_resolve_voice_ndarray(self, mock_npz_file):
@@ -259,8 +267,8 @@ class TestResolveVoice:
         custom_style = np.random.rand(512, 256).astype(np.float32)
         style = manager.resolve_voice(custom_style)
 
-        # Should return the same array
-        np.testing.assert_array_equal(style, custom_style)
+        # Should return normalized array
+        np.testing.assert_array_equal(style, custom_style[:, None, :])
 
     def test_resolve_voice_not_loaded_string(self):
         """Test that resolving voice name before loading raises error."""
@@ -273,9 +281,9 @@ class TestResolveVoice:
         manager = VoiceManager()
         custom_style = np.random.rand(512, 256).astype(np.float32)
 
-        # Should work fine, just returns the array
+        # Should work fine, just returns normalized array
         style = manager.resolve_voice(custom_style)
-        np.testing.assert_array_equal(style, custom_style)
+        np.testing.assert_array_equal(style, custom_style[:, None, :])
 
 
 class TestIsLoaded:
@@ -318,3 +326,57 @@ class TestEdgeCases:
 
         assert manager.is_loaded()
         assert manager.get_voices() == []
+
+
+class TestVoiceNormalization:
+    def test_normalize_voice_style_accepts_canonical(self):
+        style = np.zeros((512, 1, 256), dtype=np.float32)
+        normalized = normalize_voice_style(style)
+        assert normalized.shape == (512, 1, 256)
+
+    def test_normalize_voice_style_expands_2d(self):
+        style = np.zeros((512, 256), dtype=np.float32)
+        normalized = normalize_voice_style(style)
+        assert normalized.shape == (512, 1, 256)
+
+    def test_normalize_voice_style_rejects_ambiguous_shape(self):
+        style = np.zeros((512,), dtype=np.float32)
+        with pytest.raises(ConfigurationError, match="ambiguous"):
+            normalize_voice_style(style)
+
+    def test_load_voices_rejects_object_arrays(self, tmp_path):
+        obj_voice = np.array([{"bad": "data"}], dtype=object)
+        voices_path = tmp_path / "voices.npz"
+        np.savez(str(voices_path), voice1=obj_voice)
+        manager = VoiceManager()
+
+        with pytest.raises(ConfigurationError, match="Re-download voices"):
+            manager.load_voices(voices_path)
+
+
+class TestVoiceDatabaseResolution:
+    def test_db_voice_overrides_file(self, mock_npz_file):
+        manager = VoiceManager()
+        manager.load_voices(mock_npz_file)
+
+        db_voice = np.ones((512, 256), dtype=np.float32)
+
+        def lookup(name: str):
+            return db_voice if name == "voice1" else None
+
+        resolved = manager.resolve_voice("voice1", voice_db_lookup=lookup)
+        np.testing.assert_array_equal(resolved, db_voice[:, None, :])
+
+    def test_db_voice_blend(self, mock_npz_file, voice_data):
+        manager = VoiceManager()
+        manager.load_voices(mock_npz_file)
+
+        db_voice = np.ones((512, 256), dtype=np.float32)
+
+        def lookup(name: str):
+            return db_voice if name == "voice1" else None
+
+        blend = VoiceBlend(voices=[("voice1", 0.5), ("voice2", 0.5)])
+        resolved = manager.resolve_voice(blend, voice_db_lookup=lookup)
+        expected = db_voice[:, None, :] * 0.5 + voice_data["voice2"][:, None, :] * 0.5
+        np.testing.assert_array_equal(resolved, expected)
