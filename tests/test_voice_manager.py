@@ -353,6 +353,22 @@ class TestVoiceNormalization:
         with pytest.raises(ConfigurationError, match="Re-download voices"):
             manager.load_voices(voices_path)
 
+    def test_load_voices_normalizes_lengths(self, tmp_path):
+        voices_path = tmp_path / "voices.npz"
+        voice_a = np.ones((512, 256), dtype=np.float32)
+        voice_b = np.ones((510, 256), dtype=np.float32)
+        np.savez(str(voices_path), voice_a=voice_a, voice_b=voice_b)
+
+        manager = VoiceManager()
+        manager.load_voices(voices_path)
+
+        style_a = manager.get_voice_style("voice_a")
+        style_b = manager.get_voice_style("voice_b")
+        assert style_a.shape == (510, 1, 256)
+        assert style_b.shape == (510, 1, 256)
+        np.testing.assert_array_equal(style_a[:, 0, :], voice_a[:510])
+        np.testing.assert_array_equal(style_b[:, 0, :], voice_b)
+
 
 class TestVoiceDatabaseResolution:
     def test_db_voice_overrides_file(self, mock_npz_file):

@@ -38,6 +38,7 @@ TEXT = (
 )
 
 VOICE = "af_heart"  # American Female voice
+VOICE = "af"  # American Female voice
 LANG = "en-us"  # American English
 
 

@@ -33,7 +33,11 @@ Note:
 
 import soundfile as sf
 
-import pykokoro
+from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
+from pykokoro.onnx_backend import Kokoro
+from pykokoro.stages.audio_generation.onnx import OnnxAudioGenerationAdapter
+from pykokoro.stages.audio_postprocessing.onnx import OnnxAudioPostprocessingAdapter
+from pykokoro.stages.phoneme_processing.onnx import OnnxPhonemeProcessorAdapter
 
 # Text for English models (HuggingFace and GitHub v1.0)
 ENGLISH_TEXT = (
@@ -53,6 +57,17 @@ CHINESE_TEXT = (
 def main():
     """Generate audio using all four model source/variant combinations."""
 
+    def build_pipeline(kokoro_backend: Kokoro, voice: str, lang: str) -> KokoroPipeline:
+        return KokoroPipeline(
+            PipelineConfig(
+                voice=voice,
+                generation=GenerationConfig(lang=lang, speed=1.0),
+            ),
+            phoneme_processing=OnnxPhonemeProcessorAdapter(kokoro_backend),
+            audio_generation=OnnxAudioGenerationAdapter(kokoro_backend),
+            audio_postprocessing=OnnxAudioPostprocessingAdapter(kokoro_backend),
+        )
+
     # =========================================================================
     # Example 1: HuggingFace v1.0 Model
     # =========================================================================
@@ -63,7 +78,7 @@ def main():
     print(f"Text: {ENGLISH_TEXT[:50]}...")
 
     print("\nInitializing TTS engine with HuggingFace v1.0 model...")
-    kokoro_hf_v10 = pykokoro.Kokoro(
+    kokoro_hf_v10 = Kokoro(
         model_source="huggingface",
         model_variant="v1.0",
         model_quality="fp32",
@@ -77,12 +92,9 @@ def main():
     # Use af_sarah as default voice
     voice_to_use = "af_sarah" if "af_sarah" in available_voices else available_voices[0]
     print(f"\nGenerating audio with HuggingFace v1.0 using voice '{voice_to_use}'...")
-    samples_hf_v10, sample_rate = kokoro_hf_v10.create(
-        ENGLISH_TEXT,
-        voice=voice_to_use,
-        speed=1.0,
-        lang="en-us",
-    )
+    pipeline_hf_v10 = build_pipeline(kokoro_hf_v10, voice_to_use, "en-us")
+    result_hf_v10 = pipeline_hf_v10.run(ENGLISH_TEXT, voice=voice_to_use)
+    samples_hf_v10, sample_rate = result_hf_v10.audio, result_hf_v10.sample_rate
 
     output_file_hf_v10 = "hf_v1.0_demo.wav"
     sf.write(output_file_hf_v10, samples_hf_v10, sample_rate)
@@ -105,7 +117,7 @@ def main():
     print(f"Text: {ENGLISH_TEXT[:50]}...")
 
     print("\nInitializing TTS engine with HuggingFace v1.1-zh model...")
-    kokoro_hf_v11zh = pykokoro.Kokoro(
+    kokoro_hf_v11zh = Kokoro(
         model_source="huggingface",
         model_variant="v1.1-zh",
         model_quality="q8",  # v1.1-zh supports all quantization levels
@@ -123,11 +135,11 @@ def main():
     )
     print(f"Using English voice: {voice_v11zh}")
     print(f"\nGenerating audio with HuggingFace v1.1-zh using voice '{voice_v11zh}'...")
-    samples_hf_v11zh, sample_rate = kokoro_hf_v11zh.create(
-        ENGLISH_TEXT,
-        voice=voice_v11zh,
-        speed=1.0,
-        lang="en-us",
+    pipeline_hf_v11zh = build_pipeline(kokoro_hf_v11zh, voice_v11zh, "en-us")
+    result_hf_v11zh = pipeline_hf_v11zh.run(ENGLISH_TEXT, voice=voice_v11zh)
+    samples_hf_v11zh, sample_rate = (
+        result_hf_v11zh.audio,
+        result_hf_v11zh.sample_rate,
     )
 
     output_file_hf_v11zh = "hf_v1.1_zh_demo.wav"
@@ -151,7 +163,7 @@ def main():
     print(f"Text: {ENGLISH_TEXT[:50]}...")
 
     print("\nInitializing TTS engine with GitHub v1.0 model...")
-    kokoro_github_v10 = pykokoro.Kokoro(
+    kokoro_github_v10 = Kokoro(
         model_source="github",
         model_variant="v1.0",
         model_quality="fp16",  # GitHub v1.0 supports: fp32, fp16, fp16-gpu, q8
@@ -169,11 +181,11 @@ def main():
         else available_voices_github[0]
     )
     print(f"\nGenerating audio with GitHub v1.0 using voice '{voice_github}'...")
-    samples_github_v10, sample_rate = kokoro_github_v10.create(
-        ENGLISH_TEXT,
-        voice=voice_github,
-        speed=1.0,
-        lang="en-us",
+    pipeline_github_v10 = build_pipeline(kokoro_github_v10, voice_github, "en-us")
+    result_github_v10 = pipeline_github_v10.run(ENGLISH_TEXT, voice=voice_github)
+    samples_github_v10, sample_rate = (
+        result_github_v10.audio,
+        result_github_v10.sample_rate,
     )
 
     output_file_github_v10 = "github_v1.0_demo.wav"
@@ -198,7 +210,7 @@ def main():
     print(f"Text: {ENGLISH_TEXT[:50]}...")
 
     print("\nInitializing TTS engine with GitHub v1.1-zh model...")
-    kokoro_github_v11zh = pykokoro.Kokoro(
+    kokoro_github_v11zh = Kokoro(
         model_source="github",
         model_variant="v1.1-zh",
         model_quality="fp32",  # GitHub v1.1-zh only supports fp32
@@ -226,11 +238,15 @@ def main():
     print(
         f"\nGenerating audio with GitHub v1.1-zh using voice '{voice_github_v11zh}'..."
     )
-    samples_github_v11zh, sample_rate = kokoro_github_v11zh.create(
-        ENGLISH_TEXT,
-        voice=voice_github_v11zh,
-        speed=1.0,
-        lang="en-us",
+    pipeline_github_v11zh = build_pipeline(
+        kokoro_github_v11zh, voice_github_v11zh, "en-us"
+    )
+    result_github_v11zh = pipeline_github_v11zh.run(
+        ENGLISH_TEXT, voice=voice_github_v11zh
+    )
+    samples_github_v11zh, sample_rate = (
+        result_github_v11zh.audio,
+        result_github_v11zh.sample_rate,
     )
 
     output_file_github_v11zh = "github_v1.1_zh_demo.wav"

@@ -25,7 +25,7 @@ class FakeResponse:
         self._offset += len(chunk)
         return chunk
 
-    def __enter__(self) -> "FakeResponse":
+    def __enter__(self) -> FakeResponse:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:

@@ -1,6 +1,7 @@
 """Voice management for PyKokoro."""
 
 import logging
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,8 +69,7 @@ def normalize_voice_style(
     elif array.ndim == 2 and array.shape == (1, VOICE_STYLE_TAIL_SHAPE[-1]):
         if not allow_broadcast:
             raise ConfigurationError(
-                f"{label} has shape {array.shape}. "
-                "Explicit broadcasting is required."
+                f"{label} has shape {array.shape}. Explicit broadcasting is required."
             )
         if expected_length is None:
             raise ConfigurationError(
@@ -295,6 +295,7 @@ class VoiceManager:
         """Initialize the voice manager."""
         self._model_source = model_source
         self._voices_data: dict[str, np.ndarray] | None = None
+        self._voice_length: int | None = None
 
     def load_voices(self, voices_path: Path) -> None:
         """Load voices from file.
@@ -302,6 +303,10 @@ class VoiceManager:
         Args:
             voices_path: Path to the voices file (.npz or .bin)
         """
+        if voices_path.exists() and voices_path.stat().st_size == 0:
+            raise ConfigurationError(
+                f"Voice archive {voices_path} is empty. Re-download voices to fix it."
+            )
         # Check if it's a GitHub .bin file (which is actually .npz format)
         # or a standard .npz file (for HuggingFace)
         if voices_path.suffix == ".bin" or self._model_source == "github":
@@ -310,7 +315,7 @@ class VoiceManager:
             # HuggingFace format: .npz archive with named voice arrays
             try:
                 voices = dict(np.load(str(voices_path), allow_pickle=False))
-            except (ValueError, TypeError) as exc:
+            except (ValueError, TypeError, EOFError) as exc:
                 raise ConfigurationError(
                     "Voice archive contains unsupported data. "
                     "Re-download voices to fix the archive."
@@ -337,7 +342,7 @@ class VoiceManager:
         # Load the NumPy file - it's actually .npz format despite .bin extension
         try:
             voices_npz = np.load(str(voices_path), allow_pickle=False)
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, EOFError) as exc:
             raise ConfigurationError(
                 "Voice archive contains unsupported data. "
                 "Re-download voices to fix the archive."
@@ -355,21 +360,72 @@ class VoiceManager:
         self, voices: dict[str, np.ndarray], voices_path: Path
     ) -> dict[str, np.ndarray]:
         normalized: dict[str, np.ndarray] = {}
+        lengths: set[int] = set()
 
         for voice_name, voice_style in voices.items():
             try:
-                normalized[voice_name] = normalize_voice_style(
+                voice_array = normalize_voice_style(
                     voice_style,
-                    expected_length=DEFAULT_VOICE_STYLE_LENGTH,
+                    expected_length=None,
                     require_dtype=True,
                     voice_name=voice_name,
                 )
+                lengths.add(voice_array.shape[0])
+                normalized[voice_name] = voice_array
             except ConfigurationError as exc:
                 raise ConfigurationError(
                     f"Invalid voice '{voice_name}' in {voices_path}. "
                     "Re-download voices to fix the archive."
                 ) from exc
 
+        if not lengths:
+            self._voice_length = None
+            return normalized
+
+        length_counts = Counter(lengths)
+        most_common = length_counts.most_common()
+        max_count = most_common[0][1]
+        candidate_lengths = [
+            length for length, count in most_common if count == max_count
+        ]
+        target_length = min(candidate_lengths)
+
+        if len(lengths) > 1:
+            logger.debug(
+                "Loaded voices with mixed lengths: %s. "
+                "Normalizing voices to length %d for blending.",
+                ", ".join(str(length) for length in sorted(lengths)),
+                target_length,
+            )
+
+        for voice_name, voice_array in list(normalized.items()):
+            current_length = voice_array.shape[0]
+            if current_length == target_length:
+                continue
+            if current_length > target_length:
+                normalized[voice_name] = voice_array[:target_length]
+                logger.debug(
+                    "Truncated voice '%s' from %d to %d.",
+                    voice_name,
+                    current_length,
+                    target_length,
+                )
+                continue
+            pad_amount = target_length - current_length
+            padded = np.pad(
+                voice_array,
+                ((0, pad_amount), (0, 0), (0, 0)),
+                mode="constant",
+            )
+            normalized[voice_name] = padded
+            logger.debug(
+                "Padded voice '%s' from %d to %d.",
+                voice_name,
+                current_length,
+                target_length,
+            )
+
+        self._voice_length = target_length
         return normalized
 
     def get_voices(self) -> list[str]:
@@ -519,7 +575,7 @@ class VoiceManager:
         # Already a style vector
         return normalize_voice_style(
             voice,
-            expected_length=DEFAULT_VOICE_STYLE_LENGTH,
+            expected_length=self._voice_length,
             allow_broadcast=allow_broadcast,
         )
 
@@ -533,7 +589,7 @@ class VoiceManager:
             if db_voice is not None:
                 return normalize_voice_style(
                     db_voice,
-                    expected_length=DEFAULT_VOICE_STYLE_LENGTH,
+                    expected_length=self._voice_length,
                     voice_name=voice_name,
                 )
 

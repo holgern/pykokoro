@@ -18,16 +18,12 @@ import onnxruntime as rt
 from huggingface_hub import hf_hub_download
 
 from .audio_generator import AudioGenerator
+from .exceptions import ConfigurationError
 from .onnx_session import OnnxSessionManager
 from .provider_config import ProviderConfigManager
 from .tokenizer import EspeakConfig, Tokenizer, TokenizerConfig
 from .utils import get_user_cache_path
-from .voice_manager import (
-    DEFAULT_VOICE_STYLE_LENGTH,
-    VoiceBlend,
-    VoiceManager,
-    normalize_voice_style,
-)
+from .voice_manager import VoiceBlend, VoiceManager, normalize_voice_style
 
 if TYPE_CHECKING:
     from .short_sentence_handler import ShortSentenceConfig
@@ -187,6 +183,7 @@ VOICE_NAMES_V1_0 = [
     "zm_yunxia",
     "zm_yunyang",
 ]
+
 
 # Expected voice names for GitHub v1.1-zh (Chinese model)
 # Note: These are loaded dynamically from voices.bin, this list is for reference
@@ -548,7 +545,7 @@ def _validate_voice_archive(path: Path) -> None:
             first_key = voices.files[0]
             normalize_voice_style(
                 voices[first_key],
-                expected_length=DEFAULT_VOICE_STYLE_LENGTH,
+                expected_length=None,
                 require_dtype=True,
                 voice_name=first_key,
             )
@@ -991,9 +988,24 @@ def download_all_voices(
     voices_dir.mkdir(parents=True, exist_ok=True)
 
     voices_bin_path = voices_dir / "voices.bin.npz"
+    force_download = force
+
+    if voices_dir.exists():
+        for temp_path in voices_dir.glob("voices.bin.npz.*.tmp*"):
+            with contextlib.suppress(FileNotFoundError):
+                temp_path.unlink()
+        if voices_bin_path.exists() and voices_bin_path.stat().st_size == 0:
+            logger.warning(
+                "voices.bin.npz is empty at %s; re-downloading voices.",
+                voices_bin_path,
+            )
+            force_download = True
+        if voices_bin_path.exists() and force_download:
+            with contextlib.suppress(FileNotFoundError):
+                voices_bin_path.unlink()
 
     # If voices.bin.npz already exists and not forcing, return early
-    if voices_bin_path.exists() and not force:
+    if voices_bin_path.exists() and not force_download:
         logger.info(f"voices.bin.npz already exists at {voices_bin_path}")
         return voices_dir
 
@@ -1033,6 +1045,7 @@ def download_all_voices(
         logger.info(f"Combining {len(downloaded_files)} voices into voices.bin.npz")
         voices_data: dict[str, np.ndarray] = {}
 
+        lengths: set[int] = set()
         for voice_name in downloaded_files:
             voice_path = voices_dir / f"{voice_name}.bin"
             try:
@@ -1043,14 +1056,23 @@ def download_all_voices(
                         f"Voice file length {voice_data.size} not divisible by 256"
                     )
                 voice_data = voice_data.reshape(-1, 256)
-                voices_data[voice_name] = normalize_voice_style(
+                voice_array = normalize_voice_style(
                     voice_data,
-                    expected_length=DEFAULT_VOICE_STYLE_LENGTH,
+                    expected_length=None,
                     require_dtype=True,
                     voice_name=voice_name,
                 )
+                lengths.add(voice_array.shape[0])
+                voices_data[voice_name] = voice_array
             except Exception as e:
                 logger.warning(f"Failed to load {voice_name}.bin: {e}")
+
+        if lengths and len(lengths) > 1:
+            logger.debug(
+                "Downloaded voices have mixed lengths: %s. "
+                "Voices will be normalized to a common length on load.",
+                ", ".join(str(length) for length in sorted(lengths)),
+            )
 
         if voices_data:
             np_savez = cast(Any, np.savez)
@@ -1058,7 +1080,7 @@ def download_all_voices(
                 delete=False,
                 dir=voices_bin_path.parent,
                 prefix=f"{voices_bin_path.name}.",
-                suffix=".tmp",
+                suffix=".tmp.npz",
             ) as tmp_file:
                 tmp_path = Path(tmp_file.name)
             try:
@@ -1070,6 +1092,11 @@ def download_all_voices(
                 raise
             logger.info(
                 f"Created combined voices.bin.npz with {len(voices_data)} voices"
+            )
+        else:
+            raise RuntimeError(
+                "No valid voice files could be loaded. "
+                "Check your network connection or clear the cache and retry."
             )
 
     return voices_dir
@@ -1410,6 +1437,7 @@ class Kokoro:
         self._voice_manager: VoiceManager | None = None
         self._audio_generator: AudioGenerator | None = None
         self._np = np
+        self._voices_path_provided = voices_path is not None
 
         # Deprecation warning for use_gpu
         if use_gpu:
@@ -1593,7 +1621,7 @@ class Kokoro:
                 download_model(variant=self._model_variant, quality=self._model_quality)
 
         # Download voices if needed
-        if not self._voices_path.exists():
+        if not self._voices_path.exists() or self._voices_path.stat().st_size == 0:
             if self._model_source == "github":
                 download_voices_github(variant=self._model_variant)
             else:  # huggingface
@@ -1609,6 +1637,13 @@ class Kokoro:
         else:  # huggingface - default v1.0
             if not is_config_downloaded():
                 download_config()
+
+    def _redownload_voices(self, force: bool = False) -> None:
+        if self._model_source == "github":
+            download_voices_github(variant=self._model_variant, force=force)
+            return
+
+        download_all_voices(variant=self._model_variant, force=force)
 
     def _get_default_provider_options(self, provider: str) -> dict[str, str]:
         """
@@ -1707,7 +1742,18 @@ class Kokoro:
 
         # Use VoiceManager to load voices
         voice_manager = VoiceManager(model_source=self._model_source)
-        voice_manager.load_voices(voices_path=self._voices_path)
+        try:
+            voice_manager.load_voices(voices_path=self._voices_path)
+        except ConfigurationError as exc:
+            if self._voices_path_provided:
+                raise
+            logger.warning(
+                "Voice archive invalid at %s: %s. Re-downloading...",
+                self._voices_path,
+                exc,
+            )
+            self._redownload_voices(force=True)
+            voice_manager.load_voices(voices_path=self._voices_path)
         self._voice_manager = voice_manager
 
         # Create AudioGenerator
