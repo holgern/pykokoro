@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from bisect import bisect_left
 
 from ...pipeline_config import PipelineConfig
 from ...types import BoundaryEvent, Segment, Trace
@@ -33,6 +34,13 @@ class PhrasplitSplitter(Splitter):
 
         override_ranges = self._override_ranges(doc.annotation_spans)
         ranges = self._hard_ranges(text, doc.boundary_events, override_ranges)
+        paragraph_breaks = sorted(
+            boundary.pos
+            for boundary in doc.boundary_events
+            if boundary.kind == "pause"
+            and boundary.duration_s is None
+            and boundary.attrs.get("strength") == "p"
+        )
         segments: list[Segment] = []
         seg_idx = 0
         sentence_idx = 0
@@ -105,12 +113,18 @@ class PhrasplitSplitter(Splitter):
 
                 abs_start = start + seg_start
                 abs_end = start + seg_end
+                range_paragraph = bisect_left(paragraph_breaks, start)
                 resolved_sentence = sent if sent is not None else sentence_idx
                 if sent is None:
                     sentence_idx += 1
                 else:
                     sentence_idx = max(sentence_idx, sent + 1)
-                resolved_paragraph = para if para is not None else 0
+                if para is None:
+                    resolved_paragraph = range_paragraph
+                elif paragraph_breaks and para == 0 and range_paragraph != 0:
+                    resolved_paragraph = range_paragraph
+                else:
+                    resolved_paragraph = para
                 resolved_clause = clause if clause is not None else 0
                 segment_id = (
                     f"p{resolved_paragraph}"
@@ -175,14 +189,24 @@ class PhrasplitSplitter(Splitter):
         boundaries: list[BoundaryEvent],
         override_ranges: set[tuple[int, int]],
     ) -> list[tuple[int, int]]:
-        positions = {b.pos for b in boundaries}
+        positions_set: set[int] = set()
+        for boundary in boundaries:
+            pos = boundary.pos
+            if (
+                boundary.kind == "pause"
+                and boundary.duration_s is None
+                and pos > 0
+                and pos < len(text)
+            ):
+                pos = min(len(text), pos + 1)
+            positions_set.add(pos)
         for start, end in override_ranges:
-            positions.add(start)
-            positions.add(end)
-        positions = sorted(positions)
+            positions_set.add(start)
+            positions_set.add(end)
+        sorted_positions = sorted(positions_set)
         ranges: list[tuple[int, int]] = []
         start = 0
-        for pos in positions:
+        for pos in sorted_positions:
             pos = max(0, min(len(text), pos))
             if pos > start:
                 ranges.append((start, pos))

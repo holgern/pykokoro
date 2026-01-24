@@ -11,7 +11,7 @@ from pykokoro.stages.splitters.paragraph import ParagraphSplitter
 from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import PhonemeSegment, Trace
 
-TEXT = "This is paragraph1. Sentence 2.\n\nThis is paragrph2. Sentence2"
+TEXT = "This is paragraph1. Sentence 2.\n\nThis is paragrph2. Sentence2."
 
 
 class DummyG2P:
@@ -92,6 +92,7 @@ def _build_pipeline(cfg: PipelineConfig) -> KokoroPipeline:
         audio_postprocessing=NoopAudioPostprocessingAdapter(),
     )
 
+
 def _build_pipeline2(cfg: PipelineConfig) -> KokoroPipeline:
     return KokoroPipeline(
         cfg,
@@ -102,7 +103,6 @@ def _build_pipeline2(cfg: PipelineConfig) -> KokoroPipeline:
         audio_generation=NoopAudioGenerationAdapter(seconds_per_segment=0.01),
         audio_postprocessing=NoopAudioPostprocessingAdapter(),
     )
-
 
 
 def test_pipeline_paragraph_indices():
@@ -124,13 +124,15 @@ def test_pipeline_manual_paragraph_pause():
         generation.pause_paragraph
     )
 
+
 def test_pipeline2_paragraph_indices():
     cfg = PipelineConfig()
     pipeline = _build_pipeline2(cfg)
     res = pipeline.run(TEXT)
 
     paragraph_ids = [segment.paragraph_idx for segment in res.phoneme_segments]
-    assert paragraph_ids == [0, 0, 0, 1, 1]
+    assert len(res.phoneme_segments) == 4
+    assert paragraph_ids == [0, 0, 1, 1]
 
 
 def test_pipeline2_manual_paragraph_pause():
@@ -139,7 +141,9 @@ def test_pipeline2_manual_paragraph_pause():
     pipeline = _build_pipeline2(cfg)
     res = pipeline.run(TEXT)
 
-    assert len(res.phoneme_segments) == 5
-    assert res.phoneme_segments[3].pause_after == pytest.approx(
-        generation.pause_paragraph
-    )
+    assert len(res.phoneme_segments) == 4
+    paragraph_zero = [
+        segment for segment in res.phoneme_segments if segment.paragraph_idx == 0
+    ]
+    assert paragraph_zero
+    assert paragraph_zero[-1].pause_after == pytest.approx(generation.pause_paragraph)
