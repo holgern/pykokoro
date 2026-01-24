@@ -1680,20 +1680,6 @@ class Kokoro:
             self._voice_db = None
 
 
-# Language code mapping for kokoro-onnx
-LANG_CODE_TO_ONNX = {
-    "a": "en-us",  # American English
-    "b": "en-gb",  # British English
-    "e": "es",  # Spanish
-    "f": "fr",  # French
-    "h": "hi",  # Hindi
-    "i": "it",  # Italian
-    "j": "ja",  # Japanese
-    "p": "pt",  # Portuguese
-    "z": "zh",  # Chinese
-}
-
-
 def is_chinese_language(lang: str) -> bool:
     """Check if language code is Chinese.
 
@@ -1705,8 +1691,3 @@ def is_chinese_language(lang: str) -> bool:
     """
     lang_lower = lang.lower().strip()
     return lang_lower in ["zh", "cmn", "zh-cn", "zh-tw", "zh-hans", "zh-hant"]
-
-
-def get_onnx_lang_code(ttsforge_lang: str) -> str:
-    """Convert ttsforge language code to kokoro-onnx language code."""
-    return LANG_CODE_TO_ONNX.get(ttsforge_lang, "en-us")

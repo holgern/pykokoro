@@ -18,6 +18,7 @@ and maps it to PyKokoro's internal segment representation.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -45,6 +46,15 @@ ANNOTATION_RE = re.compile(
 )
 
 LANG_SHORTHAND_RE = re.compile(r"\[([^\]]+)\]\(([a-zA-Z]{2,3}(?:-[a-zA-Z]{2})?)\)")
+BREAK_TIME_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(ms|s)\s*$", re.IGNORECASE)
+
+DEFAULT_PAUSE_NONE = 0.0
+DEFAULT_PAUSE_WEAK = 0.15
+DEFAULT_PAUSE_CLAUSE = 0.3
+DEFAULT_PAUSE_SENTENCE = 0.6
+DEFAULT_PAUSE_PARAGRAPH = 1.0
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -141,7 +151,11 @@ def has_ssmd_markup(text: str) -> bool:
         True if text contains any SSMD markup patterns
     """
     # Break markers
-    if re.search(r"\.\.\.[nwcsp]|\.\.\.(\d+\.?\d*)(ms|s)", text):
+    if re.search(
+        r"\.\.\.(?:[nwcsp]|\s*\d+(?:\.\d+)?\s*(?:ms|s))",
+        text,
+        re.IGNORECASE,
+    ):
         return True
 
     # Emphasis (must have word character adjacent to asterisk)
@@ -168,11 +182,11 @@ def has_ssmd_markup(text: str) -> bool:
 def _convert_break_strength_to_duration(
     strength: str | None,
     time: str | None,
-    pause_none: float = 0.0,
-    pause_weak: float = 0.15,
-    pause_clause: float = 0.3,
-    pause_sentence: float = 0.6,
-    pause_paragraph: float = 1.0,
+    pause_none: float = DEFAULT_PAUSE_NONE,
+    pause_weak: float = DEFAULT_PAUSE_WEAK,
+    pause_clause: float = DEFAULT_PAUSE_CLAUSE,
+    pause_sentence: float = DEFAULT_PAUSE_SENTENCE,
+    pause_paragraph: float = DEFAULT_PAUSE_PARAGRAPH,
 ) -> float:
     """Convert SSMD BreakAttrs to pause duration in seconds.
 
@@ -191,10 +205,12 @@ def _convert_break_strength_to_duration(
     """
     # If explicit time is provided, use it
     if time:
-        if time.endswith("ms"):
-            return float(time[:-2]) / 1000.0
-        elif time.endswith("s"):
-            return float(time[:-1])
+        duration = _parse_break_time(time)
+        if duration is not None:
+            return duration
+        logger.warning(
+            "Invalid SSMD break duration '%s'; falling back to strength.", time
+        )
 
     # Otherwise use strength mapping
     if strength:
@@ -209,6 +225,17 @@ def _convert_break_strength_to_duration(
         return strength_map.get(strength, 0.0)
 
     return 0.0
+
+
+def _parse_break_time(time: str) -> float | None:
+    match = BREAK_TIME_RE.match(time)
+    if not match:
+        return None
+    value = float(match.group(1))
+    unit = match.group(2).lower()
+    if unit == "ms":
+        return value / 1000.0
+    return value
 
 
 def _map_ssmd_segment_to_metadata(
@@ -232,7 +259,7 @@ def _map_ssmd_segment_to_metadata(
     # say-as > sub > phoneme > text)
     text = ssmd_seg.text
 
-    # Audio segments - play pre-recorded audio
+    # Audio segments - store metadata and use alt_text fallback
     if ssmd_seg.audio:
         metadata.audio_src = ssmd_seg.audio.src
         metadata.audio_alt_text = ssmd_seg.audio.alt_text
@@ -294,11 +321,11 @@ def parse_ssmd_to_segments(
     text: str,
     tokenizer: Tokenizer,
     lang: str = "en-us",
-    pause_none: float = 0.0,
-    pause_weak: float = 0.15,
-    pause_clause: float = 0.3,
-    pause_sentence: float = 0.6,
-    pause_paragraph: float = 1.0,
+    pause_none: float = DEFAULT_PAUSE_NONE,
+    pause_weak: float = DEFAULT_PAUSE_WEAK,
+    pause_clause: float = DEFAULT_PAUSE_CLAUSE,
+    pause_sentence: float = DEFAULT_PAUSE_SENTENCE,
+    pause_paragraph: float = DEFAULT_PAUSE_PARAGRAPH,
     model_size: str | None = None,
     use_spacy: bool | None = None,
     heading_levels: dict | None = None,

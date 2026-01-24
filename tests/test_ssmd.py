@@ -11,6 +11,7 @@ class TestSSMDDetection:
         assert has_ssmd_markup("Hello ...c world")
         assert has_ssmd_markup("Test ...500ms pause")
         assert has_ssmd_markup("Wait ...2s")
+        assert has_ssmd_markup("Wait ...0.5s")
         assert not has_ssmd_markup("Hello... world")  # Bare ellipsis
         assert not has_ssmd_markup("Plain text")
 
@@ -140,6 +141,68 @@ class TestSSMDMetadata:
         assert segment.text == "Hello"
         assert segment.pause_after == 0.5
         assert segment.metadata.emphasis == "strong"
+
+
+class TestSSMDBreakParsing:
+    """Tests for SSMD break duration parsing."""
+
+    def test_break_time_parsing_formats(self):
+        from pykokoro.ssmd_parser import _convert_break_strength_to_duration
+
+        assert _convert_break_strength_to_duration(None, "500ms") == 0.5
+        assert _convert_break_strength_to_duration(None, "2s") == 2.0
+        assert _convert_break_strength_to_duration(None, "0.5s") == 0.5
+        assert _convert_break_strength_to_duration(None, "500 ms") == 0.5
+        assert _convert_break_strength_to_duration(None, "0.5 s") == 0.5
+        assert _convert_break_strength_to_duration(None, "1.25s") == 1.25
+
+    def test_break_time_invalid_falls_back_to_strength(self):
+        from pykokoro.ssmd_parser import _convert_break_strength_to_duration
+
+        assert _convert_break_strength_to_duration("weak", "fast") == 0.15
+        assert _convert_break_strength_to_duration(None, "fast") == 0.0
+
+
+class TestSSMDAudioSegments:
+    """Tests for SSMD audio segment behavior."""
+
+    def test_audio_segment_uses_alt_text(self):
+        from pykokoro.ssmd_parser import SSMDMetadata, SSMDSegment
+        from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
+        from pykokoro.types import Trace
+
+        parser = SsmdDocumentParser()
+        trace = Trace()
+        segment = SSMDSegment(
+            text="Hello",
+            metadata=SSMDMetadata(audio_src="clip.wav", audio_alt_text="Hello"),
+        )
+
+        clean_text, spans, boundaries = parser._build_document([segment], 0.0, trace)
+
+        assert clean_text == "Hello"
+        assert spans[0].attrs["audio_src"] == "clip.wav"
+        assert "alt_text" in "".join(trace.warnings)
+        assert boundaries == []
+
+    def test_audio_segment_without_alt_text_is_skipped(self):
+        from pykokoro.ssmd_parser import SSMDMetadata, SSMDSegment
+        from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
+        from pykokoro.types import Trace
+
+        parser = SsmdDocumentParser()
+        trace = Trace()
+        segment = SSMDSegment(
+            text="",
+            metadata=SSMDMetadata(audio_src="clip.wav", audio_alt_text=""),
+        )
+
+        clean_text, spans, boundaries = parser._build_document([segment], 0.0, trace)
+
+        assert clean_text == ""
+        assert spans == []
+        assert boundaries == []
+        assert "no alt_text" in "".join(trace.warnings)
 
 
 class TestSSMDVoiceSwitching:

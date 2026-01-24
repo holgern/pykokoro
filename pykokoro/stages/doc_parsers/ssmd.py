@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from ...pipeline_config import PipelineConfig
-from ...ssmd_parser import parse_ssmd_to_segments
+from ...ssmd_parser import (
+    DEFAULT_PAUSE_NONE,
+    DEFAULT_PAUSE_WEAK,
+    parse_ssmd_to_segments,
+)
 from ...tokenizer import Tokenizer
 from ...types import AnnotationSpan, BoundaryEvent, Trace
 from ..protocols import DocumentResult
@@ -18,20 +22,22 @@ class SsmdDocumentParser:
             text,
             tokenizer,
             lang=generation.lang,
-            pause_none=0.0,
-            pause_weak=0.15,
+            pause_none=DEFAULT_PAUSE_NONE,
+            pause_weak=DEFAULT_PAUSE_WEAK,
             pause_clause=generation.pause_clause,
             pause_sentence=generation.pause_sentence,
             pause_paragraph=generation.pause_paragraph,
         )
-        clean_text, spans, boundaries = self._build_document(segments, initial_pause)
+        clean_text, spans, boundaries = self._build_document(
+            segments, initial_pause, trace
+        )
         return DocumentResult(
             clean_text=clean_text,
             annotation_spans=spans,
             boundary_events=boundaries,
         )
 
-    def _build_document(self, segments, initial_pause: float):
+    def _build_document(self, segments, initial_pause: float, trace: Trace):
         clean_parts: list[str] = []
         spans: list[AnnotationSpan] = []
         boundaries: list[BoundaryEvent] = []
@@ -43,6 +49,17 @@ class SsmdDocumentParser:
             )
 
         for segment in segments:
+            if segment.metadata.audio_src:
+                if not segment.text.strip():
+                    self._warn_once(
+                        trace,
+                        "SSMD audio segment has no alt_text; skipping audio segment.",
+                    )
+                    continue
+                self._warn_once(
+                    trace,
+                    "SSMD audio segments are not mixed; speaking alt_text instead.",
+                )
             start, end, cursor = self._append_text(clean_parts, segment.text, cursor)
             attrs = self._metadata_to_attrs(segment.metadata)
             if attrs and end > start:
@@ -70,6 +87,11 @@ class SsmdDocumentParser:
 
         clean_text = "".join(clean_parts)
         return clean_text, spans, boundaries
+
+    @staticmethod
+    def _warn_once(trace: Trace, message: str) -> None:
+        if message not in trace.warnings:
+            trace.warnings.append(message)
 
     def _append_text(self, clean_parts: list[str], text: str, cursor: int):
         if not text:

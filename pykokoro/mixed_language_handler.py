@@ -100,7 +100,7 @@ class MixedLanguageHandler:
         """Preprocess text for mixed-language phonemization.
 
         Uses kokorog2p's preprocess_multilang to add language annotations.
-        Respects existing language annotations (doesn't re-preprocess).
+        Respects existing annotations and only tags unannotated spans.
 
         Args:
             text: Input text to preprocess
@@ -118,10 +118,6 @@ class MixedLanguageHandler:
         # Validate configuration first
         self.validate_config()
 
-        # Skip if text already has language annotations
-        if ANNOTATION_REGEX.search(text):
-            return text
-
         # Map primary language to kokorog2p format
         primary_lang = self.config.mixed_language_primary or default_language
         kokorog2p_primary = SUPPORTED_LANGUAGES.get(primary_lang, primary_lang)
@@ -133,31 +129,89 @@ class MixedLanguageHandler:
         ]
 
         try:
-            kwargs = {
-                "text": text,
-                "default_language": kokorog2p_primary,
-                "allowed_languages": allowed_langs,
-                "confidence_threshold": self.config.mixed_language_confidence,
-            }
-            try:
-                import inspect
-
-                params = inspect.signature(preprocess_multilang).parameters
-                if "markdown_syntax" in params:
-                    kwargs["markdown_syntax"] = "ssmd"
-            except (TypeError, ValueError):
-                pass
-
-            overrides = preprocess_multilang(**kwargs)
-            if isinstance(overrides, str):
-                return overrides
-            return self._apply_overrides(text, overrides)
+            if ANNOTATION_REGEX.search(text):
+                return self._preprocess_unannotated(
+                    text,
+                    kokorog2p_primary,
+                    allowed_langs,
+                )
+            return self._run_preprocess_multilang(
+                text, kokorog2p_primary, allowed_langs
+            )
         except ImportError:
             logger.warning(
-                "Mixed-language mode requested but lingua-language-detector "
-                "not available. Returning text without preprocessing."
+                "Mixed-language mode requested but lingua-language-detector is "
+                "not available. Install lingua-language-detector to enable detection."
             )
             return text
+
+    def _run_preprocess_multilang(
+        self,
+        text: str,
+        kokorog2p_primary: str,
+        allowed_langs: list[str],
+    ) -> str:
+        if not text.strip():
+            return text
+        kwargs = {
+            "text": text,
+            "default_language": kokorog2p_primary,
+            "allowed_languages": allowed_langs,
+            "confidence_threshold": self.config.mixed_language_confidence,
+        }
+        try:
+            import inspect
+
+            params = inspect.signature(preprocess_multilang).parameters
+            if "markdown_syntax" in params:
+                kwargs["markdown_syntax"] = "ssmd"
+        except (TypeError, ValueError):
+            pass
+
+        overrides = preprocess_multilang(**kwargs)
+        if isinstance(overrides, str):
+            return overrides
+        return self._apply_overrides(text, overrides)
+
+    def _preprocess_unannotated(
+        self,
+        text: str,
+        kokorog2p_primary: str,
+        allowed_langs: list[str],
+    ) -> str:
+        out: list[str] = []
+        cursor = 0
+        processed_any = False
+
+        for match in ANNOTATION_REGEX.finditer(text):
+            start, end = match.span()
+            if start > cursor:
+                chunk = text[cursor:start]
+                processed_chunk = self._run_preprocess_multilang(
+                    chunk,
+                    kokorog2p_primary,
+                    allowed_langs,
+                )
+                if processed_chunk != chunk:
+                    processed_any = True
+                out.append(processed_chunk)
+            out.append(match.group(0))
+            cursor = end
+
+        if cursor < len(text):
+            chunk = text[cursor:]
+            processed_chunk = self._run_preprocess_multilang(
+                chunk,
+                kokorog2p_primary,
+                allowed_langs,
+            )
+            if processed_chunk != chunk:
+                processed_any = True
+            out.append(processed_chunk)
+
+        if not processed_any:
+            return text
+        return "".join(out)
 
     def _apply_overrides(self, text: str, overrides: list[object]) -> str:
         if not overrides:

@@ -43,12 +43,15 @@ def slice_boundaries(
     boundaries: list[BoundaryEvent],
     seg_start: int,
     seg_end: int,
+    doc_end: int | None = None,
 ) -> list[BoundaryEvent]:
     sliced: list[BoundaryEvent] = []
     for boundary in boundaries:
-        if (seg_start == 0 and boundary.pos == 0) or (
-            seg_start < boundary.pos <= seg_end
-        ):
+        if boundary.pos < seg_start or boundary.pos > seg_end:
+            continue
+        if doc_end is not None and boundary.pos == seg_end and boundary.pos != doc_end:
+            continue
+        if seg_start <= boundary.pos <= seg_end:
             sliced.append(
                 BoundaryEvent(
                     pos=boundary.pos - seg_start,

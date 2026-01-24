@@ -2,17 +2,14 @@
 
 import json
 import platform
-import subprocess
 import sys
 import warnings
-from collections.abc import Callable
 from pathlib import Path
-from threading import Thread
 from typing import Any
 
 from platformdirs import user_cache_dir, user_config_dir
 
-from .constants import DEFAULT_CONFIG, PROGRAM_NAME
+from .constants import DEFAULT_CONFIG
 
 warnings.filterwarnings("ignore")
 
@@ -179,186 +176,6 @@ def get_device(use_gpu: bool = True) -> str:
         pass
 
     return "CPUExecutionProvider"
-
-
-def create_process(
-    cmd: list[str] | str,
-    stdin: int | None = None,
-    text: bool = True,
-    capture_output: bool = False,
-    suppress_output: bool = False,
-) -> subprocess.Popen:
-    """
-    Create a subprocess with proper platform handling.
-
-    Args:
-        cmd: Command to execute (list or string)
-        stdin: stdin pipe option (e.g., subprocess.PIPE)
-        text: Whether to use text mode
-        capture_output: Whether to capture output
-        suppress_output: Suppress all output (for rich progress bars)
-
-    Returns:
-        Popen object
-    """
-    use_shell = isinstance(cmd, str)
-    kwargs: dict[str, Any] = {
-        "shell": use_shell,
-        "bufsize": 1,
-    }
-
-    # Suppress output if requested (avoids rich progress interference)
-    if suppress_output:
-        kwargs["stdout"] = subprocess.DEVNULL
-        kwargs["stderr"] = subprocess.DEVNULL
-    else:
-        kwargs["stdout"] = subprocess.PIPE
-        kwargs["stderr"] = subprocess.STDOUT
-
-    if text and not suppress_output:
-        kwargs["text"] = True
-        kwargs["encoding"] = DEFAULT_ENCODING
-        kwargs["errors"] = "replace"
-    elif not suppress_output:
-        kwargs["text"] = False
-        kwargs["bufsize"] = 0
-
-    if stdin is not None:
-        kwargs["stdin"] = stdin
-
-    if platform.system() == "Windows":
-        startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
-        startupinfo.wShowWindow = subprocess.SW_HIDE  # type: ignore[attr-defined]
-        kwargs.update(
-            {"startupinfo": startupinfo, "creationflags": subprocess.CREATE_NO_WINDOW}  # type: ignore[attr-defined]
-        )
-
-    proc = subprocess.Popen(cmd, **kwargs)
-
-    # Stream output to console in real-time if not capturing or suppressing
-    if proc.stdout and not capture_output and not suppress_output:
-
-        def _stream_output(stream: Any) -> None:
-            if text:
-                for line in stream:
-                    sys.stdout.write(line)
-                    sys.stdout.flush()
-            else:
-                while True:
-                    chunk = stream.read(4096)
-                    if not chunk:
-                        break
-                    try:
-                        sys.stdout.write(
-                            chunk.decode(DEFAULT_ENCODING, errors="replace")
-                        )
-                        sys.stdout.flush()
-                    except Exception:
-                        pass
-            stream.close()
-
-        Thread(target=_stream_output, args=(proc.stdout,), daemon=True).start()
-
-    return proc
-
-
-def ensure_ffmpeg() -> bool:
-    """
-    Ensure ffmpeg is available, installing static-ffmpeg if needed.
-
-    Returns:
-        True if ffmpeg is available
-    """
-    try:
-        import static_ffmpeg
-
-        static_ffmpeg.add_paths()
-        return True
-    except ImportError:
-        return False
-
-
-def load_tts_pipeline() -> tuple[Any, Any]:
-    """
-    Load numpy and Kokoro ONNX TTS backend.
-
-    Returns:
-        Tuple of (numpy module, Kokoro class)
-    """
-    import numpy as np
-
-    from .onnx_backend import Kokoro
-
-    return np, Kokoro
-
-
-class LoadPipelineThread(Thread):
-    """Thread for loading TTS pipeline in background."""
-
-    def __init__(self, callback: Callable[[Any, Any, str | None], None]) -> None:
-        super().__init__()
-        self.callback = callback
-
-    def run(self) -> None:
-        try:
-            np_module, kokoro_class = load_tts_pipeline()
-            self.callback(np_module, kokoro_class, None)
-        except Exception as e:
-            self.callback(None, None, str(e))
-
-
-# Sleep prevention for long conversions
-_sleep_procs: dict[str, subprocess.Popen[str] | None] = {
-    "Darwin": None,
-    "Linux": None,
-}
-
-
-def prevent_sleep_start() -> None:
-    """Prevent system from sleeping during conversion."""
-    system = platform.system()
-    if system == "Windows":
-        import ctypes
-
-        ctypes.windll.kernel32.SetThreadExecutionState(  # type: ignore[attr-defined]
-            0x80000000 | 0x00000001 | 0x00000040
-        )
-    elif system == "Darwin":
-        _sleep_procs["Darwin"] = create_process(["caffeinate"], capture_output=True)
-    elif system == "Linux":
-        import shutil
-
-        if shutil.which("systemd-inhibit"):
-            _sleep_procs["Linux"] = create_process(
-                [
-                    "systemd-inhibit",
-                    f"--who={PROGRAM_NAME}",
-                    "--why=Prevent sleep during TTS conversion",
-                    "--what=sleep",
-                    "--mode=block",
-                    "sleep",
-                    "infinity",
-                ],
-                capture_output=True,
-            )
-
-
-def prevent_sleep_end() -> None:
-    """Allow system to sleep again."""
-    system = platform.system()
-    if system == "Windows":
-        import ctypes
-
-        ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)  # type: ignore[attr-defined]
-    elif system in ("Darwin", "Linux"):
-        proc = _sleep_procs.get(system)
-        if proc is not None:
-            try:
-                proc.terminate()
-                _sleep_procs[system] = None
-            except Exception:
-                pass
 
 
 def sanitize_filename(name: str, max_length: int = 100) -> str:

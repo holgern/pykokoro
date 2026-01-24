@@ -54,7 +54,10 @@ class KokoroG2PAdapter(G2PAdapter):
                 warnings=span_warnings,
             )
             seg_boundaries = slice_boundaries(
-                doc.boundary_events, segment.char_start, segment.char_end
+                doc.boundary_events,
+                segment.char_start,
+                segment.char_end,
+                doc_end=len(doc.clean_text),
             )
             phoneme_override = self._resolve_phoneme_override(
                 doc.annotation_spans,
