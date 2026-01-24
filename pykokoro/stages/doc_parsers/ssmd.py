@@ -42,6 +42,9 @@ class SsmdDocumentParser:
         spans: list[AnnotationSpan] = []
         boundaries: list[BoundaryEvent] = []
         cursor = 0
+        current_paragraph = None
+        previous_start = None
+        previous_end = None
 
         if initial_pause > 0:
             boundaries.append(
@@ -49,6 +52,26 @@ class SsmdDocumentParser:
             )
 
         for segment in segments:
+            if (
+                current_paragraph is not None
+                and segment.paragraph != current_paragraph
+                and previous_start is not None
+                and previous_end is not None
+            ):
+                boundary_pos = self._paragraph_boundary_pos(
+                    previous_start, previous_end
+                )
+                if boundary_pos is not None:
+                    boundaries.append(
+                        BoundaryEvent(
+                            pos=boundary_pos,
+                            kind="pause",
+                            duration_s=None,
+                            attrs={"strength": "p"},
+                        )
+                    )
+                clean_parts.append("\n\n")
+                cursor += 2
             if segment.metadata.audio_src:
                 if not segment.text.strip():
                     self._warn_once(
@@ -84,6 +107,9 @@ class SsmdDocumentParser:
                         attrs={},
                     )
                 )
+            current_paragraph = segment.paragraph
+            previous_start = start
+            previous_end = end
 
         clean_text = "".join(clean_parts)
         return clean_text, spans, boundaries
@@ -105,6 +131,12 @@ class SsmdDocumentParser:
         clean_parts.append(text)
         cursor += len(text)
         return start, cursor, cursor
+
+    @staticmethod
+    def _paragraph_boundary_pos(start: int, end: int) -> int | None:
+        if end <= start:
+            return None
+        return max(start, end - 1)
 
     def _metadata_to_attrs(self, metadata) -> dict[str, str]:
         attrs: dict[str, str] = {}
