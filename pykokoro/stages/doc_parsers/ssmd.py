@@ -96,9 +96,12 @@ class SsmdDocumentParser:
                     )
                 )
             if segment.pause_after > 0:
+                boundary_pos = self._pause_boundary_pos(start, end)
+                if boundary_pos is None:
+                    boundary_pos = end
                 boundaries.append(
                     BoundaryEvent(
-                        pos=end,
+                        pos=boundary_pos,
                         kind="pause",
                         duration_s=segment.pause_after,
                         attrs={},
@@ -145,6 +148,12 @@ class SsmdDocumentParser:
 
     @staticmethod
     def _paragraph_boundary_pos(start: int, end: int) -> int | None:
+        if end <= start:
+            return None
+        return max(start, end - 1)
+
+    @staticmethod
+    def _pause_boundary_pos(start: int, end: int) -> int | None:
         if end <= start:
             return None
         return max(start, end - 1)

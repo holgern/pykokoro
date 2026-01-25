@@ -12,10 +12,88 @@ Output:
     pauses_splitting_demo.wav - Long text with pauses and sentence splitting
 """
 
+from pathlib import Path
+
+import numpy as np
 import soundfile as sf
 
-from pykokoro import KokoroPipeline, PipelineConfig
+from pykokoro import PipelineConfig
+from pykokoro.constants import SAMPLE_RATE
 from pykokoro.generation_config import GenerationConfig
+from pykokoro.onnx_backend import Kokoro
+from pykokoro.stages.audio_generation.onnx import OnnxAudioGenerationAdapter
+from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
+from pykokoro.stages.g2p.kokorog2p import KokoroG2PAdapter
+from pykokoro.stages.phoneme_processing.onnx import OnnxPhonemeProcessorAdapter
+from pykokoro.types import Trace
+
+
+def _format_segment_text(text: str, limit: int = 80) -> str:
+    cleaned = " ".join(text.strip().split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return f"{cleaned[:limit]}..."
+
+
+def _print_phoneme_segments(segments, limit: int = 5) -> None:
+    print("First phoneme segments after phoneme_processing:")
+    for segment in segments[:limit]:
+        summary = _format_segment_text(segment.text)
+        print(
+            "  - "
+            f"id={segment.id} "
+            f"para={segment.paragraph_idx} sent={segment.sentence_idx} "
+            f"pause_before={segment.pause_before:.3f}s "
+            f"pause_after={segment.pause_after:.3f}s "
+            f"text='{summary}'"
+        )
+    print()
+
+
+def _print_paragraph_pause_debug(segments: list) -> None:
+    paragraph_zero = [segment for segment in segments if segment.paragraph_idx == 0]
+    if not paragraph_zero:
+        print("No paragraph 0 segments found.")
+        print()
+        return
+    last_segment = paragraph_zero[-1]
+    print(
+        "Paragraph 0 last segment pause_after: "
+        f"{last_segment.pause_after:.3f}s (id={last_segment.id})"
+    )
+    print()
+
+
+def _plot_segments(samples: np.ndarray, sample_rate: int, segments: list) -> None:
+    try:
+        import matplotlib.pyplot as plt  # type: ignore[import-not-found]
+    except Exception as exc:
+        print(f"Skipping plot (matplotlib unavailable): {exc}")
+        print()
+        return
+
+    time_axis = np.arange(len(samples)) / sample_rate
+    fig, ax = plt.subplots(figsize=(12, 4))
+    ax.plot(time_axis, samples, linewidth=0.6, color="#333333")
+
+    cursor = 0.0
+    for segment in segments:
+        if segment.pause_before > 0:
+            ax.axvspan(
+                cursor, cursor + segment.pause_before, color="#f4a261", alpha=0.3
+            )
+            cursor += segment.pause_before
+        if segment.processed_audio is not None:
+            cursor += len(segment.processed_audio) / sample_rate
+        if segment.pause_after > 0:
+            ax.axvspan(cursor, cursor + segment.pause_after, color="#f4a261", alpha=0.3)
+            cursor += segment.pause_after
+
+    ax.set_title("Waveform with pause spans (orange)")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Amplitude")
+    fig.tight_layout()
+    plt.show()
 
 
 def main():
@@ -30,7 +108,24 @@ def main():
         pause_variance=0.05,
         random_seed=42,
     )
-    pipe = KokoroPipeline(PipelineConfig(voice="af_sarah", generation=generation))
+    cfg = PipelineConfig(voice="af_sarah", generation=generation)
+    kokoro = Kokoro(
+        model_path=Path(cfg.model_path) if cfg.model_path else None,
+        voices_path=Path(cfg.voices_path) if cfg.voices_path else None,
+        model_quality=cfg.model_quality,
+        model_source=cfg.model_source,
+        model_variant=cfg.model_variant,
+        provider=cfg.provider,
+        provider_options=cfg.provider_options,
+        session_options=cfg.session_options,
+        tokenizer_config=cfg.tokenizer_config,
+        espeak_config=cfg.espeak_config,
+        short_sentence_config=cfg.short_sentence_config,
+    )
+    doc_parser = SsmdDocumentParser()
+    g2p = KokoroG2PAdapter()
+    phoneme_processing = OnnxPhonemeProcessorAdapter(kokoro)
+    audio_generation = OnnxAudioGenerationAdapter(kokoro)
 
     # Long text with SSMD pauses and natural sentence breaks
     text = """
@@ -67,8 +162,22 @@ def main():
     print(f"Text length: {len(text)} characters")
     print()
 
-    res = pipe.run(text)
-    samples, sample_rate = res.audio, res.sample_rate
+    trace = Trace()
+    doc = doc_parser.parse(text, cfg, trace)
+    segments = doc.segments or []
+    phoneme_segments = g2p.phonemize(segments, doc, cfg, trace)
+    processed_segments = phoneme_processing.process(phoneme_segments, cfg, trace)
+
+    _print_phoneme_segments(processed_segments, limit=5)
+    _print_paragraph_pause_debug(processed_segments)
+
+    generated_segments = audio_generation.generate(processed_segments, cfg, trace)
+    trim_silence = generation.pause_mode == "manual"
+    processed_audio_segments = kokoro.postprocess_audio_segments(
+        generated_segments, trim_silence
+    )
+    samples = kokoro.concatenate_audio_segments(processed_audio_segments)
+    sample_rate = SAMPLE_RATE
 
     output_file = "pauses_splitting_demo.wav"
     sf.write(output_file, samples, sample_rate)
@@ -76,6 +185,7 @@ def main():
 
     print("✓ Generation complete!")
     print()
+    _plot_segments(samples, sample_rate, processed_audio_segments)
     print("=" * 70)
     print(f"Generated: {output_file}")
     print(f"Duration: {duration:.2f} seconds ({duration / 60:.1f} minutes)")

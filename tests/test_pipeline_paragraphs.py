@@ -10,6 +10,7 @@ from pykokoro.stages.phoneme_processing.noop import NoopPhonemeProcessorAdapter
 from pykokoro.types import PhonemeSegment, Trace
 
 TEXT = "This is paragraph1. Sentence 2.\n\nThis is paragrph2. Sentence2."
+TEXT_EXPLICIT_BREAK = "Hello ...500ms world"
 
 
 class DummyG2P:
@@ -112,3 +113,17 @@ def test_pipeline_manual_paragraph_pause():
     ]
     assert paragraph_zero
     assert paragraph_zero[-1].pause_after == pytest.approx(generation.pause_paragraph)
+
+
+def test_pipeline_explicit_break_pause():
+    generation = GenerationConfig(pause_mode="manual")
+    cfg = PipelineConfig(generation=generation)
+    pipeline = _build_pipeline(cfg)
+    res = pipeline.run(TEXT_EXPLICIT_BREAK)
+
+    assert res.phoneme_segments
+    assert any(
+        segment.pause_after == pytest.approx(0.5)
+        or segment.pause_before == pytest.approx(0.5)
+        for segment in res.phoneme_segments
+    )

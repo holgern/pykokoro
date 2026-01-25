@@ -24,10 +24,29 @@ import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from ssmd import TTSCapabilities, parse_paragraphs
-
 if TYPE_CHECKING:
     from ssmd import SSMDSegment as SSMDParserSegment
+
+_SSMD_IMPORTS: tuple[type, Any] | None = None
+
+
+def _load_ssmd() -> tuple[type, Any]:
+    global _SSMD_IMPORTS
+    if _SSMD_IMPORTS is None:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=(
+                    "ssmd.parser_types is deprecated; import from ssmd.types, "
+                    "ssmd.segment, or ssmd.sentence instead."
+                ),
+                category=DeprecationWarning,
+            )
+            from ssmd import TTSCapabilities, parse_paragraphs
+
+        _SSMD_IMPORTS = (TTSCapabilities, parse_paragraphs)
+    return _SSMD_IMPORTS
+
 
 ANNOTATION_RE = re.compile(
     r"""
@@ -660,6 +679,8 @@ def parse_ssmd_to_segments(
         pause_sentence=pause_sentence,
         pause_paragraph=pause_paragraph,
     )
+
+    TTSCapabilities, parse_paragraphs = _load_ssmd()
 
     # Use SSMD's parse_paragraphs to get structured data
     # Enable heading detection for markdown-style headings (# ## ###)
