@@ -1,5 +1,7 @@
 """Tests for SSMD (Speech Synthesis Markdown) integration in pykokoro."""
 
+import pytest
+
 
 class TestSSMDDetection:
     """Tests for SSMD markup detection."""
@@ -205,12 +207,15 @@ class TestSSMDAudioSegments:
 class TestSSMDVoiceSwitching:
     """Tests for per-segment voice switching functionality."""
 
+    @pytest.mark.xfail(
+        reason="SSMD voice directives are not parsed (see bugreport_ssmd.md).",
+        strict=True,
+    )
     def test_parse_ssmd_with_voice_creates_metadata(self):
         """Test that parsing SSMD text with voice creates proper metadata.
 
-        NOTE: This test is currently skipped due to SSMD library limitation.
         The SSMD library's parse_paragraphs() function does not properly parse
-        voice directives in the current version. Voice attributes remain None.
+        voice directives in the current version.
         """
         from pykokoro.ssmd_parser import parse_ssmd_to_segments
 
@@ -222,18 +227,16 @@ class TestSSMDVoiceSwitching:
         )
         initial_pause, segments = parse_ssmd_to_segments(text)
 
-        # For now, just verify it doesn't crash and returns segments
-        # Voice metadata will be None due to SSMD limitation
-        assert len(segments) > 0
-        # TODO: Uncomment when SSMD library properly parses voice directives
-        # assert segments[0].metadata.voice_name == "af_sarah"
-        # assert segments[0].pause_after == 0.6  # sentence pause
-        # assert segments[1].metadata.voice_name == "am_michael"
+        assert any(seg.metadata.voice_name == "af_sarah" for seg in segments)
+        assert any(seg.metadata.voice_name == "am_michael" for seg in segments)
 
+    @pytest.mark.xfail(
+        reason="SSMD voice directives are not parsed (see bugreport_ssmd.md).",
+        strict=True,
+    )
     def test_parse_ssmd_with_inline_voice_annotations(self):
         """Test that inline voice annotations work.
 
-        NOTE: This test is currently skipped due to SSMD library limitation.
         The SSMD library's parse_paragraphs() function does not properly parse
         voice annotations in the current version.
         """
@@ -244,18 +247,16 @@ class TestSSMDVoiceSwitching:
         text = "[Hello]{voice='af_sarah'} ...s\n\n[World]{voice='am_michael'}"
         initial_pause, segments = parse_ssmd_to_segments(text)
 
-        # For now, just verify it doesn't crash and returns segments
-        # Voice metadata will be None due to SSMD limitation
-        assert len(segments) > 0
-        # TODO: Uncomment when SSMD library properly parses voice annotations
-        # assert segments[0].metadata.voice_name == "af_sarah"
-        assert segments[0].pause_after == 0.6  # sentence pause
-        # assert segments[1].metadata.voice_name == "am_michael"
+        assert any(seg.metadata.voice_name == "af_sarah" for seg in segments)
+        assert any(seg.metadata.voice_name == "am_michael" for seg in segments)
 
+    @pytest.mark.xfail(
+        reason="SSMD voice directives are not parsed (see bugreport_ssmd.md).",
+        strict=True,
+    )
     def test_inline_voice_annotations(self):
         """Test that inline voice annotations work.
 
-        NOTE: This test is currently skipped due to SSMD library limitation.
         The SSMD library's parse_paragraphs() function does not properly parse
         voice annotations in the current version.
         """
@@ -266,13 +267,8 @@ class TestSSMDVoiceSwitching:
         text = "[Hello]{voice='af_sarah'} ...s\n\n[World]{voice='am_michael'}"
         initial_pause, segments = parse_ssmd_to_segments(text)
 
-        # For now, just verify it doesn't crash and returns segments
-        # Voice metadata will be None due to SSMD limitation
-        assert len(segments) > 0
-        # TODO: Uncomment when SSMD library properly parses voice annotations
-        # assert segments[0].metadata.voice_name == "af_sarah"
-        assert segments[0].pause_after == 0.6  # sentence pause
-        # assert segments[1].metadata.voice_name == "am_michael"
+        assert any(seg.metadata.voice_name == "af_sarah" for seg in segments)
+        assert any(seg.metadata.voice_name == "am_michael" for seg in segments)
 
     def test_voice_resolver_called_for_segment_with_voice(self):
         """Test AudioGenerator calls voice_resolver for voice metadata."""

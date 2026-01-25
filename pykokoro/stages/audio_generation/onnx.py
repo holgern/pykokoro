@@ -22,14 +22,12 @@ class OnnxAudioGenerationAdapter:
         trace: Trace,
     ) -> list[PhonemeSegment]:
         _ = trace
-        self._kokoro._init_kokoro()
-        assert self._kokoro._audio_generator is not None
-        voice_style = self._kokoro._resolve_voice_style(cfg.voice)
+        voice_style = self._kokoro.resolve_voice_style(cfg.voice)
 
         def voice_resolver(voice_name: str) -> np.ndarray:
             return self._kokoro.get_voice_style(voice_name)
 
-        return self._kokoro._audio_generator._generate_raw_audio_segments(
+        return self._kokoro.generate_raw_audio_segments(
             phoneme_segments,
             voice_style,
             cfg.generation.speed,

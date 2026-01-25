@@ -1810,6 +1810,52 @@ class Kokoro:
             voice_db_lookup=self.get_voice_from_database,
         )
 
+    def resolve_voice_style(self, voice: str | np.ndarray | VoiceBlend) -> np.ndarray:
+        """Resolve voice parameter to a voice style array."""
+        return self._resolve_voice_style(voice)
+
+    def preprocess_segments(
+        self,
+        segments: list["PhonemeSegment"],
+        enable_short_sentence_override: bool | None,
+    ) -> list["PhonemeSegment"]:
+        """Preprocess phoneme segments for short sentence handling."""
+        self._init_kokoro()
+        assert self._audio_generator is not None
+        return self._audio_generator._preprocess_segments(
+            segments, enable_short_sentence_override
+        )
+
+    def generate_raw_audio_segments(
+        self,
+        segments: list["PhonemeSegment"],
+        voice_style: np.ndarray,
+        speed: float,
+        voice_resolver: Callable[[str], np.ndarray] | None,
+    ) -> list["PhonemeSegment"]:
+        """Generate raw audio for each phoneme segment."""
+        self._init_kokoro()
+        assert self._audio_generator is not None
+        return self._audio_generator._generate_raw_audio_segments(
+            segments, voice_style, speed, voice_resolver
+        )
+
+    def postprocess_audio_segments(
+        self, segments: list["PhonemeSegment"], trim_silence: bool
+    ) -> list["PhonemeSegment"]:
+        """Trim/prosody-process raw audio segments."""
+        self._init_kokoro()
+        assert self._audio_generator is not None
+        return self._audio_generator._postprocess_audio_segments(segments, trim_silence)
+
+    def concatenate_audio_segments(
+        self, segments: list["PhonemeSegment"]
+    ) -> np.ndarray:
+        """Concatenate processed segments into a single waveform."""
+        self._init_kokoro()
+        assert self._audio_generator is not None
+        return self._audio_generator._concatenate_audio_segments(segments)
+
     # Voice Database Integration (from kokovoicelab)
 
     def load_voice_database(self, db_path: Path) -> None:

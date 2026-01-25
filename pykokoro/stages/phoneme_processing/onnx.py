@@ -20,9 +20,7 @@ class OnnxPhonemeProcessorAdapter:
         trace: Trace,
     ) -> list[PhonemeSegment]:
         _ = trace
-        self._kokoro._init_kokoro()
-        assert self._kokoro._audio_generator is not None
-        return self._kokoro._audio_generator._preprocess_segments(
+        return self._kokoro.preprocess_segments(
             phoneme_segments,
             cfg.generation.enable_short_sentence,
         )

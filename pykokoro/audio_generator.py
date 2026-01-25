@@ -139,7 +139,7 @@ class AudioGenerator:
         audio = np.squeeze(audio)
         return audio, SAMPLE_RATE
 
-    def split_phonemes(self, phonemes: str) -> list[str]:
+    def split_phonemes(self, phonemes: str) -> list[str]:  # noqa: C901
         """Split phonemes into batches at sentence-ending punctuation marks.
 
         Args:

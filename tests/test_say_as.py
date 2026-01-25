@@ -90,6 +90,11 @@ class TestCharactersNormalization:
         """Test single character."""
         assert normalize_characters("A", "en-us") == "A"
 
+    def test_characters_ignore_whitespace(self):
+        """Whitespace should be ignored when spelling characters."""
+        assert normalize_characters("A B", "en-us") == "A B"
+        assert normalize_characters("A\tB\nC", "en-us") == "A B C"
+
 
 class TestExpletiveNormalization:
     """Tests for expletive censoring."""

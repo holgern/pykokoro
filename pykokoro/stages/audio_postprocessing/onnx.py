@@ -22,10 +22,8 @@ class OnnxAudioPostprocessingAdapter:
         trace: Trace,
     ) -> np.ndarray:
         _ = trace
-        self._kokoro._init_kokoro()
-        assert self._kokoro._audio_generator is not None
         trim_silence = cfg.generation.pause_mode == "manual"
-        processed = self._kokoro._audio_generator._postprocess_audio_segments(
+        processed = self._kokoro.postprocess_audio_segments(
             phoneme_segments, trim_silence
         )
-        return self._kokoro._audio_generator._concatenate_audio_segments(processed)
+        return self._kokoro.concatenate_audio_segments(processed)

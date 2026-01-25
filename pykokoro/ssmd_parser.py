@@ -176,10 +176,15 @@ def has_ssmd_markup(text: str) -> bool:
         return True
 
     # Voice markers: <div></div>
-    if bool(
-        re.search(r"<div\b[^>]*=.*?>.*?</div\s*>", text, re.IGNORECASE | re.DOTALL)
-    ):
-        return True
+    if "<div" in text.lower():
+        if bool(
+            re.search(
+                r"<div\b[^>]*=.*?>.*?</div\s*>",
+                text,
+                re.IGNORECASE | re.DOTALL,
+            )
+        ):
+            return True
 
     return False
 

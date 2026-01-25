@@ -172,8 +172,9 @@ def normalize_characters(text: str, lang: str = "en-us", **kwargs: Any) -> str:
     Returns:
         Characters separated by spaces
     """
-    # Simply split into characters with spaces
-    return " ".join(text.upper())
+    # Drop whitespace before spelling out characters
+    cleaned = re.sub(r"\s+", "", text)
+    return " ".join(cleaned.upper())
 
 
 def normalize_expletive(text: str, lang: str = "en-us", **kwargs: Any) -> str:
