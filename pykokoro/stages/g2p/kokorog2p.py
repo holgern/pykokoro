@@ -127,8 +127,8 @@ class KokoroG2PAdapter(G2PAdapter):
             for idx, (batch_phonemes, batch_tokens) in enumerate(
                 phoneme_batches, start=0
             ):
-                batch_pause_before = pause_before if idx == 1 else 0.0
-                batch_pause_after = pause_after if idx == total_batches else 0.0
+                batch_pause_before = pause_before if idx == 0 else 0.0
+                batch_pause_after = pause_after if idx == total_batches - 1 else 0.0
                 phoneme_id = idx
                 phoneme_segment_id = f"{segment.id}_ph{phoneme_id}"
                 out.append(
