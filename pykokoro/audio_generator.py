@@ -58,6 +58,59 @@ class AudioGenerator:
         self._tokenizer = tokenizer
         self._model_source = model_source
         self._short_sentence_config = short_sentence_config
+        self._uses_input_ids = any(
+            input_meta.name == "input_ids" for input_meta in session.get_inputs()
+        )
+
+    def _tokenize_phonemes(self, phonemes: str) -> list[int]:
+        trimmed = phonemes[:MAX_PHONEME_LENGTH]
+        return self._tokenizer.tokenize(trimmed)
+
+    def _select_voice_style(
+        self, voice_style: np.ndarray, token_count: int
+    ) -> np.ndarray:
+        voice_style = normalize_voice_style(voice_style, expected_length=None)
+        max_style_idx = voice_style.shape[0] - 1 if len(voice_style.shape) > 0 else 0
+        style_idx = min(token_count, MAX_PHONEME_LENGTH - 1, max_style_idx)
+        voice_style_indexed = voice_style[style_idx]
+        if voice_style_indexed.ndim == 1:
+            voice_style_indexed = voice_style_indexed[None, :]
+        return voice_style_indexed
+
+    @staticmethod
+    def _pad_tokens(tokens: list[int]) -> list[list[int]]:
+        return [[0, *tokens, 0]]
+
+    def _float_speed_input(self, speed: float) -> np.ndarray:
+        return np.ones(1, dtype=np.float32) * speed
+
+    def _int_speed_input(self, speed: float) -> np.ndarray:
+        speed_int = max(1, int(round(speed)))
+        return np.array([speed_int], dtype=np.int32)
+
+    def _build_onnx_inputs(
+        self,
+        tokens_padded: list[list[int]],
+        voice_style: np.ndarray,
+        speed: float,
+    ) -> dict[str, np.ndarray | list[list[int]]]:
+        if self._uses_input_ids:
+            if self._model_source == "github":
+                return {
+                    "input_ids": np.array(tokens_padded, dtype=np.int64),
+                    "style": np.array(voice_style, dtype=np.float32),
+                    "speed": self._int_speed_input(speed),
+                }
+            return {
+                "input_ids": tokens_padded,
+                "style": voice_style,
+                "speed": self._float_speed_input(speed),
+            }
+        return {
+            "tokens": tokens_padded,
+            "style": voice_style,
+            "speed": self._float_speed_input(speed),
+        }
 
     def generate_from_phonemes(
         self,
@@ -77,56 +130,12 @@ class AudioGenerator:
         Returns:
             Tuple of (audio samples, sample rate)
         """
-        voice_style = normalize_voice_style(voice_style, expected_length=None)
-
-        # Truncate phonemes if too long
-        phonemes = phonemes[:MAX_PHONEME_LENGTH]
-        tokens = self._tokenizer.tokenize(phonemes)
-
-        # Get voice style for this token length (clamp to valid range)
-        # Ensure index doesn't exceed voice_style array bounds
-        max_style_idx = voice_style.shape[0] - 1 if len(voice_style.shape) > 0 else 0
-        style_idx = min(len(tokens), MAX_PHONEME_LENGTH - 1, max_style_idx)
-        voice_style_indexed = voice_style[style_idx]
-        if voice_style_indexed.ndim == 1:
-            voice_style_indexed = voice_style_indexed[None, :]
-
-        # Pad tokens with start/end tokens
-        tokens_padded = [[0, *tokens, 0]]
-
-        # Check input names to determine model version
-        input_names = [i.name for i in self._session.get_inputs()]
-
-        # GitHub models (v1.0 and v1.1-zh) use "input_ids" and int32 speed
-        # HuggingFace newer models also use "input_ids" but with float32 speed
-        if "input_ids" in input_names:
-            # Check if this is a GitHub model by checking model source
-            if self._model_source == "github":
-                # GitHub models: input_ids, style (float32), speed (int32)
-                speed_int = max(1, int(round(speed)))
-                inputs = {
-                    "input_ids": np.array(tokens_padded, dtype=np.int64),
-                    "style": np.array(voice_style_indexed, dtype=np.float32),
-                    "speed": np.array([speed_int], dtype=np.int32),
-                }
-            else:
-                # HuggingFace original format: input_ids, float32 speed
-                inputs = {
-                    "input_ids": tokens_padded,
-                    "style": voice_style_indexed,
-                    "speed": np.ones(1, dtype=np.float32) * speed,
-                }
-        else:
-            # Original model format (uses "tokens" input, float speed)
-            inputs = {
-                "tokens": tokens_padded,
-                "style": voice_style_indexed,
-                "speed": np.ones(1, dtype=np.float32) * speed,
-            }
-
+        tokens = self._tokenize_phonemes(phonemes)
+        voice_style_indexed = self._select_voice_style(voice_style, len(tokens))
+        tokens_padded = self._pad_tokens(tokens)
+        inputs = self._build_onnx_inputs(tokens_padded, voice_style_indexed, speed)
         result = self._session.run(None, inputs)[0]
         audio = np.asarray(result).T
-        # Ensure audio is 1D for compatibility with trim and other operations
         audio = np.squeeze(audio)
         return audio, SAMPLE_RATE
 
@@ -145,6 +154,52 @@ class AudioGenerator:
                 return 0
             return len(self._tokenizer.tokenize(text))
 
+        def append_batch(text: str) -> None:
+            if text:
+                batches.append(text.strip())
+
+        def split_long_sentence(sentence: str) -> bool:
+            nonlocal current, current_tokens
+            if current:
+                append_batch(current)
+                current = ""
+                current_tokens = 0
+            words = re.split(r"([.,;:!?\s])", sentence)
+            if len(words) == 1:
+                word_tokens = self._tokenizer.tokenize(words[0]) if words[0] else []
+                if len(word_tokens) > MAX_PHONEME_LENGTH:
+                    for i in range(0, len(word_tokens), MAX_PHONEME_LENGTH):
+                        chunk_tokens = word_tokens[i : i + MAX_PHONEME_LENGTH]
+                        batches.append(self._tokenizer.detokenize(chunk_tokens))
+                    return True
+            for word in words:
+                if not word or word.isspace():
+                    if current:
+                        current += " "
+                        current_tokens = token_len(current)
+                    continue
+                word_tokens = self._tokenizer.tokenize(word)
+                if len(word_tokens) > MAX_PHONEME_LENGTH:
+                    if current:
+                        append_batch(current)
+                        current = ""
+                        current_tokens = 0
+                    for i in range(0, len(word_tokens), MAX_PHONEME_LENGTH):
+                        chunk_tokens = word_tokens[i : i + MAX_PHONEME_LENGTH]
+                        batches.append(self._tokenizer.detokenize(chunk_tokens))
+                    continue
+                if current_tokens + len(word_tokens) > MAX_PHONEME_LENGTH:
+                    if current:
+                        append_batch(current)
+                    current = word
+                    current_tokens = token_len(current)
+                else:
+                    if current and not current.endswith((".", "!", "?", ",", ";", ":")):
+                        current += " "
+                    current += word
+                    current_tokens = token_len(current)
+            return False
+
         # Split on sentence-ending punctuation (., !, ?) while keeping them
         # Use lookbehind to split AFTER the punctuation
         sentences = re.split(r"(?<=[.!?])\s*", phonemes)
@@ -162,53 +217,13 @@ class AudioGenerator:
 
             # If adding sentence would exceed limit, save current batch, start new
             if current and current_tokens + sentence_tokens > MAX_PHONEME_LENGTH:
-                batches.append(current.strip())
+                append_batch(current)
                 current = sentence
                 current_tokens = sentence_tokens
             # If the sentence itself is too long, we need to split it further
             elif sentence_tokens > MAX_PHONEME_LENGTH:
-                # Save current batch if any
-                if current:
-                    batches.append(current.strip())
-                    current = ""
-                    current_tokens = 0
-                # Split long sentence on any punctuation or spaces
-                words = re.split(r"([.,;:!?\s])", sentence)
-                if len(words) == 1:
-                    word_tokens = self._tokenizer.tokenize(words[0]) if words[0] else []
-                    if len(word_tokens) > MAX_PHONEME_LENGTH:
-                        for i in range(0, len(word_tokens), MAX_PHONEME_LENGTH):
-                            chunk_tokens = word_tokens[i : i + MAX_PHONEME_LENGTH]
-                            batches.append(self._tokenizer.detokenize(chunk_tokens))
-                        continue
-                for word in words:
-                    if not word or word.isspace():
-                        if current:
-                            current += " "
-                            current_tokens = token_len(current)
-                        continue
-                    word_tokens = self._tokenizer.tokenize(word)
-                    if len(word_tokens) > MAX_PHONEME_LENGTH:
-                        if current:
-                            batches.append(current.strip())
-                            current = ""
-                            current_tokens = 0
-                        for i in range(0, len(word_tokens), MAX_PHONEME_LENGTH):
-                            chunk_tokens = word_tokens[i : i + MAX_PHONEME_LENGTH]
-                            batches.append(self._tokenizer.detokenize(chunk_tokens))
-                        continue
-                    if current_tokens + len(word_tokens) > MAX_PHONEME_LENGTH:
-                        if current:
-                            batches.append(current.strip())
-                        current = word
-                        current_tokens = token_len(current)
-                    else:
-                        if current and not current.endswith(
-                            (".", "!", "?", ",", ";", ":")
-                        ):
-                            current += " "
-                        current += word
-                        current_tokens = token_len(current)
+                if split_long_sentence(sentence):
+                    continue
             else:
                 # Add sentence to current batch
                 if current:
@@ -217,7 +232,7 @@ class AudioGenerator:
                 current_tokens = token_len(current)
 
         if current:
-            batches.append(current.strip())
+            append_batch(current)
 
         return batches if batches else [phonemes]
 
