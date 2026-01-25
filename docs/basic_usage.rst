@@ -5,8 +5,8 @@ This guide covers the fundamental usage patterns of PyKokoro.
 
 .. note::
 
-   PyKokoro now uses ``KokoroPipeline`` as the supported API. Replace any legacy
-   ``Kokoro`` usage with the pipeline patterns shown below.
+   PyKokoro uses ``KokoroPipeline`` as the supported API. The pipeline wraps all
+   stages (document parsing, splitting, G2P, and synthesis) behind one call.
 
 Initializing the Pipeline
 -------------------------
@@ -17,10 +17,10 @@ The main entry point is the ``KokoroPipeline`` class:
 
    from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
 
-   # Initialize with defaults (HuggingFace v1.0, q8 quality)
+   # Initialize with defaults (HuggingFace v1.0)
    pipe = KokoroPipeline(PipelineConfig(voice="af_bella"))
 
-   # Or specify model source and variant
+   # Specify model source and variant
    pipe = KokoroPipeline(
        PipelineConfig(
            voice="af_bella",
@@ -28,13 +28,8 @@ The main entry point is the ``KokoroPipeline`` class:
            model_variant="v1.0",
        )
    )
-   pipe = KokoroPipeline(
-       PipelineConfig(
-           voice="af_bella",
-           model_source="huggingface",
-           model_variant="v1.1-zh",
-       )
-   )
+
+   # GitHub source
    pipe = KokoroPipeline(
        PipelineConfig(
            voice="af_bella",
@@ -42,19 +37,10 @@ The main entry point is the ``KokoroPipeline`` class:
            model_variant="v1.0",
        )
    )
-   pipe = KokoroPipeline(
-       PipelineConfig(
-           voice="af_bella",
-           model_source="github",
-           model_variant="v1.1-zh",
-       )
-   )
 
-   # Or specify model quality
-   pipe = KokoroPipeline(PipelineConfig(voice="af_bella", model_quality="q8"))
-
-   # Or specify provider
-   pipe = KokoroPipeline(PipelineConfig(voice="af_bella", provider="cuda"))
+   # Custom generation settings
+   generation = GenerationConfig(lang="en-us", speed=1.1)
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella", generation=generation))
 
 Reusing the Pipeline
 ~~~~~~~~~~~~~~~~~~~~
@@ -121,17 +107,20 @@ Both v1.0 and v1.1-zh variants support:
 
 .. code-block:: python
 
-   # HuggingFace v1.0 with fp16 (default source)
-   kokoro_hq = Kokoro(model_quality="fp16")
+   from pykokoro import KokoroPipeline, PipelineConfig
 
-   # HuggingFace v1.1-zh with q8 (103 voices)
-   kokoro_zh = Kokoro(model_variant="v1.1-zh", model_quality="q8")
+   # HuggingFace v1.0 with fp16
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella", model_quality="fp16"))
 
    # GitHub v1.0 with GPU optimization
-   kokoro_gpu = Kokoro(model_source="github", model_variant="v1.0", model_quality="fp16-gpu")
-
-   # GitHub v1.1-zh (103 voices, fp32 only)
-   kokoro_gh_zh = Kokoro(model_source="github", model_variant="v1.1-zh", model_quality="fp32")
+   pipe = KokoroPipeline(
+       PipelineConfig(
+           voice="af_bella",
+           model_source="github",
+           model_variant="v1.0",
+           model_quality="fp16-gpu",
+       )
+   )
 
 Generating Speech
 -----------------
@@ -141,18 +130,12 @@ Basic Text-to-Speech
 
 .. code-block:: python
 
-   from pykokoro import Kokoro
+   from pykokoro import KokoroPipeline, PipelineConfig
 
-   with Kokoro() as kokoro:
-       audio, sample_rate = kokoro.create(
-           "Hello, world!",
-           voice="af_bella"
-       )
-
-The ``create()`` method returns:
-
-* ``audio`` - NumPy array of audio samples (float32)
-* ``sample_rate`` - Sample rate in Hz (typically 24000)
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella"))
+   result = pipe.run("Hello, world!")
+   audio = result.audio
+   sample_rate = result.sample_rate
 
 Saving Audio
 ~~~~~~~~~~~~
@@ -163,9 +146,11 @@ Using soundfile (recommended):
 
    import soundfile as sf
 
-   with Kokoro() as kokoro:
-       audio, sr = kokoro.create("Hello!", voice="af_bella")
-       sf.write("output.wav", audio, sr)
+   from pykokoro import KokoroPipeline, PipelineConfig
+
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella"))
+   result = pipe.run("Hello!")
+   sf.write("output.wav", result.audio, result.sample_rate)
 
 Using scipy:
 
@@ -173,38 +158,15 @@ Using scipy:
 
    from scipy.io import wavfile
 
-   with Kokoro() as kokoro:
-       audio, sr = kokoro.create("Hello!", voice="af_bella")
-       # scipy requires int16 format
-       audio_int16 = (audio * 32767).astype('int16')
-       wavfile.write("output.wav", sr, audio_int16)
+   from pykokoro import KokoroPipeline, PipelineConfig
+
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella"))
+   result = pipe.run("Hello!")
+   audio_int16 = (result.audio * 32767).astype("int16")
+   wavfile.write("output.wav", result.sample_rate, audio_int16)
 
 Voice Selection
 ---------------
-
-List Available Voices
-~~~~~~~~~~~~~~~~~~~~~
-
-The number of available voices depends on the model variant:
-
-* **v1.0 (Default)**: 54 multi-language voices
-* **v1.1-zh**: 103 voices (including Chinese)
-
-.. code-block:: python
-
-   # Default: HuggingFace v1.0 (54 voices)
-   with Kokoro() as kokoro:
-       voices = kokoro.list_voices()
-       for voice in voices:
-           print(voice)
-
-   # Using v1.1-zh for more voices (103 voices from HuggingFace)
-   with Kokoro(model_variant="v1.1-zh") as kokoro:
-       voices = kokoro.list_voices()
-       print(f"Total voices: {len(voices)}")  # 103 voices
-
-Voice Name Format
-~~~~~~~~~~~~~~~~~
 
 Voice names follow the pattern: ``{accent}_{gender}_{name}``
 
@@ -212,418 +174,119 @@ Voice names follow the pattern: ``{accent}_{gender}_{name}``
 * **Gender**: ``f`` (female), ``m`` (male)
 * **Name**: Specific voice identifier
 
-Common Voices
-~~~~~~~~~~~~~
-
-**American English:**
-
-* ``af_bella`` - Female, clear and neutral
-* ``af_sarah`` - Female, warm and friendly
-* ``am_adam`` - Male, deep and authoritative
-* ``am_michael`` - Male, clear and professional
-
-**British English:**
-
-* ``bf_emma`` - Female, refined accent
-* ``bf_isabella`` - Female, gentle
-* ``bm_george`` - Male, distinguished
-* ``bm_lewis`` - Male, contemporary
-
-**Other Languages:**
-
-See the :doc:`api_reference` for a complete list of voices for Spanish, French, German, Italian, Portuguese, Hindi, Japanese, Korean, and Chinese.
-
-**GitHub v1.1-zh Additional Voices:**
-
-The v1.1-zh model (available from both HuggingFace and GitHub) includes additional English and Chinese voices:
-
-* **English**: ``af_maple``, ``af_sol``, ``bf_vale``
-* **Chinese**: ``zf_001`` through ``zf_099``, ``zm_009`` through ``zm_100``
+Use the voice name in ``PipelineConfig``:
 
 .. code-block:: python
 
-   # Using v1.1-zh English voices from HuggingFace (default source)
-   with Kokoro(model_variant="v1.1-zh") as kokoro:
-       audio, sr = kokoro.create(
-           "Hello from the v1.1-zh model!",
-           voice="af_maple",
-           lang="en-us"
-       )
+   from pykokoro import KokoroPipeline, PipelineConfig
+
+   pipe = KokoroPipeline(PipelineConfig(voice="bf_emma"))
+   result = pipe.run("Hello from the UK!")
 
 Language Settings
 -----------------
 
-PyKokoro automatically detects language from the voice, but you can override:
+PyKokoro defaults language from the voice prefix, but you can override it:
 
 .. code-block:: python
 
-   with Kokoro() as kokoro:
-       # Explicit language
-       audio, sr = kokoro.create(
-           "Hola, mundo",
-           voice="af_nicole",
-           lang="es"  # Spanish
-       )
+   from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
 
-       # French
-       audio, sr = kokoro.create(
-           "Bonjour le monde",
-           voice="af_sarah",
-           lang="fr"
-       )
+   generation = GenerationConfig(lang="fr")
+   pipe = KokoroPipeline(PipelineConfig(voice="af_sarah", generation=generation))
+   result = pipe.run("Bonjour le monde")
 
-Supported languages: ``en-us``, ``en-gb``, ``es``, ``fr``, ``de``, ``it``, ``pt``, ``hi``, ``ja``, ``ko``, ``zh``
+Supported languages: ``en-us``, ``en-gb``, ``es``, ``fr``, ``de``, ``it``, ``pt``, ``hi``, ``ja``, ``zh``
 
 Speech Speed Control
 --------------------
 
-Adjust the speaking rate with the ``speed`` parameter:
+Adjust the speaking rate with ``GenerationConfig.speed``:
 
 .. code-block:: python
 
-   with Kokoro() as kokoro:
-       # Slow (0.5x)
-       audio, sr = kokoro.create(
-           "Slow speech",
-           voice="af_bella",
-           speed=0.5
-       )
+   from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
 
-       # Normal (1.0x) - default
-       audio, sr = kokoro.create(
-           "Normal speed",
-           voice="af_bella",
-           speed=1.0
-       )
-
-       # Fast (2.0x)
-       audio, sr = kokoro.create(
-           "Fast speech",
-           voice="af_bella",
-           speed=2.0
-       )
+   generation = GenerationConfig(speed=1.5)
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella", generation=generation))
+   result = pipe.run("Fast speech")
 
 Recommended range: 0.5 to 2.0
 
 Pause Control
 -------------
 
-PyKokoro provides two powerful ways to control pauses in your generated speech:
+Manual Pause Markers
+~~~~~~~~~~~~~~~~~~~~
 
-1. Manual Pause Markers
+Add explicit pauses using SSMD break markers:
+
+* ``...c`` - Short/comma pause
+* ``...s`` - Medium/sentence pause
+* ``...p`` - Long/paragraph pause
+* ``...500ms`` - Custom duration pause
+
+.. code-block:: python
+
+   from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
+
+   text = "Hello! ...c This is a short pause. ...s And now a longer pause."
+   generation = GenerationConfig(pause_mode="manual")
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella", generation=generation))
+   result = pipe.run(text)
+
+Automatic Natural Pauses
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-Add explicit pauses using simple markers in your text:
-
-**SSMD Break Syntax:**
-
-* ``...c`` - Short/comma pause (0.3 seconds by default)
-* ``...s`` - Medium/sentence pause (0.6 seconds by default)
-* ``...p`` - Long/paragraph pause (1.0 seconds by default)
-* ``...500ms`` - Custom duration pause (e.g., 500 milliseconds)
+For natural rhythm, let the pipeline insert pauses at boundaries:
 
 .. code-block:: python
 
-   with Kokoro() as kokoro:
-       text = """
-       Hello! ...c This is a short pause.
-       Now a medium pause ...s
-       And finally a long pause ...p
-       Back to normal speech.
-       """
+   from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
 
-       audio, sr = kokoro.create(
-           text,
-           voice="af_bella"
-       )
+   text = """
+   Artificial intelligence is transforming our world. Machine learning
+   models are becoming more sophisticated and accessible.
 
-**Custom Pause Durations:**
+   Deep learning uses neural networks with many layers.
+   """
 
-You can customize the default pause durations:
-
-.. code-block:: python
-
-   with Kokoro() as kokoro:
-       audio, sr = kokoro.create(
-           "Custom pauses ...c here ...s and here ...p",
-           voice="af_bella",
-           pause_clause=0.2,      # Comma pause ...c
-           pause_sentence=0.5,    # Sentence pause ...s
-           pause_paragraph=0.8    # Paragraph pause ...p
-       )
-
-2. Automatic Natural Pauses (NEW!)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-For more natural speech, enable automatic pause insertion at linguistic boundaries:
-
-.. code-block:: python
-
-   with Kokoro() as kokoro:
-       text = """
-       Artificial intelligence is transforming our world. Machine learning
-       models are becoming more sophisticated, efficient, and accessible.
-
-       Deep learning uses neural networks with many layers. These networks
-       can learn complex patterns, enabling breakthroughs in vision and
-       language processing.
-       """
-
-       audio, sr = kokoro.create(
-           text,
-           voice="af_sarah",
-           pause_mode="manual",       # PyKokoro controls pauses precisely
-           pause_clause=0.25,        # Pause after clauses (commas)
-           pause_sentence=0.5,        # Pause after sentences
-           pause_paragraph=1.0,          # Pause after paragraphs
-           pause_variance=0.05,     # Add natural variance
-           random_seed=42           # For reproducibility (optional)
-       )
-
-**How It Works:**
-
-When ``pause_mode="manual"`` is set, PyKokoro automatically:
-
-* Parses text using SSMD to detect sentences
-* Inserts appropriate pauses based on boundary type:
-
-  - **Clause boundary** (comma within sentence) → ``pause_clause``
-  - **Sentence boundary** (within paragraph) → ``pause_sentence``
-  - **Paragraph boundary** → ``pause_paragraph``
-
-* Adds Gaussian variance to prevent robotic timing
-* Trims silence from segment boundaries for precise timing
-
-**Pause Variance:**
-
-* ``pause_variance=0.0`` - No variance (exact pauses)
-* ``pause_variance=0.05`` - Default (±100ms at 95% confidence)
-* ``pause_variance=0.1`` - More variation (±200ms at 95% confidence)
-
-**Combining Both Approaches:**
-
-Use manual markers for special emphasis and automatic pauses for natural rhythm:
-
-.. code-block:: python
-
-   with Kokoro() as kokoro:
-       text = "Welcome! ...p Let's discuss AI ...c deep learning ...c and robotics."
-
-       audio, sr = kokoro.create(
-           text,
-           voice="af_sarah",
-           pause_mode="manual",     # PyKokoro controls pauses precisely
-           pause_variance=0.05
-       )
-
-Pause Modes
------------
-
-PyKokoro provides two pause modes:
-
-* ``"tts"`` (default) - TTS generates pauses naturally
-* ``"manual"`` - PyKokoro controls all pauses with precision
-
-.. code-block:: python
-
-   with Kokoro() as kokoro:
-       long_text = """
-       This is the first sentence. This is the second sentence.
-
-       This is a new paragraph with more content.
-       """
-
-       # Let TTS handle pauses naturally (default)
-       audio, sr = kokoro.create(
-           long_text,
-           voice="af_bella"
-       )
-
-       # Or take manual control of pauses
-       audio, sr = kokoro.create(
-           long_text,
-           voice="af_bella",
-           pause_mode="manual"
-       )
-
-Sentence splitting requires spaCy:
-
-.. code-block:: bash
-
-   pip install spacy
-   python -m spacy download en_core_web_sm
-
-Automatic Pauses with Manual Mode
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-When using ``pause_mode="manual"``, PyKokoro automatically
-adds natural pauses between segments:
-
-.. code-block:: python
-
-   with Kokoro() as kokoro:
-       audio, sr = kokoro.create(
-           long_text,
-           voice="af_bella",
-           pause_mode="manual",      # PyKokoro controls pauses
-           pause_clause=0.25,        # Clause pauses
-           pause_sentence=0.5,       # Sentence pauses
-           pause_paragraph=1.0,      # Paragraph pauses
-           pause_variance=0.05       # Natural variance
-       )
-
-This creates more natural-sounding speech with appropriate pauses at linguistic
-boundaries without requiring manual pause markers.
+   generation = GenerationConfig(
+       pause_mode="manual",
+       pause_clause=0.25,
+       pause_sentence=0.5,
+       pause_paragraph=1.0,
+       pause_variance=0.05,
+       random_seed=42,
+   )
+   pipe = KokoroPipeline(PipelineConfig(voice="af_sarah", generation=generation))
+   result = pipe.run(text)
 
 Text Normalization (Say-As)
-----------------------------
+---------------------------
 
-PyKokoro supports automatic text normalization using SSMD (Speech Synthesis Markdown)
-syntax. This feature converts numbers, dates, phone numbers, and other special formats
-into speakable text.
-
-Basic Usage
-~~~~~~~~~~~
-
-Use the ``[text](as: type)`` syntax to specify how text should be normalized:
+SSMD say-as syntax converts numbers, dates, and other formats:
 
 .. code-block:: python
 
-   with Kokoro() as kokoro:
-       # Cardinal numbers
-       text = "I have [123](as: cardinal) apples"
-       audio, sr = kokoro.create(text, voice="af_sarah")
-       # TTS says: "I have one hundred twenty-three apples"
+   from pykokoro import KokoroPipeline, PipelineConfig
 
-       # Ordinal numbers
-       text = "I came in [3](as: ordinal) place"
-       audio, sr = kokoro.create(text, voice="af_sarah")
-       # TTS says: "I came in third place"
-
-       # Digits (spell out)
-       text = "My PIN is [1234](as: digits)"
-       audio, sr = kokoro.create(text, voice="af_sarah")
-       # TTS says: "My PIN is one two three four"
-
-Supported Say-As Types
-~~~~~~~~~~~~~~~~~~~~~~~
-
-**Numbers:**
-
-* ``cardinal`` - Numbers as cardinals: "123" → "one hundred twenty-three"
-* ``ordinal`` - Numbers as ordinals: "3" → "third"
-* ``digits`` - Spell out digits: "123" → "one two three"
-* ``number`` - Alias for cardinal
-* ``fraction`` - Fractions: "1/2" → "one half"
-
-**Text:**
-
-* ``characters`` - Spell out text: "ABC" → "A B C"
-* ``expletive`` - Censors to "beep"
-
-**Date and Time:**
-
-* ``date`` - Dates with format support (mdy, dmy, ymd, ym, my, md, dm, d, m, y)
-* ``time`` - Time in 12h or 24h format
-
-**Other:**
-
-* ``telephone`` - Phone numbers: "+1-555-0123" → "plus one five five five oh one two three"
-* ``unit`` - Units: "5kg" → "five kilograms"
-
-Examples
-~~~~~~~~
-
-.. code-block:: python
-
-   with Kokoro() as kokoro:
-       # Telephone numbers
-       text = "Call [+1-555-0123](as: telephone)"
-       audio, sr = kokoro.create(text, voice="af_sarah")
-       # TTS says: "Call plus one five five five oh one two three"
-
-       # Dates with custom formatting
-       text = "Today is [12/31/2024](as: date, format: mdy)"
-       audio, sr = kokoro.create(text, voice="af_sarah")
-       # TTS says: "Today is December thirty-first, two thousand twenty-four"
-
-       # Time (12-hour or 24-hour)
-       text = "The time is [14:30](as: time)"
-       audio, sr = kokoro.create(text, voice="af_sarah")
-       # TTS says: "The time is two thirty PM"
-
-       # Characters (spell out)
-       text = "The code is [ABC](as: characters)"
-       audio, sr = kokoro.create(text, voice="af_sarah")
-       # TTS says: "The code is A B C"
-
-       # Fractions
-       text = "Add [1/2](as: fraction) cup of sugar"
-       audio, sr = kokoro.create(text, voice="af_sarah")
-       # TTS says: "Add one half cup of sugar"
-
-       # Units
-       text = "The package weighs [5kg](as: unit)"
-       audio, sr = kokoro.create(text, voice="af_sarah")
-       # TTS says: "The package weighs five kilograms"
-
-Multi-language Support
-~~~~~~~~~~~~~~~~~~~~~~
-
-Say-as works with multiple languages (English, French, German, Spanish, and more):
-
-.. code-block:: python
-
-   with Kokoro() as kokoro:
-       # French cardinal
-       text = "[123](as: cardinal)"
-       audio, sr = kokoro.create(text, voice="ff_siwis", lang="fr-fr")
-       # TTS says: "cent vingt-trois"
-
-       # German ordinal
-       text = "[3](as: ordinal)"
-       audio, sr = kokoro.create(text, voice="gf_maria", lang="de-de")
-       # TTS says: "dritte"
-
-Combining with Other Features
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Say-as works seamlessly with all SSMD features:
-
-.. code-block:: python
-
-   with Kokoro() as kokoro:
-       # With prosody
-       text = "[100](as: cardinal) +loud+ dollars!"
-       audio, sr = kokoro.create(text, voice="af_sarah")
-
-       # With pauses
-       text = "[First](as: ordinal) ...s [second](as: ordinal) ...s [third](as: ordinal)!"
-       audio, sr = kokoro.create(text, voice="af_sarah")
-
-       # With emphasis
-       text = "The winner is *[1](as: ordinal)*!"
-       audio, sr = kokoro.create(text, voice="af_sarah")
+   text = "I have [123](as: cardinal) apples and [12/31/2024](as: date, format: mdy)."
+   pipe = KokoroPipeline(PipelineConfig(voice="af_sarah"))
+   result = pipe.run(text)
 
 Error Handling
 --------------
 
-Handle common errors:
-
 .. code-block:: python
 
-   from pykokoro import Kokoro
+   from pykokoro import KokoroPipeline, PipelineConfig
 
    try:
-       with Kokoro() as kokoro:
-           audio, sr = kokoro.create(
-               "Hello!",
-               voice="invalid_voice"
-           )
-   except ValueError as e:
-       print(f"Invalid voice: {e}")
-   except RuntimeError as e:
-       print(f"Runtime error: {e}")
+       pipe = KokoroPipeline(PipelineConfig(voice="invalid_voice"))
+       pipe.run("Hello!")
+   except Exception as exc:
+       print(f"Pipeline error: {exc}")
 
 Batch Processing
 ----------------
@@ -632,8 +295,9 @@ Process multiple texts efficiently:
 
 .. code-block:: python
 
-   from pykokoro import Kokoro
    import soundfile as sf
+
+   from pykokoro import KokoroPipeline, PipelineConfig
 
    texts = [
        ("Welcome", "welcome.wav"),
@@ -641,11 +305,10 @@ Process multiple texts efficiently:
        ("Goodbye", "goodbye.wav"),
    ]
 
-   with Kokoro() as kokoro:
-       for text, filename in texts:
-           audio, sr = kokoro.create(text, voice="af_bella")
-           sf.write(filename, audio, sr)
-           print(f"Generated {filename}")
+   pipe = KokoroPipeline(PipelineConfig(voice="af_bella"))
+   for text, filename in texts:
+       result = pipe.run(text)
+       sf.write(filename, result.audio, result.sample_rate)
 
 Next Steps
 ----------
