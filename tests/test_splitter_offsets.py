@@ -62,6 +62,29 @@ def test_phrasplit_splitter_reads_char_offsets():
     assert [segment.char_end for segment in segments] == [12, 27]
 
 
+def test_phrasplit_splitter_repair_non_whitespace_gap():
+    text = "Hello People like you."
+    cfg = PipelineConfig(generation=GenerationConfig(lang="en-us"))
+    doc = DocumentResult(clean_text=text)
+
+    class DummySplitter(PhrasplitSentenceSplitter):
+        def _split_with_offsets(self, phrasplit_module, text, language_model):
+            _ = phrasplit_module, text, language_model
+            return [
+                ("Hello", 0, 5, None, None, None),
+                ("eople like you.", 7, 22, None, None, None),
+            ]
+
+    splitter = DummySplitter()
+    dummy_module = ModuleType("phrasplit")
+
+    with patch_sys_modules({"phrasplit": dummy_module}):
+        segments = splitter.split(doc, cfg, Trace())
+
+    assert segments[1].text.startswith("People")
+    assert segments[1].char_start == text.index("People")
+
+
 class patch_sys_modules:
     def __init__(self, updates: dict[str, ModuleType]) -> None:
         self._updates = updates

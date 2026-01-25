@@ -204,6 +204,26 @@ class TestSSMDAudioSegments:
         assert doc_segments == []
 
 
+def test_ssmd_parser_keeps_ellipsis_text():
+    from pykokoro.generation_config import GenerationConfig
+    from pykokoro.pipeline_config import PipelineConfig
+    from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
+    from pykokoro.types import Trace
+
+    text = (
+        "\"Don't I?\" He smirked. \"I'd've thought you'd've figured "
+        "it out by now... People like you—you're\n"
+        "all the same. You won't listen, you can't comprehend, and you "
+        "shouldn't even bother trying!\""
+    )
+    cfg = PipelineConfig(generation=GenerationConfig(lang="en-us"))
+    doc = SsmdDocumentParser().parse(text, cfg, Trace())
+
+    assert "People like you" in doc.clean_text
+    assert any(seg.text.strip() == '"Don\'t I?"' for seg in doc.segments)
+    assert any(seg.text.strip().startswith("People like you") for seg in doc.segments)
+
+
 class TestSSMDVoiceSwitching:
     """Tests for per-segment voice switching functionality."""
 

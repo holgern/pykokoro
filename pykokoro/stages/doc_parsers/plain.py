@@ -143,6 +143,20 @@ class PhrasplitSentenceSplitter:
                     )
                     seg_start = adjusted_start
                     seg_end = max(seg_start, adjusted_end)
+                elif seg_start > cursor:
+                    gap = chunk[cursor:seg_start]
+                    if gap.strip():
+                        offset = next(
+                            idx for idx, ch in enumerate(gap) if not ch.isspace()
+                        )
+                        adjusted_start = cursor + offset
+                        trace.warnings.append(
+                            "Adjusted splitter offsets to avoid dropping "
+                            f"non-whitespace characters for segment {seg_idx} "
+                            f"({seg_text!r})."
+                        )
+                        seg_start = adjusted_start
+                        seg_end = max(seg_start, seg_end)
 
                 abs_start = start + seg_start
                 abs_end = start + seg_end

@@ -66,7 +66,8 @@ ANNOTATION_RE = re.compile(
 LANG_SHORTHAND_RE = re.compile(r"\[([^\]]+)\]\(([a-zA-Z]{2,3}(?:-[a-zA-Z]{2})?)\)")
 BREAK_TIME_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(ms|s)\s*$", re.IGNORECASE)
 BREAK_MARKER_RE = re.compile(
-    r"\.\.\.\s*(?P<token>(?:[nwcsp])|(?:\d+(?:\.\d+)?\s*(?:ms|s)))",
+    r"\.\.\.\s*(?P<token>(?:[nwcsp])|(?:\d+(?:\.\d+)?\s*(?:ms|s)))"
+    r"(?=(?:\s|$|[\"'\)\]\}.,!?]))",
     re.IGNORECASE,
 )
 
@@ -175,11 +176,7 @@ def has_ssmd_markup(text: str) -> bool:
         True if text contains any SSMD markup patterns
     """
     # Break markers
-    if re.search(
-        r"\.\.\.(?:[nwcsp]|\s*\d+(?:\.\d+)?\s*(?:ms|s))",
-        text,
-        re.IGNORECASE,
-    ):
+    if BREAK_MARKER_RE.search(text):
         return True
 
     # Emphasis (must have word character adjacent to asterisk)

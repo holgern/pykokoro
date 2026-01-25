@@ -363,7 +363,9 @@ def main() -> None:
         format="%(levelname)s [%(name)s] %(message)s",
     )
 
-    generation = GenerationConfig(lang=args.lang, pause_mode=args.pause_mode)
+    generation = GenerationConfig(
+        lang=args.lang, pause_mode=args.pause_mode, pause_paragraph=0.9
+    )
     cfg = PipelineConfig(voice=args.voice, generation=generation, return_trace=True)
 
     doc_parser = SsmdDocumentParser()
