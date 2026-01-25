@@ -6,8 +6,8 @@ from types import ModuleType
 
 from pykokoro.debug.segment_invariants import check_segment_invariants
 from pykokoro.pipeline_config import PipelineConfig
+from pykokoro.stages.doc_parsers.plain import PhrasplitSentenceSplitter
 from pykokoro.stages.protocols import DocumentResult
-from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import Trace
 
 
@@ -44,7 +44,7 @@ class patch_sys_modules:
 def _run_split_with_segments(text: str, segments: list[FakeSplitSegment]):
     fake_module = ModuleType("phrasplit")
     fake_module.split_with_offsets = lambda *_args, **_kwargs: segments
-    splitter = PhrasplitSplitter()
+    splitter = PhrasplitSentenceSplitter()
     cfg = PipelineConfig()
     doc = DocumentResult(clean_text=text)
     trace = Trace()

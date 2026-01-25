@@ -4,8 +4,8 @@ import sys
 from types import SimpleNamespace
 
 from pykokoro.pipeline_config import PipelineConfig
+from pykokoro.stages.doc_parsers.plain import PhrasplitSentenceSplitter
 from pykokoro.stages.protocols import DocumentResult
-from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import AnnotationSpan, Trace
 
 
@@ -20,7 +20,7 @@ def test_phrasplit_splits_on_phoneme_override(monkeypatch):
     fake_module = SimpleNamespace(split_with_offsets=lambda *_args, **_kwargs: [])
     monkeypatch.setitem(sys.modules, "phrasplit", fake_module)
 
-    splitter = PhrasplitSplitter()
+    splitter = PhrasplitSentenceSplitter()
     segments = splitter.split(doc, PipelineConfig(), Trace())
 
     assert [(seg.char_start, seg.char_end) for seg in segments] == [(0, 5), (5, 11)]

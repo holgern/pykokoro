@@ -93,7 +93,7 @@ audio = res.audio
 The pipeline is built from composable stages so you can swap behavior without rewriting
 the whole flow:
 
-`doc_parser -> splitter -> g2p -> phoneme_processing -> audio_generation -> audio_postprocessing`
+`doc_parser (includes segmentation) -> g2p -> phoneme_processing -> audio_generation -> audio_postprocessing`
 
 Stages can be replaced with no-op adapters when you want to disable behavior. See
 `examples/pipeline_stage_showcase.py` for a full wiring example.
@@ -101,12 +101,10 @@ Stages can be replaced with no-op adapters when you want to disable behavior. Se
 ```python
 from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.stages.doc_parsers.plain import PlainTextDocumentParser
-from pykokoro.stages.splitters.paragraph import ParagraphSplitter
 
 pipe = KokoroPipeline(
     PipelineConfig(voice="af"),
     doc_parser=PlainTextDocumentParser(),
-    splitter=ParagraphSplitter(),
 )
 res = pipe.run("First paragraph.\n\nSecond paragraph.")
 ```
@@ -352,8 +350,8 @@ audio = res.audio
 
 **Splitting Behavior:**
 
-- The default pipeline splitter uses spaCy sentence/clause detection.
-- For custom splitting, pass a custom `Splitter` into `KokoroPipeline`.
+- `SsmdDocumentParser` handles paragraph/sentence segmentation using SSMD.
+- `PlainTextDocumentParser` uses optional `phrasplit` sentence splitting.
 
 **Pause Variance Options:**
 
@@ -361,7 +359,7 @@ audio = res.audio
 - `pause_variance=0.05` - Default (±100ms at 95% confidence)
 - `pause_variance=0.1` - More variation (±200ms at 95% confidence)
 
-**Note:** For sentence/clause splitting, install spaCy:
+**Note:** For sentence splitting with `PlainTextDocumentParser`, install spaCy:
 
 ```bash
 pip install spacy

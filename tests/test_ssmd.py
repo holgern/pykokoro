@@ -169,12 +169,15 @@ class TestSSMDAudioSegments:
             metadata=SSMDMetadata(audio_src="clip.wav", audio_alt_text="Hello"),
         )
 
-        clean_text, spans, boundaries = parser._build_document([segment], 0.0, trace)
+        clean_text, spans, boundaries, doc_segments = parser._build_document(
+            [segment], 0.0, trace
+        )
 
         assert clean_text == "Hello"
         assert spans[0].attrs["audio_src"] == "clip.wav"
         assert "alt_text" in "".join(trace.warnings)
         assert boundaries == []
+        assert len(doc_segments) == 1
 
     def test_audio_segment_without_alt_text_is_skipped(self):
         from pykokoro.ssmd_parser import SSMDMetadata, SSMDSegment
@@ -188,12 +191,15 @@ class TestSSMDAudioSegments:
             metadata=SSMDMetadata(audio_src="clip.wav", audio_alt_text=""),
         )
 
-        clean_text, spans, boundaries = parser._build_document([segment], 0.0, trace)
+        clean_text, spans, boundaries, doc_segments = parser._build_document(
+            [segment], 0.0, trace
+        )
 
         assert clean_text == ""
         assert spans == []
         assert boundaries == []
         assert "no alt_text" in "".join(trace.warnings)
+        assert doc_segments == []
 
 
 class TestSSMDVoiceSwitching:
@@ -203,7 +209,7 @@ class TestSSMDVoiceSwitching:
         """Test that parsing SSMD text with voice creates proper metadata.
 
         NOTE: This test is currently skipped due to SSMD library limitation.
-        The SSMD library's parse_sentences() function does not properly parse
+        The SSMD library's parse_paragraphs() function does not properly parse
         voice directives in the current version. Voice attributes remain None.
         """
         from pykokoro.ssmd_parser import parse_ssmd_to_segments
@@ -228,7 +234,7 @@ class TestSSMDVoiceSwitching:
         """Test that inline voice annotations work.
 
         NOTE: This test is currently skipped due to SSMD library limitation.
-        The SSMD library's parse_sentences() function does not properly parse
+        The SSMD library's parse_paragraphs() function does not properly parse
         voice annotations in the current version.
         """
         from pykokoro.ssmd_parser import parse_ssmd_to_segments
@@ -250,7 +256,7 @@ class TestSSMDVoiceSwitching:
         """Test that inline voice annotations work.
 
         NOTE: This test is currently skipped due to SSMD library limitation.
-        The SSMD library's parse_sentences() function does not properly parse
+        The SSMD library's parse_paragraphs() function does not properly parse
         voice annotations in the current version.
         """
         from pykokoro.ssmd_parser import parse_ssmd_to_segments

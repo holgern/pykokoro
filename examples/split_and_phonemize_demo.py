@@ -4,7 +4,6 @@
 from pykokoro import PipelineConfig
 from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
 from pykokoro.stages.g2p.kokorog2p import KokoroG2PAdapter
-from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import Trace
 
 
@@ -22,8 +21,8 @@ def print_segments(segments: list) -> None:
 
     for i, seg in enumerate(segments, 1):
         print(f"Segment {i}:")
-        print(f"  Paragraph: {seg.paragraph}")
-        print(f"  Sentence:  {seg.sentence}")
+        print(f"  Paragraph: {seg.paragraph_idx}")
+        print(f"  Sentence:  {seg.sentence_idx}")
         print(f"  Text:      {seg.text!r}")
         print(f"  Phonemes:  {seg.phonemes}")
         print(f"  Tokens:    {len(seg.tokens)} tokens")
@@ -53,12 +52,11 @@ People walk to work. Cars fill the streets. The city comes alive."""
     cfg = PipelineConfig(voice="af_bella")
     trace = Trace()
     parser = SsmdDocumentParser()
-    splitter = PhrasplitSplitter()
     g2p = KokoroG2PAdapter()
 
     try:
         doc = parser.parse(text, cfg, trace)
-        text_segments = splitter.split(doc, cfg, trace)
+        text_segments = doc.segments
         phoneme_segments = g2p.phonemize(text_segments, doc, cfg, trace)
 
         print_segments(phoneme_segments)

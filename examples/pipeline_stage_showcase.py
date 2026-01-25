@@ -18,18 +18,15 @@ from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
 from pykokoro.stages.g2p.kokorog2p import KokoroG2PAdapter
 from pykokoro.stages.phoneme_processing.noop import NoopPhonemeProcessorAdapter
 from pykokoro.stages.phoneme_processing.onnx import OnnxPhonemeProcessorAdapter
-from pykokoro.stages.splitters.noop import NoopSplitter
-from pykokoro.stages.splitters.paragraph import ParagraphSplitter
-from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 
 SSMD_TEXT = """
 [Hello]{voice="af_sarah"} world...500ms This is a full SSMD pipeline demo.
 """.strip()
 
 PARAGRAPH_TEXT = """
-This is the first paragraph. It stays intact as one segment.
+This is the first paragraph. It has multiple sentences.
 
-This is the second paragraph. It uses the paragraph splitter.
+This is the second paragraph. It uses paragraph boundaries.
 """.strip()
 
 SIMPLE_TEXT = "This is a minimal pipeline with only g2p and audio generation."
@@ -71,7 +68,6 @@ def main() -> None:
     full_pipeline = KokoroPipeline(
         cfg,
         doc_parser=SsmdDocumentParser(),
-        splitter=PhrasplitSplitter(),
         g2p=KokoroG2PAdapter(),
         phoneme_processing=OnnxPhonemeProcessorAdapter(kokoro),
         audio_generation=OnnxAudioGenerationAdapter(kokoro),
@@ -81,7 +77,6 @@ def main() -> None:
     paragraph_pipeline = KokoroPipeline(
         cfg,
         doc_parser=PlainTextDocumentParser(),
-        splitter=ParagraphSplitter(),
         g2p=KokoroG2PAdapter(),
         phoneme_processing=OnnxPhonemeProcessorAdapter(kokoro),
         audio_generation=OnnxAudioGenerationAdapter(kokoro),
@@ -91,7 +86,6 @@ def main() -> None:
     minimal_pipeline = KokoroPipeline(
         cfg,
         doc_parser=PlainTextDocumentParser(),
-        splitter=NoopSplitter(),
         g2p=KokoroG2PAdapter(),
         phoneme_processing=NoopPhonemeProcessorAdapter(),
         audio_generation=OnnxAudioGenerationAdapter(kokoro),

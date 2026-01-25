@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Minimal pipeline example: G2P + ONNX only (no SSMD, no splitter).
+Minimal pipeline example: G2P + ONNX only (no SSMD).
 
-This example wires a custom document parser and splitter so the pipeline:
+This example wires a custom document parser so the pipeline:
 - skips SSMD parsing
 - produces a single segment for the full paragraph
 - runs G2P and ONNX synthesis only
@@ -16,28 +16,26 @@ Output:
 
 from pykokoro import GenerationConfig, KokoroPipeline, PipelineConfig
 from pykokoro.stages.protocols import DocumentResult
-from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import Segment, Trace
 
 
 class PlainDocumentParser:
     def parse(self, text: str, cfg: PipelineConfig, trace: Trace) -> DocumentResult:
-        return DocumentResult(clean_text=text)
-
-
-class SingleSegmentSplitter(PhrasplitSplitter):
-    def split(self, doc: DocumentResult, cfg: PipelineConfig, trace: Trace):
-        text = doc.clean_text
-        return [
-            Segment(
-                id="seg_0",
-                text=text,
-                char_start=0,
-                char_end=len(text),
-                paragraph_idx=0,
-                sentence_idx=0,
-            )
-        ]
+        _ = (cfg, trace)
+        return DocumentResult(
+            clean_text=text,
+            segments=[
+                Segment(
+                    id="p0_s0_c0_seg0",
+                    text=text,
+                    char_start=0,
+                    char_end=len(text),
+                    paragraph_idx=0,
+                    sentence_idx=0,
+                    clause_idx=0,
+                )
+            ],
+        )
 
 
 def main() -> None:
@@ -59,7 +57,6 @@ def main() -> None:
     pipeline = KokoroPipeline(
         cfg,
         doc_parser=PlainDocumentParser(),
-        splitter=SingleSegmentSplitter(),
     )
     result = pipeline.run(text)
     output_path = "pipeline_g2p_onnx_minimal.wav"
@@ -78,7 +75,7 @@ def main() -> None:
                 print(f"- {event.stage}:{event.name} {event.ms:.2f}ms")
 
     doc = pipeline.doc_parser.parse(text, cfg, Trace())
-    segments = pipeline.splitter.split(doc, cfg, Trace())
+    segments = doc.segments
     print(segments)
     phoneme_segments = pipeline.g2p.phonemize(segments, doc, cfg, Trace())
     print(f"Text: {text}")

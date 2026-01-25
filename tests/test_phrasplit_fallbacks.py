@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 from pykokoro.pipeline_config import PipelineConfig
+from pykokoro.stages.doc_parsers.plain import PhrasplitSentenceSplitter
 from pykokoro.stages.protocols import DocumentResult
-from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import Trace
 
 
@@ -29,7 +29,7 @@ def test_phrasplit_fallback_uses_cursor(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "phrasplit", fake_module)
 
-    splitter = PhrasplitSplitter()
+    splitter = PhrasplitSentenceSplitter()
     cfg = PipelineConfig()
     doc = DocumentResult(clean_text=text)
     trace = Trace()
@@ -49,7 +49,7 @@ def test_phrasplit_fallback_clamps_invalid_offsets(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "phrasplit", fake_module)
 
-    splitter = PhrasplitSplitter()
+    splitter = PhrasplitSentenceSplitter()
     cfg = PipelineConfig()
     doc = DocumentResult(clean_text=text)
     trace = Trace()

@@ -16,17 +16,12 @@ class DocumentResult:
     clean_text: str
     annotation_spans: list[AnnotationSpan] = field(default_factory=list)
     boundary_events: list[BoundaryEvent] = field(default_factory=list)
+    segments: list[Segment] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
 class DocumentParser(Protocol):
     def parse(self, text: str, cfg: PipelineConfig, trace: Trace) -> DocumentResult: ...
-
-
-class Splitter(Protocol):
-    def split(
-        self, doc: DocumentResult, cfg: PipelineConfig, trace: Trace
-    ) -> list[Segment]: ...
 
 
 class G2PAdapter(Protocol):

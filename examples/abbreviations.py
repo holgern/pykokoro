@@ -22,8 +22,6 @@ from pykokoro.stages.audio_generation.noop import NoopAudioGenerationAdapter
 from pykokoro.stages.audio_postprocessing.noop import NoopAudioPostprocessingAdapter
 from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
 from pykokoro.stages.g2p.noop import NoopG2PAdapter
-from pykokoro.stages.splitters.noop import NoopSplitter
-from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import Segment, Trace
 
 # Text with comprehensive abbreviations coverage
@@ -75,11 +73,6 @@ def parse_args() -> argparse.Namespace:
         help="Pause handling mode.",
     )
     parser.add_argument(
-        "--noop-splitter",
-        action="store_true",
-        help="Replace the splitter with a single-segment no-op.",
-    )
-    parser.add_argument(
         "--noop-g2p",
         action="store_true",
         help="Replace g2p with a no-op adapter (forces no-op synth).",
@@ -116,7 +109,6 @@ def main() -> None:
     cfg = PipelineConfig(voice=args.voice, generation=generation, return_trace=True)
 
     doc_parser = SsmdDocumentParser()
-    splitter = NoopSplitter() if args.noop_splitter else PhrasplitSplitter()
 
     noop_synth = args.noop_synth
     if args.noop_g2p and not args.noop_synth:
@@ -130,7 +122,6 @@ def main() -> None:
     pipeline = KokoroPipeline(
         cfg,
         doc_parser=doc_parser,
-        splitter=splitter,
         g2p=g2p,
         audio_generation=audio_generation,
         audio_postprocessing=audio_postprocessing,

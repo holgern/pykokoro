@@ -6,7 +6,7 @@ from ...ssmd_parser import (
     DEFAULT_PAUSE_WEAK,
     parse_ssmd_to_segments,
 )
-from ...types import AnnotationSpan, BoundaryEvent, Trace
+from ...types import AnnotationSpan, BoundaryEvent, Segment, Trace
 from ..protocols import DocumentResult
 
 
@@ -22,23 +22,26 @@ class SsmdDocumentParser:
             pause_sentence=generation.pause_sentence,
             pause_paragraph=generation.pause_paragraph,
         )
-        clean_text, spans, boundaries = self._build_document(
+        clean_text, spans, boundaries, doc_segments = self._build_document(
             segments, initial_pause, trace
         )
         return DocumentResult(
             clean_text=clean_text,
             annotation_spans=spans,
             boundary_events=boundaries,
+            segments=doc_segments,
         )
 
     def _build_document(self, segments, initial_pause: float, trace: Trace):
         clean_parts: list[str] = []
         spans: list[AnnotationSpan] = []
         boundaries: list[BoundaryEvent] = []
+        doc_segments: list[Segment] = []
         cursor = 0
         current_paragraph = None
         previous_start = None
         previous_end = None
+        seg_idx = 0
 
         if initial_pause > 0:
             boundaries.append(
@@ -104,9 +107,23 @@ class SsmdDocumentParser:
             current_paragraph = segment.paragraph
             previous_start = start
             previous_end = end
+            if end > start:
+                segment_id = f"p{segment.paragraph}_s{segment.sentence}_c0_seg{seg_idx}"
+                doc_segments.append(
+                    Segment(
+                        id=segment_id,
+                        text=segment.text,
+                        char_start=start,
+                        char_end=end,
+                        paragraph_idx=segment.paragraph,
+                        sentence_idx=segment.sentence,
+                        clause_idx=0,
+                    )
+                )
+                seg_idx += 1
 
         clean_text = "".join(clean_parts)
-        return clean_text, spans, boundaries
+        return clean_text, spans, boundaries, doc_segments
 
     @staticmethod
     def _warn_once(trace: Trace, message: str) -> None:

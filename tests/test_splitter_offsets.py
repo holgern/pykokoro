@@ -3,8 +3,8 @@ from types import ModuleType
 
 from pykokoro.generation_config import GenerationConfig
 from pykokoro.pipeline_config import PipelineConfig
+from pykokoro.stages.doc_parsers.plain import PhrasplitSentenceSplitter
 from pykokoro.stages.protocols import DocumentResult
-from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 from pykokoro.types import Trace
 
 
@@ -13,7 +13,7 @@ def test_phrasplit_splitter_handles_missing_offsets():
     cfg = PipelineConfig(generation=GenerationConfig(lang="en-us"))
     doc = DocumentResult(clean_text=text)
 
-    class DummySplitter(PhrasplitSplitter):
+    class DummySplitter(PhrasplitSentenceSplitter):
         def _split_with_offsets(self, phrasplit_module, text, language_model):
             return [
                 ("Hello world.", None, None, None, None, None),
@@ -52,7 +52,7 @@ def test_phrasplit_splitter_reads_char_offsets():
     dummy_module = ModuleType("phrasplit")
     dummy_module.split_with_offsets = lambda *_args, **_kwargs: [first, second]
 
-    splitter = PhrasplitSplitter()
+    splitter = PhrasplitSentenceSplitter()
 
     with patch_sys_modules({"phrasplit": dummy_module}):
         segments = splitter.split(doc, cfg, Trace())

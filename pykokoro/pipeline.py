@@ -21,10 +21,8 @@ from .stages.protocols import (
     DocumentParser,
     G2PAdapter,
     PhonemeProcessor,
-    Splitter,
 )
-from .stages.splitters.phrasplit import PhrasplitSplitter
-from .types import AudioResult, Trace
+from .types import AudioResult, Segment, Trace
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +51,6 @@ class KokoroPipeline:
         config: PipelineConfig,
         *,
         doc_parser: DocumentParser | None = None,
-        splitter: Splitter | None = None,
         g2p: G2PAdapter | None = None,
         phoneme_processing: PhonemeProcessor | None = None,
         audio_generation: AudioGeneratorStage | None = None,
@@ -61,7 +58,6 @@ class KokoroPipeline:
     ) -> None:
         self.config = config
         self.doc_parser = doc_parser or SsmdDocumentParser()
-        self.splitter = splitter or PhrasplitSplitter()
         self.g2p = g2p or KokoroG2PAdapter()
         self.phoneme_processing = phoneme_processing
         self.audio_generation = audio_generation
@@ -87,10 +83,19 @@ class KokoroPipeline:
             logger.debug("Parsing document")
             doc = self.doc_parser.parse(text, cfg, trace)
             trace.warnings.extend(doc.warnings)
-
-        with trace_timing(trace, "split", "split"):
-            logger.debug("Splitting document text")
-            segments = self.splitter.split(doc, cfg, trace)
+        segments = doc.segments
+        if not segments and doc.clean_text:
+            segments = [
+                Segment(
+                    id="p0_s0_c0_seg0",
+                    text=doc.clean_text,
+                    char_start=0,
+                    char_end=len(doc.clean_text),
+                    paragraph_idx=0,
+                    sentence_idx=0,
+                    clause_idx=0,
+                )
+            ]
 
         with trace_timing(trace, "g2p", "phonemize"):
             logger.debug("Phonemizing %d segments", len(segments))

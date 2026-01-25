@@ -6,10 +6,13 @@ import pytest
 from pykokoro import KokoroPipeline, PipelineConfig
 from pykokoro.generation_config import GenerationConfig
 from pykokoro.pipeline_config import PipelineConfig as PipelineConfigType
+from pykokoro.stages.doc_parsers.plain import (
+    PhrasplitSentenceSplitter,
+    PlainTextDocumentParser,
+)
 from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
 from pykokoro.stages.protocols import DocumentResult
-from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
-from pykokoro.types import PhonemeSegment, Trace
+from pykokoro.types import PhonemeSegment, Segment, Trace
 
 
 class DummyPhonemeProcessor:
@@ -32,7 +35,21 @@ class DummyAudioPostprocessing:
 
 class DummyDocParser:
     def parse(self, text, cfg, trace):
-        return DocumentResult(clean_text=text)
+        _ = (cfg, trace)
+        return DocumentResult(
+            clean_text=text,
+            segments=[
+                Segment(
+                    id="p0_s0_c0_seg0",
+                    text=text,
+                    char_start=0,
+                    char_end=len(text),
+                    paragraph_idx=0,
+                    sentence_idx=0,
+                    clause_idx=0,
+                )
+            ],
+        )
 
 
 class DummyG2P:
@@ -78,18 +95,16 @@ def test_modular_ssmd_parser_spans_and_breaks():
 
 def test_phrasplit_offsets_match_slices():
     pytest.importorskip("phrasplit")
-    parser = SsmdDocumentParser()
+    parser = PlainTextDocumentParser()
     cfg = PipelineConfigType()
     trace = Trace()
     doc = parser.parse("Hello world. Second sentence.", cfg, trace)
-    splitter = PhrasplitSplitter()
-    segments = splitter.split(doc, cfg, trace)
-    for segment in segments:
+    for segment in doc.segments:
         assert segment.text == doc.clean_text[segment.char_start : segment.char_end]
 
 
 def test_phrasplit_language_model_from_lang():
-    splitter = PhrasplitSplitter()
+    splitter = PhrasplitSentenceSplitter()
     assert splitter._language_model_from_lang("en") == "en_core_web_sm"
     assert splitter._language_model_from_lang("en-us") == "en_core_web_sm"
     assert splitter._language_model_from_lang("de") == "de_core_news_sm"

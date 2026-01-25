@@ -2,7 +2,7 @@ Pipeline Usage and Stages
 =========================
 
 ``KokoroPipeline`` is the configurable engine behind the high-level
-``Kokoro`` class. Use it when you want to swap parsing/splitting stages,
+``Kokoro`` class. Use it when you want to swap parsing/segmentation stages,
 run custom G2P logic, or control model loading at a lower level.
 
 Pipeline overview
@@ -10,12 +10,11 @@ Pipeline overview
 
 The default pipeline wiring is:
 
-``doc_parser -> splitter -> g2p -> phoneme_processing -> audio_generation -> audio_postprocessing``
+``doc_parser -> g2p -> phoneme_processing -> audio_generation -> audio_postprocessing``
 
 Default stage classes:
 
 * ``SsmdDocumentParser``
-* ``PhrasplitSplitter``
 * ``KokoroG2PAdapter``
 * ``OnnxPhonemeProcessorAdapter``
 * ``OnnxAudioGenerationAdapter``
@@ -155,8 +154,9 @@ SSMD document parser
 ~~~~~~~~~~~~~~~~~~~~
 
 ``SsmdDocumentParser`` uses ``parse_ssmd_to_segments`` to turn SSMD markup into
-clean text plus metadata spans and pause boundaries. It honors
-``generation.pause_*`` values when converting break strengths into durations.
+clean text plus metadata spans, pause boundaries, and sentence/paragraph
+segments. It honors ``generation.pause_*`` values when converting break
+strengths into durations.
 
 Supported SSMD features include:
 
@@ -169,13 +169,13 @@ Supported SSMD features include:
 The parser attaches SSMD metadata to annotation spans so later stages can
 select per-segment voices and prosody.
 
-Phrasplit splitter
-~~~~~~~~~~~~~~~~~~
+Plain text sentence splitting
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``PhrasplitSplitter`` uses the optional ``phrasplit`` package for sentence
-splitting. When ``phrasplit`` is unavailable, it falls back to a single segment.
-The language model is derived from ``generation.lang`` (for example
-``en_core_web_sm`` for English).
+``PlainTextDocumentParser`` uses the optional ``phrasplit`` package for
+sentence splitting. When ``phrasplit`` is unavailable, it falls back to a
+single segment. The language model is derived from ``generation.lang`` (for
+example ``en_core_web_sm`` for English).
 
 Split boundaries are forced at SSMD pause boundaries and at spans that contain
 phoneme overrides so those overrides are kept intact. Set
@@ -242,7 +242,6 @@ Example with explicit stage wiring:
    from pykokoro.stages.doc_parsers.ssmd import SsmdDocumentParser
    from pykokoro.stages.g2p.kokorog2p import KokoroG2PAdapter
    from pykokoro.stages.phoneme_processing.onnx import OnnxPhonemeProcessorAdapter
-   from pykokoro.stages.splitters.phrasplit import PhrasplitSplitter
 
    cfg = PipelineConfig(
        voice="af_heart",
@@ -253,7 +252,6 @@ Example with explicit stage wiring:
    pipeline = KokoroPipeline(
        cfg,
        doc_parser=SsmdDocumentParser(),
-       splitter=PhrasplitSplitter(),
        g2p=KokoroG2PAdapter(),
        phoneme_processing=OnnxPhonemeProcessorAdapter(kokoro),
        audio_generation=OnnxAudioGenerationAdapter(kokoro),

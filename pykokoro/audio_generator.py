@@ -374,6 +374,8 @@ class AudioGenerator:
                     dataclasses.replace(
                         segment,
                         tokens=tokens,
+                        pause_before=segment.pause_before,
+                        pause_after=segment.pause_after,
                         raw_audio=None,
                         processed_audio=None,
                     )

@@ -168,7 +168,7 @@ French
 Long Text Processing
 --------------------
 
-For longer text, reuse a pipeline and let the splitter handle segmentation:
+For longer text, reuse a pipeline and let the document parser handle segmentation:
 
 .. code-block:: python
 
