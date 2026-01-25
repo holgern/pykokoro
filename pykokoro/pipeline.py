@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from pathlib import Path
+from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
 from .constants import SAMPLE_RATE
@@ -75,7 +76,12 @@ class KokoroPipeline:
     def __enter__(self) -> KokoroPipeline:
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         self.close()
 
     def close(self) -> None:

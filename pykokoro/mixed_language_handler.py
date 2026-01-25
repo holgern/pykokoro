@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Sequence, cast
 
 import kokorog2p as _kokorog2p
 from kokorog2p.multilang import preprocess_multilang
@@ -16,6 +16,8 @@ from kokorog2p.multilang import preprocess_multilang
 from .constants import SUPPORTED_LANGUAGES
 
 if TYPE_CHECKING:
+    from kokorog2p.types import OverrideSpan
+
     from .tokenizer import TokenizerConfig
 
 logger = logging.getLogger(__name__)
@@ -153,25 +155,37 @@ class MixedLanguageHandler:
     ) -> str:
         if not text.strip():
             return text
-        kwargs = {
-            "text": text,
-            "default_language": kokorog2p_primary,
-            "allowed_languages": allowed_langs,
-            "confidence_threshold": self.config.mixed_language_confidence,
-        }
+        preprocess_func = cast(Any, preprocess_multilang)
+        supports_markdown = False
         try:
             import inspect
 
             params = inspect.signature(preprocess_multilang).parameters
             if "markdown_syntax" in params:
-                kwargs["markdown_syntax"] = "ssmd"
+                supports_markdown = True
         except (TypeError, ValueError):
             pass
 
-        overrides = preprocess_multilang(**kwargs)
-        if isinstance(overrides, str):
-            return overrides
-        return self._apply_overrides(text, overrides)
+        if supports_markdown:
+            overrides = preprocess_func(
+                text,
+                default_language=kokorog2p_primary,
+                allowed_languages=allowed_langs,
+                confidence_threshold=self.config.mixed_language_confidence,
+                markdown_syntax="ssmd",
+            )
+        else:
+            overrides = preprocess_func(
+                text,
+                default_language=kokorog2p_primary,
+                allowed_languages=allowed_langs,
+                confidence_threshold=self.config.mixed_language_confidence,
+            )
+
+        typed_overrides = cast("str | list[OverrideSpan]", overrides)
+        if isinstance(typed_overrides, str):
+            return typed_overrides
+        return self._apply_overrides(text, typed_overrides)
 
     def _preprocess_unannotated(
         self,
@@ -213,7 +227,7 @@ class MixedLanguageHandler:
             return text
         return "".join(out)
 
-    def _apply_overrides(self, text: str, overrides: list[object]) -> str:
+    def _apply_overrides(self, text: str, overrides: Sequence[object]) -> str:
         if not overrides:
             return text
 

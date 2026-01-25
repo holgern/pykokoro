@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 
 from ..types import Trace, TraceEvent
 
 
 @contextmanager
-def trace_timing(trace: Trace | None, stage: str, name: str):
+def trace_timing(trace: Trace | None, stage: str, name: str) -> Iterator[None]:
     t0 = time.perf_counter()
     try:
         yield

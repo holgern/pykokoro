@@ -149,6 +149,10 @@ class AudioGenerator:
             List of phoneme batches, each <= MAX_PHONEME_LENGTH
         """
 
+        batches: list[str] = []
+        current = ""
+        current_tokens = 0
+
         def token_len(text: str) -> int:
             if not text:
                 return 0
@@ -203,10 +207,6 @@ class AudioGenerator:
         # Split on sentence-ending punctuation (., !, ?) while keeping them
         # Use lookbehind to split AFTER the punctuation
         sentences = re.split(r"(?<=[.!?])\s*", phonemes)
-
-        batches: list[str] = []
-        current = ""
-        current_tokens = 0
 
         for sentence in sentences:
             sentence = sentence.strip()

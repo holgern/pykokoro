@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 import re
 from bisect import bisect_left
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ...types import AnnotationSpan, BoundaryEvent, Segment, Trace
 from ..protocols import DocumentResult
@@ -13,6 +14,15 @@ if TYPE_CHECKING:
     from ...pipeline_config import PipelineConfig
 
 logger = logging.getLogger(__name__)
+
+SplitItem = tuple[
+    str | None,
+    int | None,
+    int | None,
+    int | None,
+    int | None,
+    int | None,
+]
 
 
 class PlainTextDocumentParser:
@@ -50,7 +60,7 @@ class PhrasplitSentenceSplitter:
         text = doc.clean_text
         language_model = self._language_model_from_lang(cfg.generation.lang)
         try:
-            import phrasplit  # type: ignore
+            phrasplit = importlib.import_module("phrasplit")
         except Exception:
             if not text:
                 return []
@@ -83,6 +93,7 @@ class PhrasplitSentenceSplitter:
             if end <= start:
                 continue
             chunk = text[start:end]
+            split_items: list[SplitItem]
             if (start, end) in override_ranges:
                 split_items = [(chunk, 0, len(chunk), None, None, None)]
             else:
@@ -131,6 +142,7 @@ class PhrasplitSentenceSplitter:
                         f"{seg_idx} ({seg_text!r}): {reason}."
                     )
 
+                assert seg_start is not None and seg_end is not None
                 seg_start = max(0, min(seg_start, chunk_len))
                 seg_end = max(seg_start, min(seg_end, chunk_len))
 
@@ -271,7 +283,9 @@ class PhrasplitSentenceSplitter:
                 ranges.add((span.char_start, span.char_end))
         return ranges
 
-    def _split_with_offsets(self, phrasplit_module, text: str, language_model: str):
+    def _split_with_offsets(
+        self, phrasplit_module: Any, text: str, language_model: str
+    ) -> list[SplitItem]:
         kwargs: dict[str, object] = {
             "mode": "sentence",
             "language_model": language_model,
@@ -310,7 +324,7 @@ class PhrasplitSentenceSplitter:
         else:
             return []
 
-        out = []
+        out: list[SplitItem] = []
         for seg in segments:
             seg_text = getattr(seg, "text", None)
             start = getattr(seg, "start", None)

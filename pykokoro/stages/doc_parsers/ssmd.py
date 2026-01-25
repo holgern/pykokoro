@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from typing import Sequence
+
 from ...pipeline_config import PipelineConfig
 from ...ssmd_parser import (
     DEFAULT_PAUSE_NONE,
     DEFAULT_PAUSE_WEAK,
+    SSMDMetadata,
+    SSMDSegment,
     parse_ssmd_to_segments,
 )
 from ...types import AnnotationSpan, BoundaryEvent, Segment, Trace
@@ -32,7 +36,12 @@ class SsmdDocumentParser:
             segments=doc_segments,
         )
 
-    def _build_document(self, segments, initial_pause: float, trace: Trace):
+    def _build_document(
+        self,
+        segments: Sequence[SSMDSegment],
+        initial_pause: float,
+        trace: Trace,
+    ) -> tuple[str, list[AnnotationSpan], list[BoundaryEvent], list[Segment]]:
         clean_parts: list[str] = []
         spans: list[AnnotationSpan] = []
         boundaries: list[BoundaryEvent] = []
@@ -133,7 +142,9 @@ class SsmdDocumentParser:
         if message not in trace.warnings:
             trace.warnings.append(message)
 
-    def _append_text(self, clean_parts: list[str], text: str, cursor: int):
+    def _append_text(
+        self, clean_parts: list[str], text: str, cursor: int
+    ) -> tuple[int, int, int]:
         if not text:
             return cursor, cursor, cursor
         if clean_parts:
@@ -158,7 +169,7 @@ class SsmdDocumentParser:
             return None
         return max(start, end - 1)
 
-    def _metadata_to_attrs(self, metadata) -> dict[str, str]:
+    def _metadata_to_attrs(self, metadata: SSMDMetadata) -> dict[str, str]:
         attrs: dict[str, str] = {}
         if metadata.language:
             attrs["lang"] = metadata.language

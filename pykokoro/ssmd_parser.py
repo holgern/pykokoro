@@ -22,7 +22,7 @@ import logging
 import re
 import warnings
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Sequence
 
 if TYPE_CHECKING:
     from ssmd import SSMDSegment as SSMDParserSegment
@@ -424,7 +424,7 @@ def _fallback_break_segments(
 
 
 def _build_segments_from_paragraphs(
-    paragraphs,
+    paragraphs: Sequence[Any],
     *,
     lang: str,
     pause_none: float,
@@ -707,7 +707,7 @@ def parse_ssmd_to_segments(
     caps = TTSCapabilities()
     caps.heading_emphasis = True
 
-    def parse_with_spacy(use_spacy_override: bool | None):
+    def parse_with_spacy(use_spacy_override: bool | None) -> list[Any]:
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore",

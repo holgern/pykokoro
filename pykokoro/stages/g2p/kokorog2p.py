@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from types import ModuleType
 from typing import TYPE_CHECKING, Any, cast
 
 from ...constants import MAX_PHONEME_LENGTH, SUPPORTED_LANGUAGES
@@ -18,14 +19,14 @@ if TYPE_CHECKING:
 
 class KokoroG2PAdapter(G2PAdapter):
     def __init__(self) -> None:
-        self._g2p = None
+        self._g2p: ModuleType | None = None
         self._g2p_instances: dict[str, G2PBase] = {}
 
-    def _load(self):
+    def _load(self) -> ModuleType:
         if self._g2p is not None:
             return self._g2p
         try:
-            import kokorog2p  # type: ignore
+            import kokorog2p
         except Exception as exc:
             raise RuntimeError("kokorog2p is not installed") from exc
         self._g2p = kokorog2p
@@ -191,7 +192,7 @@ class KokoroG2PAdapter(G2PAdapter):
 
     def _split_phoneme_batches(
         self,
-        g2p_module,
+        g2p_module: Any,
         phonemes: str,
         tokens: list[int],
         model_version: str,

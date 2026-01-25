@@ -1570,7 +1570,7 @@ class Kokoro:
 
         # For GitHub models or v1.1-zh, load variant-specific vocab from config
         if self._model_source == "github" or self._model_variant == "v1.1-zh":
-            return load_vocab_from_config(cast(ModelVariant, self._model_variant))
+            return load_vocab_from_config(self._model_variant)
 
         # For HuggingFace v1.0 or default, use standard vocab
         return get_kokoro_vocab()
@@ -1600,7 +1600,7 @@ class Kokoro:
                     f"Automatically switching to model variant 'v1.1-zh'."
                 )
                 self._auto_switched_variant = True
-            return cast(ModelVariant, "v1.1-zh")
+            return "v1.1-zh"
 
         # Otherwise use configured variant
         return self._model_variant
