@@ -21,10 +21,15 @@ class DummyTokenizer:
         return "a" * max(1, len(tokens) // self.factor)
 
 
+class DummySession:
+    def get_inputs(self):
+        return [SimpleNamespace(name="input_ids")]
+
+
 def test_split_phonemes_uses_token_count():
     tokenizer = DummyTokenizer(factor=300)
     generator = AudioGenerator(
-        session=cast(Any, SimpleNamespace()),
+        session=cast(Any, DummySession()),
         tokenizer=cast(Any, tokenizer),
     )
 
@@ -36,7 +41,7 @@ def test_split_phonemes_uses_token_count():
 def test_preprocess_pipeline_splits_segments():
     tokenizer = DummyTokenizer(factor=MAX_PHONEME_LENGTH)
     generator = AudioGenerator(
-        session=cast(Any, SimpleNamespace()),
+        session=cast(Any, DummySession()),
         tokenizer=cast(Any, tokenizer),
     )
     segment = PhonemeSegment(
