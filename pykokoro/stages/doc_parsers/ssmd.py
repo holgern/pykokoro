@@ -6,21 +6,15 @@ from ...ssmd_parser import (
     DEFAULT_PAUSE_WEAK,
     parse_ssmd_to_segments,
 )
-from ...tokenizer import Tokenizer
 from ...types import AnnotationSpan, BoundaryEvent, Trace
 from ..protocols import DocumentResult
 
 
 class SsmdDocumentParser:
     def parse(self, text: str, cfg: PipelineConfig, trace: Trace) -> DocumentResult:
-        tokenizer = Tokenizer(
-            config=cfg.tokenizer_config,
-            espeak_config=cfg.espeak_config,
-        )
         generation = cfg.generation
         initial_pause, segments = parse_ssmd_to_segments(
             text,
-            tokenizer,
             lang=generation.lang,
             pause_none=DEFAULT_PAUSE_NONE,
             pause_weak=DEFAULT_PAUSE_WEAK,

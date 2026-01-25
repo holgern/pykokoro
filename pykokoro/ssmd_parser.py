@@ -28,8 +28,6 @@ from ssmd import TTSCapabilities, parse_sentences
 if TYPE_CHECKING:
     from ssmd import SSMDSegment as SSMDParserSegment
 
-    from .tokenizer import Tokenizer
-
 ANNOTATION_RE = re.compile(
     r"""
     \[
@@ -319,7 +317,6 @@ def _map_ssmd_segment_to_metadata(
 
 def parse_ssmd_to_segments(
     text: str,
-    tokenizer: Tokenizer,
     lang: str = "en-us",
     pause_none: float = DEFAULT_PAUSE_NONE,
     pause_weak: float = DEFAULT_PAUSE_WEAK,
@@ -347,7 +344,6 @@ def parse_ssmd_to_segments(
 
     Args:
         text: Input text with SSMD markup
-        tokenizer: Tokenizer instance (for future use with inline phonemes)
         lang: Default language code
         pause_none: Duration for 'none' break strength in seconds
         pause_weak: Duration for 'weak' break strength in seconds
@@ -365,11 +361,9 @@ def parse_ssmd_to_segments(
     Example:
         >>> segments = parse_ssmd_to_segments(
         ...     "Hello ...c *important* ...s [Bonjour](fr)",
-        ...     tokenizer
         ... )
         >>> segments = parse_ssmd_to_segments(
         ...     "@voice: sarah\\nHello!\\n\\n@voice: michael\\nWorld!",
-        ...     tokenizer
         ... )
     """
     # Convert shorthand language annotations like [Bonjour](fr)

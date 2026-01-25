@@ -105,6 +105,16 @@ def _build_pipeline2(cfg: PipelineConfig) -> KokoroPipeline:
     )
 
 
+def _build_pipeline3(cfg: PipelineConfig) -> KokoroPipeline:
+    return KokoroPipeline(
+        cfg,
+        g2p=DummyG2P(),
+        phoneme_processing=NoopPhonemeProcessorAdapter(),
+        audio_generation=NoopAudioGenerationAdapter(seconds_per_segment=0.01),
+        audio_postprocessing=NoopAudioPostprocessingAdapter(),
+    )
+
+
 def test_pipeline_paragraph_indices():
     cfg = PipelineConfig()
     pipeline = _build_pipeline(cfg)
@@ -139,6 +149,30 @@ def test_pipeline2_manual_paragraph_pause():
     generation = GenerationConfig(pause_mode="manual", pause_paragraph=1.25)
     cfg = PipelineConfig(generation=generation)
     pipeline = _build_pipeline2(cfg)
+    res = pipeline.run(TEXT)
+
+    assert len(res.phoneme_segments) == 4
+    paragraph_zero = [
+        segment for segment in res.phoneme_segments if segment.paragraph_idx == 0
+    ]
+    assert paragraph_zero
+    assert paragraph_zero[-1].pause_after == pytest.approx(generation.pause_paragraph)
+
+
+def test_pipeline3_paragraph_indices():
+    cfg = PipelineConfig()
+    pipeline = _build_pipeline3(cfg)
+    res = pipeline.run(TEXT)
+
+    paragraph_ids = [segment.paragraph_idx for segment in res.phoneme_segments]
+    assert len(res.phoneme_segments) == 4
+    assert paragraph_ids == [0, 0, 1, 1]
+
+
+def test_pipeline3_manual_paragraph_pause():
+    generation = GenerationConfig(pause_mode="manual", pause_paragraph=1.25)
+    cfg = PipelineConfig(generation=generation)
+    pipeline = _build_pipeline3(cfg)
     res = pipeline.run(TEXT)
 
     assert len(res.phoneme_segments) == 4

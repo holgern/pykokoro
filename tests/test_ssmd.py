@@ -46,12 +46,9 @@ class TestSSMDSegmentConversion:
     def test_parse_ssmd_to_segments_basic(self):
         """Test basic SSMD parsing to segments."""
         from pykokoro.ssmd_parser import parse_ssmd_to_segments
-        from pykokoro.tokenizer import create_tokenizer
 
-        tokenizer = create_tokenizer()
         initial, segments = parse_ssmd_to_segments(
             "Hello ...c world",
-            tokenizer=tokenizer,
         )
 
         assert initial == 0.0
@@ -64,12 +61,9 @@ class TestSSMDSegmentConversion:
     def test_parse_ssmd_to_segments_with_markup(self):
         """Test SSMD parsing strips markup from text."""
         from pykokoro.ssmd_parser import parse_ssmd_to_segments
-        from pykokoro.tokenizer import create_tokenizer
 
-        tokenizer = create_tokenizer()
         initial, segments = parse_ssmd_to_segments(
             "This is *important* ...s Really!",
-            tokenizer=tokenizer,
         )
 
         # SSMD splits on emphasis markers, creating segments for each part
@@ -85,12 +79,9 @@ class TestSSMDSegmentConversion:
     def test_parse_ssmd_to_segments_without_markup(self):
         """Test SSMD parsing strips markup from text."""
         from pykokoro.ssmd_parser import parse_ssmd_to_segments
-        from pykokoro.tokenizer import create_tokenizer
 
-        tokenizer = create_tokenizer()
         initial, segments = parse_ssmd_to_segments(
             "Hello this is great. Really!",
-            tokenizer=tokenizer,
         )
 
         assert len(segments) == 2
@@ -216,9 +207,6 @@ class TestSSMDVoiceSwitching:
         voice directives in the current version. Voice attributes remain None.
         """
         from pykokoro.ssmd_parser import parse_ssmd_to_segments
-        from pykokoro.tokenizer import create_tokenizer
-
-        tokenizer = create_tokenizer()
 
         # Test 1: Block directives (<div voice="name">)
         # Currently this doesn't work - SSMD treats directives as raw text
@@ -226,7 +214,7 @@ class TestSSMDVoiceSwitching:
             '<div voice="af_sarah">Hello ...s</div>\n\n'
             '<div voice="am_michael">World</div>'
         )
-        initial_pause, segments = parse_ssmd_to_segments(text, tokenizer)
+        initial_pause, segments = parse_ssmd_to_segments(text)
 
         # For now, just verify it doesn't crash and returns segments
         # Voice metadata will be None due to SSMD limitation
@@ -244,21 +232,18 @@ class TestSSMDVoiceSwitching:
         voice annotations in the current version.
         """
         from pykokoro.ssmd_parser import parse_ssmd_to_segments
-        from pykokoro.tokenizer import create_tokenizer
-
-        tokenizer = create_tokenizer()
 
         # Test 2: Inline voice annotations ([text](voice: name))
         # Currently this doesn't work - SSMD treats annotations as raw text
-        text = "[Hello](voice: af_sarah) ...s\n\n[World](voice: am_michael)"
-        initial_pause, segments = parse_ssmd_to_segments(text, tokenizer)
+        text = "[Hello]{voice='af_sarah'} ...s\n\n[World]{voice='am_michael'}"
+        initial_pause, segments = parse_ssmd_to_segments(text)
 
         # For now, just verify it doesn't crash and returns segments
         # Voice metadata will be None due to SSMD limitation
         assert len(segments) > 0
         # TODO: Uncomment when SSMD library properly parses voice annotations
         # assert segments[0].metadata.voice_name == "af_sarah"
-        # assert segments[0].pause_after == 0.6  # sentence pause
+        assert segments[0].pause_after == 0.6  # sentence pause
         # assert segments[1].metadata.voice_name == "am_michael"
 
     def test_inline_voice_annotations(self):
@@ -269,21 +254,18 @@ class TestSSMDVoiceSwitching:
         voice annotations in the current version.
         """
         from pykokoro.ssmd_parser import parse_ssmd_to_segments
-        from pykokoro.tokenizer import create_tokenizer
-
-        tokenizer = create_tokenizer()
 
         # Test 2: Inline voice annotations ([text](voice: name))
         # Currently this doesn't work - SSMD treats annotations as raw text
-        text = "[Hello](voice: af_sarah) ...s\n\n[World](voice: am_michael)"
-        initial_pause, segments = parse_ssmd_to_segments(text, tokenizer)
+        text = "[Hello]{voice='af_sarah'} ...s\n\n[World]{voice='am_michael'}"
+        initial_pause, segments = parse_ssmd_to_segments(text)
 
         # For now, just verify it doesn't crash and returns segments
         # Voice metadata will be None due to SSMD limitation
         assert len(segments) > 0
         # TODO: Uncomment when SSMD library properly parses voice annotations
         # assert segments[0].metadata.voice_name == "af_sarah"
-        # assert segments[0].pause_after == 0.6  # sentence pause
+        assert segments[0].pause_after == 0.6  # sentence pause
         # assert segments[1].metadata.voice_name == "am_michael"
 
     def test_voice_resolver_called_for_segment_with_voice(self):
@@ -308,7 +290,7 @@ class TestSSMDVoiceSwitching:
         # Create segments with voice metadata
         segments = [
             PhonemeSegment(
-                id="seg_0_ph0",
+                id="seg0_ph0",
                 segment_id="seg_0",
                 phoneme_id=0,
                 text="Hello",
@@ -322,7 +304,7 @@ class TestSSMDVoiceSwitching:
                 ssmd_metadata={"voice_name": "af_sarah"},
             ),
             PhonemeSegment(
-                id="seg_1_ph0",
+                id="seg1_ph0",
                 segment_id="seg_1",
                 phoneme_id=0,
                 text="World",
@@ -385,7 +367,7 @@ class TestSSMDVoiceSwitching:
         # Create segment with voice metadata
         segments = [
             PhonemeSegment(
-                id="seg_0_ph0",
+                id="seg0_ph0",
                 segment_id="seg_0",
                 phoneme_id=0,
                 text="Hello",
