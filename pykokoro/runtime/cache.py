@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import secrets
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -72,12 +74,37 @@ class DiskCache:
     def _path(self, key: str) -> Path:
         return self.root / f"{key}.json"
 
+    def _tmp_path(self, key: str) -> Path:
+        token = secrets.token_hex(6)
+        return self.root / f"{key}.tmp.{os.getpid()}.{token}"
+
     def get(self, key: str) -> Any | None:
         p = self._path(key)
         if not p.exists():
             return None
-        return json.loads(p.read_text(encoding="utf-8"))
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+            return None
 
     def set(self, key: str, value: Any) -> None:
         p = self._path(key)
-        p.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+        tmp_path = self._tmp_path(key)
+        payload = json.dumps(value, ensure_ascii=False)
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(payload)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, p)
+        finally:
+            try:
+                tmp_path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass

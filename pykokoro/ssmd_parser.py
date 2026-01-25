@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import re
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -45,6 +46,10 @@ ANNOTATION_RE = re.compile(
 
 LANG_SHORTHAND_RE = re.compile(r"\[([^\]]+)\]\(([a-zA-Z]{2,3}(?:-[a-zA-Z]{2})?)\)")
 BREAK_TIME_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(ms|s)\s*$", re.IGNORECASE)
+BREAK_MARKER_RE = re.compile(
+    r"\.\.\.\s*(?P<token>(?:[nwcsp])|(?:\d+(?:\.\d+)?\s*(?:ms|s)))",
+    re.IGNORECASE,
+)
 
 DEFAULT_PAUSE_NONE = 0.0
 DEFAULT_PAUSE_WEAK = 0.15
@@ -227,6 +232,278 @@ def _convert_break_strength_to_duration(
     return 0.0
 
 
+def _break_duration_from_token(
+    token: str,
+    *,
+    pause_none: float,
+    pause_weak: float,
+    pause_clause: float,
+    pause_sentence: float,
+    pause_paragraph: float,
+) -> float | None:
+    normalized = token.strip().lower()
+    if normalized == "n":
+        return pause_none
+    if normalized == "w":
+        return pause_weak
+    if normalized == "c":
+        return pause_clause
+    if normalized == "s":
+        return pause_sentence
+    if normalized == "p":
+        return pause_paragraph
+    match = BREAK_TIME_RE.match(normalized)
+    if not match:
+        return None
+    value = float(match.group(1))
+    unit = match.group(2).lower()
+    if unit == "ms":
+        return value / 1000.0
+    return value
+
+
+def _scan_break_markers(
+    text: str,
+    *,
+    pause_none: float,
+    pause_weak: float,
+    pause_clause: float,
+    pause_sentence: float,
+    pause_paragraph: float,
+) -> list[float]:
+    durations: list[float] = []
+    for match in BREAK_MARKER_RE.finditer(text):
+        duration = _break_duration_from_token(
+            match.group("token"),
+            pause_none=pause_none,
+            pause_weak=pause_weak,
+            pause_clause=pause_clause,
+            pause_sentence=pause_sentence,
+            pause_paragraph=pause_paragraph,
+        )
+        if duration is not None:
+            durations.append(duration)
+    return durations
+
+
+def _collect_pause_durations(segments: list[SSMDSegment]) -> list[float]:
+    durations: list[float] = []
+    for segment in segments:
+        if segment.pause_before > 0:
+            durations.append(segment.pause_before)
+        if segment.pause_after > 0:
+            durations.append(segment.pause_after)
+    return durations
+
+
+def _breaks_satisfied(
+    expected: list[float], actual: list[float], tolerance: float = 1e-6
+) -> bool:
+    remaining = list(actual)
+    for target in expected:
+        match_index = next(
+            (
+                idx
+                for idx, value in enumerate(remaining)
+                if abs(value - target) <= tolerance
+            ),
+            None,
+        )
+        if match_index is None:
+            return False
+        remaining.pop(match_index)
+    return True
+
+
+def _fallback_segments_from_chunk(
+    chunk: str, paragraph_idx: int, sentence_idx: int
+) -> tuple[list[SSMDSegment], int, int]:
+    segments: list[SSMDSegment] = []
+    paragraphs = re.split(r"\n\s*\n", chunk)
+    for idx, paragraph in enumerate(paragraphs):
+        paragraph_text = paragraph.strip()
+        if paragraph_text:
+            segments.append(
+                SSMDSegment(
+                    text=paragraph_text,
+                    paragraph=paragraph_idx,
+                    sentence=sentence_idx,
+                )
+            )
+            sentence_idx += 1
+        if idx < len(paragraphs) - 1:
+            paragraph_idx += 1
+    return segments, paragraph_idx, sentence_idx
+
+
+def _fallback_break_segments(
+    text: str,
+    *,
+    pause_none: float,
+    pause_weak: float,
+    pause_clause: float,
+    pause_sentence: float,
+    pause_paragraph: float,
+) -> tuple[float, list[SSMDSegment]]:
+    segments: list[SSMDSegment] = []
+    initial_pause = 0.0
+    paragraph_idx = 0
+    sentence_idx = 0
+    cursor = 0
+    for match in BREAK_MARKER_RE.finditer(text):
+        chunk = text[cursor : match.start()]
+        duration = _break_duration_from_token(
+            match.group("token"),
+            pause_none=pause_none,
+            pause_weak=pause_weak,
+            pause_clause=pause_clause,
+            pause_sentence=pause_sentence,
+            pause_paragraph=pause_paragraph,
+        )
+        duration = duration or 0.0
+        if chunk.strip():
+            chunk_segments, paragraph_idx, sentence_idx = _fallback_segments_from_chunk(
+                chunk, paragraph_idx, sentence_idx
+            )
+            if chunk_segments:
+                chunk_segments[-1].pause_after = max(
+                    chunk_segments[-1].pause_after, duration
+                )
+                segments.extend(chunk_segments)
+            elif segments:
+                segments[-1].pause_after = max(segments[-1].pause_after, duration)
+            else:
+                initial_pause = max(initial_pause, duration)
+        else:
+            if segments:
+                segments[-1].pause_after = max(segments[-1].pause_after, duration)
+            else:
+                initial_pause = max(initial_pause, duration)
+        cursor = match.end()
+
+    tail = text[cursor:]
+    if tail.strip():
+        tail_segments, paragraph_idx, sentence_idx = _fallback_segments_from_chunk(
+            tail, paragraph_idx, sentence_idx
+        )
+        segments.extend(tail_segments)
+    return initial_pause, segments
+
+
+def _build_segments_from_paragraphs(
+    paragraphs,
+    *,
+    lang: str,
+    pause_none: float,
+    pause_weak: float,
+    pause_clause: float,
+    pause_sentence: float,
+    pause_paragraph: float,
+) -> list[SSMDSegment]:
+    pykokoro_segments: list[SSMDSegment] = []
+    sentence_counter = 0
+
+    for paragraph_idx, paragraph in enumerate(paragraphs):
+        for sentence in paragraph.sentences:
+            # Extract voice context for this sentence
+            voice_metadata = SSMDMetadata()
+            if sentence.voice:
+                voice_metadata.voice_name = sentence.voice.name
+                voice_metadata.voice_language = sentence.voice.language
+                voice_metadata.voice_gender = sentence.voice.gender
+                voice_metadata.voice_variant = (
+                    str(sentence.voice.variant) if sentence.voice.variant else None
+                )
+
+            resolved_paragraph = getattr(sentence, "paragraph_index", paragraph_idx)
+            resolved_sentence = getattr(sentence, "sentence_index", None)
+            if resolved_sentence is None:
+                resolved_sentence = sentence_counter
+                sentence_counter += 1
+            else:
+                sentence_counter = max(sentence_counter, resolved_sentence + 1)
+
+            # Process each segment in sentence
+            for seg_idx, ssmd_seg in enumerate(sentence.segments):
+                # Determine language for this segment
+                # Priority: segment lang > sentence lang > default
+                segment_lang = ssmd_seg.language or lang
+
+                # Map SSMD segment to PyKokoro metadata
+                seg_text, metadata = _map_ssmd_segment_to_metadata(
+                    ssmd_seg, segment_lang
+                )
+
+                # Apply voice context if segment doesn't have its own voice
+                if not metadata.voice_name and voice_metadata.voice_name:
+                    metadata.voice_name = voice_metadata.voice_name
+                    metadata.voice_language = voice_metadata.voice_language
+                    metadata.voice_gender = voice_metadata.voice_gender
+                    metadata.voice_variant = voice_metadata.voice_variant
+
+                # Calculate pause before this segment (for headings)
+                pause_before = 0.0
+
+                # Check for breaks before this segment
+                if ssmd_seg.breaks_before:
+                    # Use the last break if multiple
+                    last_break = ssmd_seg.breaks_before[-1]
+                    pause_before = _convert_break_strength_to_duration(
+                        last_break.strength,
+                        last_break.time,
+                        pause_none=pause_none,
+                        pause_weak=pause_weak,
+                        pause_clause=pause_clause,
+                        pause_sentence=pause_sentence,
+                        pause_paragraph=pause_paragraph,
+                    )
+
+                # Calculate pause after this segment
+                pause_after = 0.0
+
+                # Check for breaks after this segment
+                if ssmd_seg.breaks_after:
+                    # Use the last break if multiple
+                    last_break = ssmd_seg.breaks_after[-1]
+                    pause_after = _convert_break_strength_to_duration(
+                        last_break.strength,
+                        last_break.time,
+                        pause_none=pause_none,
+                        pause_weak=pause_weak,
+                        pause_clause=pause_clause,
+                        pause_sentence=pause_sentence,
+                        pause_paragraph=pause_paragraph,
+                    )
+
+                # If this is the last segment in the sentence,
+                # check sentence-level breaks
+                if seg_idx == len(sentence.segments) - 1 and sentence.breaks_after:
+                    last_break = sentence.breaks_after[-1]
+                    sentence_pause = _convert_break_strength_to_duration(
+                        last_break.strength,
+                        last_break.time,
+                        pause_none=pause_none,
+                        pause_weak=pause_weak,
+                        pause_clause=pause_clause,
+                        pause_sentence=pause_sentence,
+                        pause_paragraph=pause_paragraph,
+                    )
+                    pause_after = max(pause_after, sentence_pause)
+
+                # Create PyKokoro SSMDSegment with paragraph tracking
+                pykokoro_segments.append(
+                    SSMDSegment(
+                        text=seg_text,
+                        pause_before=pause_before,
+                        pause_after=pause_after,
+                        metadata=metadata,
+                        paragraph=resolved_paragraph,
+                        sentence=resolved_sentence,
+                    )
+                )
+    return pykokoro_segments
+
+
 def _parse_break_time(time: str) -> float | None:
     match = BREAK_TIME_RE.match(time)
     if not match:
@@ -370,128 +647,83 @@ def parse_ssmd_to_segments(
     """
     # Convert shorthand language annotations like [Bonjour](fr)
     text = LANG_SHORTHAND_RE.sub(r'[\1]{lang="\2"}', text)
+    expected_breaks = _scan_break_markers(
+        text,
+        pause_none=pause_none,
+        pause_weak=pause_weak,
+        pause_clause=pause_clause,
+        pause_sentence=pause_sentence,
+        pause_paragraph=pause_paragraph,
+    )
 
     # Use SSMD's parse_paragraphs to get structured data
     # Enable heading detection for markdown-style headings (# ## ###)
     caps = TTSCapabilities()
     caps.heading_emphasis = True
 
-    paragraphs = parse_paragraphs(
-        text,
-        sentence_detection=True,
-        language=lang,
-        capabilities=caps,
-        model_size=model_size,
-        use_spacy=use_spacy,
-        heading_levels=heading_levels,
-        parse_yaml_header=parse_yaml_header,
-    )
+    def parse_with_spacy(use_spacy_override: bool | None):
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=(
+                    "Importing 'parser.split_arg_string' is deprecated, "
+                    "it will only be available in 'shell_completion' in Click 9.0."
+                ),
+                category=DeprecationWarning,
+            )
+            return parse_paragraphs(
+                text,
+                sentence_detection=True,
+                language=lang,
+                capabilities=caps,
+                model_size=model_size,
+                use_spacy=use_spacy_override,
+                heading_levels=heading_levels,
+                parse_yaml_header=parse_yaml_header,
+            )
 
+    paragraphs = parse_with_spacy(use_spacy)
     if not paragraphs:
         return 0.0, []
 
-    pykokoro_segments = []
-    initial_pause = 0.0
-
-    sentence_counter = 0
-
-    for paragraph_idx, paragraph in enumerate(paragraphs):
-        for sentence in paragraph.sentences:
-            # Extract voice context for this sentence
-            voice_metadata = SSMDMetadata()
-            if sentence.voice:
-                voice_metadata.voice_name = sentence.voice.name
-                voice_metadata.voice_language = sentence.voice.language
-                voice_metadata.voice_gender = sentence.voice.gender
-                voice_metadata.voice_variant = (
-                    str(sentence.voice.variant) if sentence.voice.variant else None
-                )
-
-            resolved_paragraph = getattr(sentence, "paragraph_index", paragraph_idx)
-            resolved_sentence = getattr(sentence, "sentence_index", None)
-            if resolved_sentence is None:
-                resolved_sentence = sentence_counter
-                sentence_counter += 1
-            else:
-                sentence_counter = max(sentence_counter, resolved_sentence + 1)
-
-            # Process each segment in sentence
-            for seg_idx, ssmd_seg in enumerate(sentence.segments):
-                # Determine language for this segment
-                # Priority: segment lang > sentence lang > default
-                segment_lang = ssmd_seg.language or lang
-
-                # Map SSMD segment to PyKokoro metadata
-                seg_text, metadata = _map_ssmd_segment_to_metadata(
-                    ssmd_seg, segment_lang
-                )
-
-                # Apply voice context if segment doesn't have its own voice
-                if not metadata.voice_name and voice_metadata.voice_name:
-                    metadata.voice_name = voice_metadata.voice_name
-                    metadata.voice_language = voice_metadata.voice_language
-                    metadata.voice_gender = voice_metadata.voice_gender
-                    metadata.voice_variant = voice_metadata.voice_variant
-
-                # Calculate pause before this segment (for headings)
-                pause_before = 0.0
-
-                # Check for breaks before this segment
-                if ssmd_seg.breaks_before:
-                    # Use the last break if multiple
-                    last_break = ssmd_seg.breaks_before[-1]
-                    pause_before = _convert_break_strength_to_duration(
-                        last_break.strength,
-                        last_break.time,
+    pykokoro_segments = _build_segments_from_paragraphs(
+        paragraphs,
+        lang=lang,
+        pause_none=pause_none,
+        pause_weak=pause_weak,
+        pause_clause=pause_clause,
+        pause_sentence=pause_sentence,
+        pause_paragraph=pause_paragraph,
+    )
+    expected_nonzero = [duration for duration in expected_breaks if duration > 0]
+    if expected_nonzero:
+        actual_durations = _collect_pause_durations(pykokoro_segments)
+        if not _breaks_satisfied(expected_nonzero, actual_durations):
+            if use_spacy is not False:
+                fallback_paragraphs = parse_with_spacy(False)
+                if fallback_paragraphs:
+                    fallback_segments = _build_segments_from_paragraphs(
+                        fallback_paragraphs,
+                        lang=lang,
                         pause_none=pause_none,
                         pause_weak=pause_weak,
                         pause_clause=pause_clause,
                         pause_sentence=pause_sentence,
                         pause_paragraph=pause_paragraph,
                     )
+                    fallback_durations = _collect_pause_durations(fallback_segments)
+                    if _breaks_satisfied(expected_nonzero, fallback_durations):
+                        return 0.0, fallback_segments
+            logger.warning(
+                "SSMD parser dropped explicit breaks; using fallback parser."
+            )
+            return _fallback_break_segments(
+                text,
+                pause_none=pause_none,
+                pause_weak=pause_weak,
+                pause_clause=pause_clause,
+                pause_sentence=pause_sentence,
+                pause_paragraph=pause_paragraph,
+            )
 
-                # Calculate pause after this segment
-                pause_after = 0.0
-
-                # Check for breaks after this segment
-                if ssmd_seg.breaks_after:
-                    # Use the last break if multiple
-                    last_break = ssmd_seg.breaks_after[-1]
-                    pause_after = _convert_break_strength_to_duration(
-                        last_break.strength,
-                        last_break.time,
-                        pause_none=pause_none,
-                        pause_weak=pause_weak,
-                        pause_clause=pause_clause,
-                        pause_sentence=pause_sentence,
-                        pause_paragraph=pause_paragraph,
-                    )
-
-                # If this is the last segment in the sentence,
-                # check sentence-level breaks
-                if seg_idx == len(sentence.segments) - 1 and sentence.breaks_after:
-                    last_break = sentence.breaks_after[-1]
-                    sentence_pause = _convert_break_strength_to_duration(
-                        last_break.strength,
-                        last_break.time,
-                        pause_none=pause_none,
-                        pause_weak=pause_weak,
-                        pause_clause=pause_clause,
-                        pause_sentence=pause_sentence,
-                        pause_paragraph=pause_paragraph,
-                    )
-                    pause_after = max(pause_after, sentence_pause)
-
-                # Create PyKokoro SSMDSegment with paragraph tracking
-                pykokoro_segments.append(
-                    SSMDSegment(
-                        text=seg_text,
-                        pause_before=pause_before,
-                        pause_after=pause_after,
-                        metadata=metadata,
-                        paragraph=resolved_paragraph,
-                        sentence=resolved_sentence,
-                    )
-                )
-
-    return initial_pause, pykokoro_segments
+    return 0.0, pykokoro_segments

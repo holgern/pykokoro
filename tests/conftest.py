@@ -1,5 +1,6 @@
 """Pytest configuration and fixtures for pykokoro tests."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +11,8 @@ if str(ROOT) not in sys.path:
 
 def pytest_configure(config):
     """Print diagnostic information at test session start."""
+    if os.getenv("PYKOKORO_TEST_DIAGNOSTICS") != "1":
+        return
     print("\n" + "=" * 70, file=sys.stderr)
     print("PYKOKORO TEST DIAGNOSTICS", file=sys.stderr)
     print("=" * 70, file=sys.stderr)

@@ -3,15 +3,12 @@
 import json
 import platform
 import sys
-import warnings
 from pathlib import Path
 from typing import Any
 
 from platformdirs import user_cache_dir, user_config_dir
 
 from .constants import DEFAULT_CONFIG
-
-warnings.filterwarnings("ignore")
 
 # Default encoding for subprocess
 DEFAULT_ENCODING = sys.getfilesystemencoding()

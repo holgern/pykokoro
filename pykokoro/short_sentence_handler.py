@@ -23,8 +23,6 @@ if TYPE_CHECKING:
     from .types import PhonemeSegment
 
 logger = logging.getLogger(__name__)
-# Enable debug logging for this module
-logger.setLevel(logging.DEBUG)
 
 
 @dataclass
