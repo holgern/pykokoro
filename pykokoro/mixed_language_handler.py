@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Sequence, cast
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, cast
 
 import kokorog2p as _kokorog2p
 from kokorog2p.multilang import preprocess_multilang
@@ -166,21 +167,16 @@ class MixedLanguageHandler:
         except (TypeError, ValueError):
             pass
 
+        kwargs: dict[str, Any] = {
+            "text": text,
+            "default_language": kokorog2p_primary,
+            "allowed_languages": allowed_langs,
+            "confidence_threshold": self.config.mixed_language_confidence,
+        }
         if supports_markdown:
-            overrides = preprocess_func(
-                text,
-                default_language=kokorog2p_primary,
-                allowed_languages=allowed_langs,
-                confidence_threshold=self.config.mixed_language_confidence,
-                markdown_syntax="ssmd",
-            )
-        else:
-            overrides = preprocess_func(
-                text,
-                default_language=kokorog2p_primary,
-                allowed_languages=allowed_langs,
-                confidence_threshold=self.config.mixed_language_confidence,
-            )
+            kwargs["markdown_syntax"] = "ssmd"
+
+        overrides = preprocess_func(**kwargs)
 
         typed_overrides = cast("str | list[OverrideSpan]", overrides)
         if isinstance(typed_overrides, str):

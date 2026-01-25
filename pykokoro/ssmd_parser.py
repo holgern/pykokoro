@@ -21,8 +21,9 @@ from __future__ import annotations
 import logging
 import re
 import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ssmd import SSMDSegment as SSMDParserSegment

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from ...pipeline_config import PipelineConfig
 from ...ssmd_parser import (
