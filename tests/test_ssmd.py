@@ -1,7 +1,5 @@
 """Tests for SSMD (Speech Synthesis Markdown) integration in pykokoro."""
 
-import pytest
-
 
 class TestSSMDDetection:
     """Tests for SSMD markup detection."""
@@ -227,20 +225,11 @@ def test_ssmd_parser_keeps_ellipsis_text():
 class TestSSMDVoiceSwitching:
     """Tests for per-segment voice switching functionality."""
 
-    @pytest.mark.xfail(
-        reason="SSMD voice directives are not parsed (see bugreport_ssmd.md).",
-        strict=True,
-    )
     def test_parse_ssmd_with_voice_creates_metadata(self):
-        """Test that parsing SSMD text with voice creates proper metadata.
-
-        The SSMD library's parse_paragraphs() function does not properly parse
-        voice directives in the current version.
-        """
+        """Test that parsing SSMD text with voice creates proper metadata."""
         from pykokoro.ssmd_parser import parse_ssmd_to_segments
 
         # Test 1: Block directives (<div voice="name">)
-        # Currently this doesn't work - SSMD treats directives as raw text
         text = (
             '<div voice="af_sarah">Hello ...s</div>\n\n'
             '<div voice="am_michael">World</div>'
@@ -250,40 +239,11 @@ class TestSSMDVoiceSwitching:
         assert any(seg.metadata.voice_name == "af_sarah" for seg in segments)
         assert any(seg.metadata.voice_name == "am_michael" for seg in segments)
 
-    @pytest.mark.xfail(
-        reason="SSMD voice directives are not parsed (see bugreport_ssmd.md).",
-        strict=True,
-    )
     def test_parse_ssmd_with_inline_voice_annotations(self):
-        """Test that inline voice annotations work.
-
-        The SSMD library's parse_paragraphs() function does not properly parse
-        voice annotations in the current version.
-        """
+        """Test that inline voice annotations work."""
         from pykokoro.ssmd_parser import parse_ssmd_to_segments
 
         # Test 2: Inline voice annotations ([text](voice: name))
-        # Currently this doesn't work - SSMD treats annotations as raw text
-        text = "[Hello]{voice='af_sarah'} ...s\n\n[World]{voice='am_michael'}"
-        initial_pause, segments = parse_ssmd_to_segments(text)
-
-        assert any(seg.metadata.voice_name == "af_sarah" for seg in segments)
-        assert any(seg.metadata.voice_name == "am_michael" for seg in segments)
-
-    @pytest.mark.xfail(
-        reason="SSMD voice directives are not parsed (see bugreport_ssmd.md).",
-        strict=True,
-    )
-    def test_inline_voice_annotations(self):
-        """Test that inline voice annotations work.
-
-        The SSMD library's parse_paragraphs() function does not properly parse
-        voice annotations in the current version.
-        """
-        from pykokoro.ssmd_parser import parse_ssmd_to_segments
-
-        # Test 2: Inline voice annotations ([text](voice: name))
-        # Currently this doesn't work - SSMD treats annotations as raw text
         text = "[Hello]{voice='af_sarah'} ...s\n\n[World]{voice='am_michael'}"
         initial_pause, segments = parse_ssmd_to_segments(text)
 

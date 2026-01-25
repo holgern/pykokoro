@@ -9,7 +9,7 @@ rich markup syntax for TTS generation including:
 - Phonetic pronunciation: [tomato](ph: təˈmeɪtoʊ)
 - Substitution: [H2O](sub: water)
 - Say-as: [123](as: cardinal), [3rd](as: ordinal), [+1-555-0123](as: telephone)
-- Voice markers: @voice: name
+- Voice directives: <div voice="name"> ... </div> and [text]{voice="name"}
 - Markers: @marker_name
 
 This module uses SSMD's parse_paragraphs() API to extract structured data
@@ -70,6 +70,7 @@ BREAK_MARKER_RE = re.compile(
     r"(?=(?:\s|$|[\"'\)\]\}.,!?]))",
     re.IGNORECASE,
 )
+DIV_TAG_RE = re.compile(r"</?div\b[^>]*>", re.IGNORECASE)
 
 DEFAULT_PAUSE_NONE = 0.0
 DEFAULT_PAUSE_WEAK = 0.15
@@ -203,6 +204,17 @@ def has_ssmd_markup(text: str) -> bool:
             return True
 
     return False
+
+
+def _normalize_div_directives(text: str) -> str:
+    if "<div" not in text.lower():
+        return text
+
+    def _add_linebreaks(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        return f"\n{tag}\n"
+
+    return DIV_TAG_RE.sub(_add_linebreaks, text)
 
 
 def _convert_break_strength_to_duration(
@@ -597,6 +609,15 @@ def _map_ssmd_segment_to_metadata(
     if ssmd_seg.language:
         metadata.language = ssmd_seg.language
 
+    # Voice (inline annotations)
+    if ssmd_seg.voice:
+        metadata.voice_name = ssmd_seg.voice.name
+        metadata.voice_language = ssmd_seg.voice.language
+        metadata.voice_gender = ssmd_seg.voice.gender
+        metadata.voice_variant = (
+            str(ssmd_seg.voice.variant) if ssmd_seg.voice.variant is not None else None
+        )
+
     # Prosody
     if ssmd_seg.prosody:
         metadata.prosody_volume = ssmd_seg.prosody.volume
@@ -666,6 +687,8 @@ def parse_ssmd_to_segments(
         ...     "@voice: sarah\\nHello!\\n\\n@voice: michael\\nWorld!",
         ... )
     """
+    text = _normalize_div_directives(text)
+
     # Convert shorthand language annotations like [Bonjour](fr)
     text = LANG_SHORTHAND_RE.sub(r'[\1]{lang="\2"}', text)
     expected_breaks = _scan_break_markers(

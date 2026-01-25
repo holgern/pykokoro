@@ -1,31 +1,21 @@
-import numpy as np
+from typing import Any
 
-import pykokoro.onnx_backend as onnx_backend
-import pykokoro.pipeline as pipeline
+import numpy as np
+import pytest
+
 from pykokoro.pipeline import KokoroPipeline
 from pykokoro.pipeline_config import PipelineConfig
-from pykokoro.stages.protocols import DocumentResult
-from pykokoro.types import PhonemeSegment, Segment, Trace
+from pykokoro.stages.audio_generation.onnx import OnnxAudioGenerationAdapter
+from pykokoro.stages.audio_postprocessing.onnx import OnnxAudioPostprocessingAdapter
+from pykokoro.stages.phoneme_processing.onnx import OnnxPhonemeProcessorAdapter
+from pykokoro.types import PhonemeSegment
 
 
-class DummyDocumentParser:
-    def parse(self, text: str, cfg: PipelineConfig, trace: Trace) -> DocumentResult:
-        _ = cfg, trace
-        segment = Segment(
-            id="seg_0",
-            text=text,
-            char_start=0,
-            char_end=len(text),
-            paragraph_idx=0,
-            sentence_idx=0,
-            clause_idx=0,
-        )
-        return DocumentResult(clean_text=text, segments=[segment])
-
-
-class DummyG2P:
-    def phonemize(self, segments, doc, cfg: PipelineConfig, trace: Trace):
-        _ = doc, trace
+class DummyG2PAdapter:
+    def phonemize(self, segments, doc, cfg, trace):
+        _ = doc
+        _ = cfg
+        _ = trace
         out = []
         for segment in segments:
             out.append(
@@ -34,7 +24,7 @@ class DummyG2P:
                     segment_id=segment.id,
                     phoneme_id=0,
                     text=segment.text,
-                    phonemes="a",
+                    phonemes="test",
                     tokens=[1],
                     lang=cfg.generation.lang,
                     char_start=segment.char_start,
@@ -47,75 +37,93 @@ class DummyG2P:
         return out
 
 
-def _patch_kokoro(monkeypatch):
-    created: list[object] = []
-    closed: list[object] = []
+class DummyKokoro:
+    def __init__(self, *args, **kwargs) -> None:
+        _ = args
+        _ = kwargs
+        self.close_calls = 0
 
-    class FakeKokoro:
-        def __init__(self, **kwargs):
-            _ = kwargs
-            created.append(self)
+    def close(self) -> None:
+        self.close_calls += 1
 
-        def close(self) -> None:
-            closed.append(self)
+    def preprocess_segments(self, phoneme_segments, enable_short_sentence):
+        _ = enable_short_sentence
+        return phoneme_segments
 
-    class FakePhonemeProcessor:
-        def __init__(self, kokoro):
-            self._kokoro = kokoro
+    def resolve_voice_style(self, voice):
+        _ = voice
+        return np.zeros((1, 1), dtype=np.float32)
 
-        def process(self, phoneme_segments, cfg, trace):
-            _ = cfg, trace
-            return phoneme_segments
+    def get_voice_style(self, voice_name: str):
+        _ = voice_name
+        return np.zeros((1, 1), dtype=np.float32)
 
-    class FakeAudioGenerator:
-        def __init__(self, kokoro):
-            self._kokoro = kokoro
+    def generate_raw_audio_segments(
+        self, phoneme_segments, voice_style, speed, voice_resolver
+    ):
+        _ = voice_style
+        _ = speed
+        _ = voice_resolver
+        return phoneme_segments
 
-        def generate(self, phoneme_segments, cfg, trace):
-            _ = cfg, trace
-            return phoneme_segments
+    def postprocess_audio_segments(self, phoneme_segments, trim_silence):
+        _ = trim_silence
+        return phoneme_segments
 
-    class FakeAudioPostprocessor:
-        def __init__(self, kokoro):
-            self._kokoro = kokoro
+    def concatenate_audio_segments(self, processed):
+        _ = processed
+        return np.zeros(1, dtype=np.float32)
 
-        def postprocess(self, phoneme_segments, cfg, trace):
-            _ = phoneme_segments, cfg, trace
-            return np.zeros(1, dtype=np.float32)
 
-    monkeypatch.setattr(onnx_backend, "Kokoro", FakeKokoro)
-    monkeypatch.setattr(pipeline, "OnnxPhonemeProcessorAdapter", FakePhonemeProcessor)
-    monkeypatch.setattr(pipeline, "OnnxAudioGenerationAdapter", FakeAudioGenerator)
-    monkeypatch.setattr(
-        pipeline, "OnnxAudioPostprocessingAdapter", FakeAudioPostprocessor
+def test_pipeline_context_manager_closes_kokoro(monkeypatch):
+    instances = []
+
+    class TrackingKokoro(DummyKokoro):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            instances.append(self)
+
+    monkeypatch.setattr("pykokoro.onnx_backend.Kokoro", TrackingKokoro)
+
+    pipeline = KokoroPipeline(PipelineConfig(voice="af"), g2p=DummyG2PAdapter())
+    with pipeline as active:
+        active.run("Hello")
+
+    assert instances
+    assert instances[0].close_calls == 1
+
+
+def test_pipeline_context_manager_closes_on_exception(monkeypatch):
+    instances = []
+
+    class TrackingKokoro(DummyKokoro):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            instances.append(self)
+
+    monkeypatch.setattr("pykokoro.onnx_backend.Kokoro", TrackingKokoro)
+
+    with pytest.raises(RuntimeError):
+        with KokoroPipeline(
+            PipelineConfig(voice="af"), g2p=DummyG2PAdapter()
+        ) as active:
+            active.run("Hello")
+            raise RuntimeError("boom")
+
+    assert instances
+    assert instances[0].close_calls == 1
+
+
+def test_pipeline_does_not_close_external_kokoro():
+    shared: Any = DummyKokoro()
+    pipeline = KokoroPipeline(
+        PipelineConfig(voice="af"),
+        g2p=DummyG2PAdapter(),
+        phoneme_processing=OnnxPhonemeProcessorAdapter(shared),
+        audio_generation=OnnxAudioGenerationAdapter(shared),
+        audio_postprocessing=OnnxAudioPostprocessingAdapter(shared),
     )
+    pipeline.run("Hello")
+    pipeline.close()
 
-    return created, closed
-
-
-def test_pipeline_close_idempotent(monkeypatch):
-    created, closed = _patch_kokoro(monkeypatch)
-    cfg = PipelineConfig()
-    pipeline_instance = KokoroPipeline(
-        cfg, doc_parser=DummyDocumentParser(), g2p=DummyG2P()
-    )
-
-    pipeline_instance.run("Hello")
-    pipeline_instance.run("World")
-
-    assert len(created) == 1
-
-    pipeline_instance.close()
-    pipeline_instance.close()
-
-    assert len(closed) == 1
-
-
-def test_pipeline_context_manager_closes(monkeypatch):
-    created, closed = _patch_kokoro(monkeypatch)
-    cfg = PipelineConfig()
-    with KokoroPipeline(cfg, doc_parser=DummyDocumentParser(), g2p=DummyG2P()) as pipe:
-        pipe.run("Hello")
-
-    assert len(created) == 1
-    assert len(closed) == 1
+    assert shared.close_calls == 0

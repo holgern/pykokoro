@@ -12,8 +12,13 @@ if TYPE_CHECKING:
 
 
 class OnnxAudioPostprocessingAdapter:
-    def __init__(self, kokoro: Kokoro) -> None:
+    def __init__(self, kokoro: Kokoro, *, owns_kokoro: bool = False) -> None:
         self._kokoro = kokoro
+        self._owns_kokoro = owns_kokoro
+
+    def close(self) -> None:
+        if self._owns_kokoro:
+            self._kokoro.close()
 
     def postprocess(
         self,

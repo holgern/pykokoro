@@ -3,8 +3,8 @@
 This module provides utilities for loading and applying custom phoneme dictionaries
 that override default G2P conversions with user-specified phoneme representations.
 
-The phoneme dictionary uses kokorog2p's markdown-style syntax: [word](/phoneme/)
-This format is recognized by kokorog2p during phonemization.
+The phoneme dictionary uses SSMD annotation syntax: [word]{ph="phoneme"}
+This format is parsed into annotation spans and applied during phonemization.
 
 Dictionary entries are applied to text BEFORE SSMD parsing and phonemization,
 so SSMD markup in the input text is preserved and processed normally.
@@ -20,12 +20,16 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def _format_ph_override(word: str, phoneme: str) -> str:
+    return f'[{word}]{{ph="{phoneme}"}}'
+
+
 class PhonemeDictionary:
     """Manages custom phoneme dictionary loading and application.
 
     A phoneme dictionary allows users to specify custom phoneme representations
     for specific words, overriding the default G2P output. Entries are applied
-    using kokorog2p's markdown format: [word](/phoneme/)
+    using SSMD annotation syntax: [word]{ph="phoneme"}
 
     Example dictionary JSON format:
     {
@@ -44,8 +48,8 @@ class PhonemeDictionary:
         "complex_word": "kəmˈplɛks wɜːrd"
     }
 
-    Note: Phonemes in JSON should NOT include /slashes/. The slashes are
-    added automatically when applying to text in kokorog2p format.
+    Note: Phonemes in JSON should NOT include /slashes/. Phonemes are inserted
+    directly into SSMD annotations when applying overrides.
     """
 
     def __init__(
@@ -69,8 +73,7 @@ class PhonemeDictionary:
         """Load custom phoneme dictionary from JSON file.
 
         Phonemes can be specified with or without /slashes/. The slashes
-        are automatically stripped and the appropriate format is applied
-        during text processing based on use_ssmd_format setting.
+        are automatically stripped before applying SSMD annotations.
 
         Args:
             path: Path to JSON file containing phoneme mappings
@@ -139,7 +142,7 @@ class PhonemeDictionary:
     def apply(self, text: str) -> str:
         """Apply custom phoneme dictionary to text.
 
-        Replaces words with ssmd phoneme notation: [word]{ph="phoneme"}
+        Replaces words with SSMD phoneme notation: [word]{ph="phoneme"}
 
         Args:
             text: Input text
@@ -153,22 +156,35 @@ class PhonemeDictionary:
         result = text
         flags = 0 if self.case_sensitive else re.IGNORECASE
 
+        boundary_chars = r"[\w'-]"
+        separator_pattern = r"(?:\s+|-)"
+
         # Sort by length (longest first) to handle multi-word entries correctly
         sorted_words = sorted(
             self._dictionary.items(), key=lambda x: len(x[0]), reverse=True
         )
 
         for word, phoneme in sorted_words:
-            # Create regex pattern with word boundaries
-            # Use re.escape to handle special characters in the word
-            pattern = r"\b" + re.escape(word) + r"\b"
+            word_key = word.strip()
+            if not word_key:
+                continue
 
-            # Replace with markdown format: [word](/phoneme/)
-            # Keep the slashes - kokorog2p requires them to recognize custom phonemes
-            # Use a replacement function to preserve the original case
+            # Create regex pattern with custom boundaries. Treat hyphens/apostrophes as
+            # word characters so we do not match inside hyphenated words.
+            if re.search(r"\s", word_key):
+                parts = [re.escape(part) for part in re.split(r"\s+", word_key) if part]
+                if not parts:
+                    continue
+                core = separator_pattern.join(parts)
+            else:
+                core = re.escape(word_key)
+            pattern = rf"(?<!{boundary_chars}){core}(?!{boundary_chars})"
+
+            # Replace with SSMD annotation format. Use a replacement function to
+            # preserve the original case and matched punctuation.
             def replace_func(match: re.Match[str], p: str = phoneme) -> str:
                 matched_word = match.group(0)
-                return f'[{matched_word}]\\{{ph="{p}"}}'
+                return _format_ph_override(matched_word, p)
 
             result = re.sub(pattern, replace_func, result, flags=flags)
 

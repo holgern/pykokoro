@@ -37,6 +37,7 @@ def make_g2p_key(
     *,
     text: str,
     lang: str,
+    is_phonemes: bool,
     tokenizer_config: dict[str, Any] | None,
     phoneme_override: str | None,
     kokorog2p_version: str | None = None,
@@ -48,6 +49,7 @@ def make_g2p_key(
         {
             "text": text,
             "lang": lang,
+            "is_phonemes": is_phonemes,
             "tokenizer_config": tokenizer_config,
             "phoneme_override": phoneme_override,
             "kokorog2p_version": kokorog2p_version,

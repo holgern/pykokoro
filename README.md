@@ -385,6 +385,26 @@ audio = res.audio
 See `examples/pauses_demo.py`, `examples/pauses_with_splitting.py`, and
 `examples/automatic_pauses_demo.py` for complete examples.
 
+### Voice Switching (SSMD)
+
+You can switch voices per segment using SSMD directives. Block directives use
+`<div voice="...">` while inline annotations use `[text]{voice="..."}`.
+
+```python
+text = (
+    '<div voice="af_sarah">Hello there.</div>\n\n'
+    '<div voice="am_michael">General Kenobi.</div>'
+)
+
+pipe = KokoroPipeline(PipelineConfig(voice="af"))
+res = pipe.run(text)
+```
+
+```python
+text = "[Hello]{voice='af_sarah'} ...s [World]{voice='am_michael'}"
+res = pipe.run(text)
+```
+
 ### Text Normalization (Say-As)
 
 PyKokoro supports automatic text normalization using SSMD (Speech Synthesis Markdown)

@@ -77,6 +77,7 @@ class KokoroG2PAdapter(G2PAdapter):
             cache_key = make_g2p_key(
                 text=segment.text,
                 lang=lang,
+                is_phonemes=generation.is_phonemes,
                 tokenizer_config=asdict(cfg.tokenizer_config)
                 if cfg.tokenizer_config
                 else None,

@@ -79,19 +79,22 @@ class KokoroPipeline:
         self.close()
 
     def close(self) -> None:
+        if self._owns_phoneme_processing:
+            self._close_stage(self.phoneme_processing)
+            self.phoneme_processing = None
+            self._owns_phoneme_processing = False
+        if self._owns_audio_generation:
+            self._close_stage(self.audio_generation)
+            self.audio_generation = None
+            self._owns_audio_generation = False
+        if self._owns_audio_postprocessing:
+            self._close_stage(self.audio_postprocessing)
+            self.audio_postprocessing = None
+            self._owns_audio_postprocessing = False
         if self._kokoro is not None and self._owns_kokoro:
             self._kokoro.close()
         self._kokoro = None
         self._kokoro_config_key = None
-        if self._owns_phoneme_processing:
-            self.phoneme_processing = None
-            self._owns_phoneme_processing = False
-        if self._owns_audio_generation:
-            self.audio_generation = None
-            self._owns_audio_generation = False
-        if self._owns_audio_postprocessing:
-            self.audio_postprocessing = None
-            self._owns_audio_postprocessing = False
 
     def _kokoro_key(self, cfg: PipelineConfig) -> tuple[object, ...]:
         model_path = str(cfg.model_path) if cfg.model_path else None
@@ -109,6 +112,14 @@ class KokoroPipeline:
             cfg.espeak_config,
             cfg.short_sentence_config,
         )
+
+    @staticmethod
+    def _close_stage(stage: object | None) -> None:
+        if stage is None:
+            return
+        close = getattr(stage, "close", None)
+        if callable(close):
+            close()
 
     def _ensure_kokoro(self, cfg: PipelineConfig) -> tuple[Kokoro, bool]:
         kokoro_key = self._kokoro_key(cfg)
