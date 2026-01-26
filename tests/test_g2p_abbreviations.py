@@ -23,9 +23,9 @@ def _normalize_abbreviation(token_text: str) -> str:
 
 
 def test_kokorog2p_abbreviations_have_phonemes():
-    result = kokorog2p.phonemize_to_result(
+    result = kokorog2p.phonemize(
         TEXT,
-        lang="en-us",
+        language="en-us",
         return_phonemes=True,
         return_ids=True,
     )
@@ -47,6 +47,23 @@ def test_kokorog2p_abbreviations_have_phonemes():
             pytest.xfail(
                 "kokorog2p does not emit phonemes for Ms./and with punctuation"
             )
+
+
+def test_kokorog2p_punctuation():
+    result = kokorog2p.phonemize(
+        "Hello, World! I like you . . .",
+        language="en-us",
+        return_phonemes=True,
+        return_ids=True,
+    )
+
+    tokens = getattr(result, "tokens", [])
+    phonemes = getattr(result, "phonemes", [])
+    assert tokens
+    assert "! " in phonemes
+    assert "…" in phonemes
+    assert "," in phonemes
+    assert ", " not in phonemes
 
 
 def test_kokorog2p_adapter_no_abbreviation_warnings():

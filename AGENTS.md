@@ -1,7 +1,7 @@
 # Agent Guide for pykokoro
 
-This file is for coding agents working in this repository.
-It summarizes how to build, test, lint, and follow the project's coding style.
+This file is for coding agents working in this repository. It summarizes how to build,
+test, lint, and follow the project's coding style.
 
 No Cursor or Copilot instruction files were found in this repo.
 
@@ -15,7 +15,7 @@ No Cursor or Copilot instruction files were found in this repo.
 ## Environment setup
 
 - Python: 3.10+ (see `pyproject.toml`)
-- Install editable: 
+- Install editable:
   - `uv pip install -e .` (runtime only)
 
 ## Test commands
@@ -49,8 +49,8 @@ Ruff and mypy are configured in `pyproject.toml`. Pre-commit is configured in
 - pre-commit:
   - `pre-commit run --all-files`
 
-There is no dedicated formatter configured; follow existing style and Ruff
-line-length (100).
+There is no dedicated formatter configured; follow existing style and Ruff line-length
+(100).
 
 ## Code style guidelines
 
@@ -73,8 +73,8 @@ line-length (100).
 - Use type hints on public functions/classes and key internal helpers.
 - Use `dataclasses` for simple data containers.
 - Use `| None` and `list[str]` style annotations (Python 3.10+).
-- Follow mypy config: incomplete defs disallowed, but fully untyped defs are
-  allowed when integration with third-party libs makes typing noisy.
+- Follow mypy config: incomplete defs disallowed, but fully untyped defs are allowed
+  when integration with third-party libs makes typing noisy.
 
 ### Naming conventions
 
@@ -125,6 +125,7 @@ line-length (100).
 ## Common workflows
 
 - Update a document parser/segmentation or g2p behavior:
+
   - Adjust stage in `pykokoro/stages/...`
   - Add or update regression tests in `tests/`
   - Run `python -m pytest tests/<file>.py`

@@ -12,9 +12,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import kokorog2p as _kokorog2p
+from kokorog2p import phonemize
 from kokorog2p.base import G2PBase
 
-from .constants import MAX_PHONEME_LENGTH, SUPPORTED_LANGUAGES
+from .constants import MAX_PHONEME_LENGTH
 from .mixed_language_handler import MixedLanguageHandler
 from .phoneme_dictionary import PhonemeDictionary
 
@@ -60,7 +61,7 @@ class TokenizerConfig:
             Format: {"word": "/phoneme/"} where phonemes are in IPA format.
         phoneme_dict_case_sensitive: Whether phoneme dictionary matching should
             be case-sensitive (default: False).
-        backend: Phonemization backend: "espeak" (default) or "goruut".
+        backend: Phonemization backend: "kokorog2p" (default), "espeak") or "goruut".
             Requires pygoruut for goruut backend. Raises ImportError if unavailable.
         load_gold: Load gold-tier dictionary (~170k common words). Only applies
             to languages with dictionaries (English, French, German). Default: True.
@@ -80,7 +81,7 @@ class TokenizerConfig:
     phoneme_dict_case_sensitive: bool = False
 
     # Backend configuration
-    backend: BackendType = "espeak"
+    backend: BackendType = "kokorog2p"
     load_gold: bool = True
     load_silver: bool = True
 
@@ -345,38 +346,8 @@ class Tokenizer:
         # Apply custom phoneme dictionary first
         processed_text = self._apply_phoneme_dictionary(text)
         g2p = self._get_g2p(lang)
-        phonemes = g2p.phonemize(processed_text)
-
-        # WORKAROUND: kokorog2p 0.3.1 may return empty strings in CI environments
-        # (likely due to dictionary initialization issues). Retry with espeak-only.
-        if not phonemes.strip() and text.strip():
-            logger.warning(
-                f"Phonemization returned empty for non-empty text '{text[:50]}...', "
-                "retrying with espeak-only mode (dictionary disabled)"
-            )
-            # Get the kokorog2p language code
-            kokorog2p_lang = SUPPORTED_LANGUAGES.get(
-                lang.lower(), SUPPORTED_LANGUAGES.get("en-us")
-            )
-            if kokorog2p_lang is None:
-                kokorog2p_lang = "en-us"
-            # Retry with dictionaries disabled (pure espeak mode)
-            g2p_fallback = get_g2p(
-                language=kokorog2p_lang,
-                use_espeak_fallback=True,
-                load_gold=False,  # Skip gold dictionary
-                load_silver=False,  # Skip silver dictionary
-                backend=self.config.backend,
-                version=self._kokorog2p_model,
-                phoneme_quotes="curly",
-            )
-            phonemes = g2p_fallback.phonemize(text)
-            logger.info(f"Espeak-only phonemization result: '{phonemes[:50]}...'")
-
-        # Filter to only characters in vocabulary using variant-specific model
-        phonemes = filter_for_kokoro(phonemes, model=self._kokorog2p_model)
-
-        return phonemes.strip()
+        result = phonemize(processed_text, language=lang, g2p=g2p)
+        return result.phonemes
 
     def phonemize_detailed(
         self,

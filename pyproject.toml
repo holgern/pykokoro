@@ -23,7 +23,7 @@ authors = [
 keywords = ["tts", "text-to-speech", "kokoro", "phonemizer", "espeak"]
 urls = { Homepage = "https://github.com/holgern/pykokoro" }
 dependencies = [
-    "kokorog2p[espeak]>=0.5.4",
+    "kokorog2p[espeak,en]>=0.6.0",
     "phrasplit>=0.3.1",
     "numpy",
     "onnxruntime>=1.17.0",
@@ -70,6 +70,7 @@ gpu = ["onnxruntime-gpu>=1.17.0"]
 openvino = ["onnxruntime-openvino>=1.17.0"]
 directml = ["onnxruntime-directml>=1.17.0"]
 coreml = ["coremltools>=7.0"]
+sounddevice = ["sounddevice"]
 all = [
     "onnxruntime-gpu>=1.17.0",
     "onnxruntime-openvino>=1.17.0",
@@ -77,6 +78,7 @@ all = [
     "coremltools>=7.0",
     "audiomentations>=0.36.0",
     "librosa>=0.10.0",
+    "sounddevice",
 ]
 
 [tool.setuptools_scm]

@@ -142,19 +142,18 @@ class AudioResult:
     trace: Trace | None = None
 
     def save_wav(self, path: str) -> None:
-        """Save 16-bit PCM WAV. Minimal dependency implementation."""
-        import wave
+        import soundfile as sf
 
-        x = self.audio
-        if x.dtype != np.int16:
-            x = np.clip(x, -1.0, 1.0)
-            x = (x * 32767.0).astype(np.int16)
+        sf.write(path, self.audio, self.sample_rate)
 
-        with wave.open(path, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(self.sample_rate)
-            wf.writeframes(x.tobytes())
+    def play(self) -> None:
+        """Play audio in a Jupyter notebook."""
+        try:
+            import sounddevice as sd
+        except ImportError:
+            raise ImportError("sounddevice is required for audio playback") from None
+        sd.play(self.audio, self.sample_rate)
+        sd.wait()
 
 
 # Backward compatibility aliases

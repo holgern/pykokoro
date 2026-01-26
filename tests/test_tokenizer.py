@@ -168,6 +168,17 @@ class TestTokenizer:
         assert len(us_phonemes) > 0
         assert len(gb_phonemes) > 0
 
+    def test_phonemize_with_punctuation(self, tokenizer):
+        """Test phonemization with punctuation."""
+        phonemes = tokenizer.phonemize("Hello, world!")
+        assert isinstance(phonemes, str)
+        assert len(phonemes) > 0
+        assert "!" in phonemes and "," in phonemes  # Punctuation should be handled
+        phonemes = tokenizer.phonemize("Hello . . . world!")
+        assert isinstance(phonemes, str)
+        assert len(phonemes) > 0
+        assert "…" in phonemes and "!" in phonemes  # Punctuation should be handled
+
     def test_phonemize_detailed(self, tokenizer):
         """Test detailed phonemization."""
         result = tokenizer.phonemize_detailed("Hello world")

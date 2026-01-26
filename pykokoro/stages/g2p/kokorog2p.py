@@ -101,9 +101,9 @@ class KokoroG2PAdapter(G2PAdapter):
                     tokens = g2p.phonemes_to_ids(phonemes, model=model_version)
                 else:
                     g2p_instance = self._get_g2p_instance(lang, cfg)
-                    result = g2p.phonemize_to_result(
+                    result = g2p.phonemize(
                         segment.text,
-                        lang=lang,
+                        language=lang,
                         return_phonemes=True,
                         return_ids=True,
                         g2p=g2p_instance,
