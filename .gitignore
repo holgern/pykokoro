@@ -208,3 +208,5 @@ __marimo__/
 pykokoro/_version.py
 
 *.wav
+TASKS.md
+context_pykokoro.md
