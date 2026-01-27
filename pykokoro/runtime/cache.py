@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import secrets
+import time
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -69,6 +70,9 @@ class NullCache:
 
 
 class DiskCache:
+    _replace_retries = 6
+    _replace_backoff = 0.01
+
     def __init__(self, root: Path) -> None:
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
@@ -79,6 +83,16 @@ class DiskCache:
     def _tmp_path(self, key: str) -> Path:
         token = secrets.token_hex(6)
         return self.root / f"{key}.tmp.{os.getpid()}.{token}"
+
+    def _replace_atomic(self, src: Path, dst: Path) -> None:
+        for attempt in range(1, self._replace_retries + 1):
+            try:
+                os.replace(src, dst)
+                return
+            except PermissionError:
+                if attempt >= self._replace_retries:
+                    raise
+                time.sleep(self._replace_backoff * attempt)
 
     def get(self, key: str) -> Any | None:
         p = self._path(key)
@@ -102,7 +116,7 @@ class DiskCache:
                 f.write(payload)
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(tmp_path, p)
+            self._replace_atomic(tmp_path, p)
         finally:
             try:
                 tmp_path.unlink()
