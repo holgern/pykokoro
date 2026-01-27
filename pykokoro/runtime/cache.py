@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import secrets
+import threading
 import time
 from pathlib import Path
 from typing import Any, Protocol
@@ -76,6 +77,7 @@ class DiskCache:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
+        self._write_lock = threading.Lock()
 
     def _path(self, key: str) -> Path:
         return self.root / f"{key}.json"
@@ -116,7 +118,8 @@ class DiskCache:
                 f.write(payload)
                 f.flush()
                 os.fsync(f.fileno())
-            self._replace_atomic(tmp_path, p)
+            with self._write_lock:
+                self._replace_atomic(tmp_path, p)
         finally:
             try:
                 tmp_path.unlink()
