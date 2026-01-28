@@ -55,7 +55,7 @@ ModelSource = Literal["huggingface", "github"]
 DEFAULT_MODEL_SOURCE: ModelSource = "huggingface"
 
 # Model variant type (for GitHub and HuggingFace sources)
-ModelVariant = Literal["v1.0", "v1.1-zh"]
+ModelVariant = Literal["v1.0", "v1.1-zh", "v1.1-de"]
 DEFAULT_MODEL_VARIANT: ModelVariant = "v1.0"
 
 # Quality to filename mapping (Hugging Face)
@@ -83,6 +83,12 @@ MODEL_QUALITY_FILES_GITHUB_V1_1_ZH: dict[str, str] = {
     "fp32": "kokoro-v1.1-zh.onnx",
 }
 
+MODEL_QUALITY_FILES_GITHUB_V1_1_DE: dict[str, str] = {
+    "fp32": "kokoro-german-v1.1.onnx",
+    "q8": "kokoro-german-v1.1.int8.onnx",
+}
+
+
 # Note: Both HF v1.0 and v1.1-zh use the same filename convention
 # (MODEL_QUALITY_FILES_HF)
 
@@ -96,6 +102,7 @@ HF_REPO_V1_1_ZH = "onnx-community/Kokoro-82M-v1.1-zh-ONNX"
 # HuggingFace repositories for configs (hexgrad)
 HF_CONFIG_REPO_V1_0 = "hexgrad/Kokoro-82M"
 HF_CONFIG_REPO_V1_1_ZH = "hexgrad/Kokoro-82M-v1.1-zh"
+HF_CONFIG_REPO_V1_1_DE = "Tundragoon/Kokoro-German"
 
 # Subfolders and filenames within HuggingFace repos
 HF_MODEL_SUBFOLDER = "onnx"
@@ -119,11 +126,11 @@ GITHUB_BASE_URL_V1_1_ZH = (
 )
 GITHUB_VOICES_FILENAME_V1_1_ZH = "voices-v1.1-zh.bin"
 
-# Backward compatibility
-GITHUB_RELEASE_TAG = GITHUB_RELEASE_TAG_V1_0
-GITHUB_BASE_URL = GITHUB_BASE_URL_V1_0
-GITHUB_VOICES_FILENAME = GITHUB_VOICES_FILENAME_V1_0
+GITHUB_REPO_GERMAN = "holgern/kokoro-onnx-model"
+GITHUB_RELEASE_TAG_V1_1_DE = "model-files-german-v1.1"
+GITHUB_BASE_URL_V1_1_DE = f"https://github.com/{GITHUB_REPO_GERMAN}/releases/download/{GITHUB_RELEASE_TAG_V1_1_DE}"
 
+GITHUB_VOICES_FILENAME_V1_1_DE = "voices-german-v1.1.bin"
 # All available voice names for v1.0 (54 voices - English/multilingual)
 # Used by both HuggingFace and GitHub sources
 # These are used for downloading individual voice files from HuggingFace
@@ -313,8 +320,7 @@ VOICE_NAMES_V1_1_ZH = [
     "zm_100",
 ]
 
-# Backward compatibility alias
-VOICE_NAMES = VOICE_NAMES_V1_0
+VOICE_NAMES_V1_1_DE = ["df_eva", "dm_bernd"]
 
 # Voice name documentation by language/variant
 # These voices are dynamically loaded from the model's voices.bin file
@@ -324,6 +330,7 @@ VOICE_NAMES_BY_VARIANT = {
     "huggingface-v1.1-zh": VOICE_NAMES_V1_1_ZH,  # Chinese-specific voices
     "github-v1.0": VOICE_NAMES_V1_0,  # Same as HuggingFace (multi-language)
     "github-v1.1-zh": VOICE_NAMES_V1_1_ZH,  # Chinese-specific voices
+    "github-v1.1-de": VOICE_NAMES_V1_1_DE,  # German-specific voices
 }
 
 
@@ -338,6 +345,7 @@ LANG_CODE_TO_ONNX = {
     "j": "ja",  # Japanese
     "p": "pt",  # Portuguese
     "z": "zh",  # Chinese
+    "d": "de",  # German
 }
 
 
@@ -362,7 +370,7 @@ def get_model_dir(
 
     Args:
         source: Model source (huggingface or github)
-        variant: Model variant (v1.0 or v1.1-zh)
+        variant: Model variant (v1.0, v1.1-de, v1.1-zh)
 
     Returns:
         Path to model directory
@@ -383,7 +391,7 @@ def get_voices_dir(
 
     Args:
         source: Model source (huggingface or github)
-        variant: Model variant (v1.0 or v1.1-zh)
+        variant: Model variant (v1.0 or v1.1-zh, v1.1-de)
 
     Returns:
         Path to voices directory
@@ -446,6 +454,8 @@ def get_model_path(
     elif source == "github":
         if variant == "v1.0":
             quality_files = MODEL_QUALITY_FILES_GITHUB_V1_0
+        elif variant == "v1.1-de":
+            quality_files = MODEL_QUALITY_FILES_GITHUB_V1_1_DE
         else:  # v1.1-zh
             quality_files = MODEL_QUALITY_FILES_GITHUB_V1_1_ZH
     else:
@@ -790,6 +800,8 @@ def download_config(
         repo_id = HF_CONFIG_REPO_V1_0  # hexgrad/Kokoro-82M
     elif variant == "v1.1-zh":
         repo_id = HF_CONFIG_REPO_V1_1_ZH  # hexgrad/Kokoro-82M-v1.1-zh
+    elif variant == "v1.1-de":
+        repo_id = HF_CONFIG_REPO_V1_1_DE  # Tundragoon/Kokoro-German
     else:
         raise ValueError(f"Unknown variant: {variant}")
 
@@ -810,7 +822,7 @@ def load_vocab_from_config(
     """Load vocabulary from variant-specific config.json.
 
     Args:
-        variant: Model variant (v1.0 or v1.1-zh)
+        variant: Model variant (v1.0 or v1.1-zh, or v1.1-de)
 
     Returns:
         Dictionary mapping phoneme characters to token indices
@@ -1246,6 +1258,9 @@ def download_model_github(
     elif variant == "v1.1-zh":
         quality_files = MODEL_QUALITY_FILES_GITHUB_V1_1_ZH
         base_url = GITHUB_BASE_URL_V1_1_ZH
+    elif variant == "v1.1-de":
+        quality_files = MODEL_QUALITY_FILES_GITHUB_V1_1_DE
+        base_url = GITHUB_BASE_URL_V1_1_DE
     else:
         raise ValueError(f"Unknown model variant: {variant}")
 
@@ -1295,6 +1310,9 @@ def download_voices_github(
     elif variant == "v1.1-zh":
         filename = GITHUB_VOICES_FILENAME_V1_1_ZH
         base_url = GITHUB_BASE_URL_V1_1_ZH
+    elif variant == "v1.1-de":
+        filename = GITHUB_VOICES_FILENAME_V1_1_DE
+        base_url = GITHUB_BASE_URL_V1_1_DE
     else:
         raise ValueError(f"Unknown model variant: {variant}")
 
@@ -1504,6 +1522,8 @@ class Kokoro:
                 available_qualities = MODEL_QUALITY_FILES_GITHUB_V1_0
             elif model_variant == "v1.1-zh":
                 available_qualities = MODEL_QUALITY_FILES_GITHUB_V1_1_ZH
+            elif model_variant == "v1.1-de":
+                available_qualities = MODEL_QUALITY_FILES_GITHUB_V1_1_DE
             else:
                 raise ValueError(f"Unknown model variant: {model_variant}")
 
@@ -1540,6 +1560,8 @@ class Kokoro:
                 # GitHub uses variant-specific filenames
                 if model_variant == "v1.0":
                     filename = GITHUB_VOICES_FILENAME_V1_0
+                elif model_variant == "v1.1-de":
+                    filename = GITHUB_VOICES_FILENAME_V1_1_DE
                 else:  # v1.1-zh
                     filename = GITHUB_VOICES_FILENAME_V1_1_ZH
                 voices_path = get_voices_dir("github", model_variant) / filename

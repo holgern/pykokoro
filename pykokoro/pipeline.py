@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from types import TracebackType
@@ -29,6 +30,225 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .onnx_backend import Kokoro
+
+
+def _coerce_generation(base: GenerationConfig, value: Any) -> GenerationConfig:
+    if value is None:
+        return base
+    if isinstance(value, GenerationConfig):
+        return value
+    if isinstance(value, Mapping):
+        return replace(base, **dict(value))
+    raise TypeError(
+        f"generation must be GenerationConfig | Mapping | None, got {type(value)!r}"
+    )
+
+
+def _coerce_paths_inplace(data: dict[str, Any]) -> None:
+    # Convenience: accept str paths in config dict.
+    for key in ("model_path", "voices_path"):
+        v = data.get(key)
+        if isinstance(v, str):
+            data[key] = Path(v)
+
+
+def _coerce_pipeline_config(
+    value: PipelineConfig | Mapping[str, Any] | None,
+) -> PipelineConfig:
+    if value is None:
+        return PipelineConfig()
+
+    if isinstance(value, PipelineConfig):
+        return value
+
+    if isinstance(value, Mapping):
+        data = dict(value)
+        gen_value = data.pop("generation", None)
+
+        _coerce_paths_inplace(data)
+        cfg = PipelineConfig(**data)
+
+        if gen_value is not None:
+            cfg = replace(cfg, generation=_coerce_generation(cfg.generation, gen_value))
+
+        return cfg
+
+    raise TypeError(
+        f"config must be PipelineConfig | Mapping | None, got {type(value)!r}"
+    )
+
+
+def _merge_config(
+    base: PipelineConfig,
+    overrides: Mapping[str, Any] | None,
+) -> PipelineConfig:
+    if not overrides:
+        return base
+
+    data = dict(overrides)
+    gen_value = data.pop("generation", None)
+
+    _coerce_paths_inplace(data)
+    cfg = replace(base, **data)
+
+    if gen_value is not None:
+        cfg = replace(cfg, generation=_coerce_generation(cfg.generation, gen_value))
+
+    return cfg
+
+
+def build_pipeline(
+    *,
+    config: PipelineConfig | Mapping[str, Any] | None = None,
+    overrides: Mapping[str, Any] | None = None,
+    backend: Kokoro | None = None,
+    eager: bool = False,
+    # stage overrides for advanced usage/testing
+    doc_parser: DocumentParser | None = None,
+    g2p: G2PAdapter | None = None,
+    phoneme_processing: PhonemeProcessor | None = None,
+    audio_generation: AudioGeneratorStage | None = None,
+    audio_postprocessing: AudioPostprocessor | None = None,
+) -> KokoroPipeline:
+    """
+    Construct a :class:`KokoroPipeline` from a single,
+    user-friendly configuration surface.
+
+    This helper is the recommended way to create pipelines.
+    It supports:
+
+    - **Single-shot configuration** via ``config=`` (a :class:`PipelineConfig`
+        or a dict-like object).
+    - **Predictable overrides** via ``overrides=``, which always take precedence
+        over ``config``.
+    - **Nested generation config**: both ``config`` and ``overrides`` may include
+        a ``"generation"`` key
+      as a :class:`GenerationConfig` or a mapping. Mappings are merged onto
+      the existing
+      :class:`GenerationConfig` (i.e. you can override only ``lang``
+      or only ``speed``).
+    - **Path convenience**: string values for ``model_path`` and
+      ``voices_path`` are automatically
+      converted to :class:`~pathlib.Path`.
+
+    Precedence
+    ----------
+    The effective configuration is computed in this order (later wins):
+
+    1. ``PipelineConfig()`` defaults
+    2. ``config=`` (if provided)
+    3. ``overrides=`` (if provided)
+
+    Backend and stage wiring
+    ------------------------
+    By default the returned pipeline is *lazy*: it will create and own a
+    :class:`~pykokoro.onnx_backend.Kokoro`
+    instance on first use (via :meth:`KokoroPipeline.run`) based on the
+    resolved :class:`PipelineConfig`.
+
+    If ``backend`` is provided, the default ONNX stages are bound to that
+    backend (unless you provide
+    explicit stage instances). In this mode the pipeline does **not**
+    manage the backend lifecycle.
+
+    Eager initialization
+    --------------------
+    If ``eager=True`` and ``backend is None``, the pipeline will immediately:
+
+    - create and own the :class:`~pykokoro.onnx_backend.Kokoro` backend,
+    - create default ONNX stages (phoneme processing, audio generation,
+        audio postprocessing),
+    - fail fast if model/provider/session configuration is invalid or required
+        files cannot be loaded.
+
+    Stage overrides (advanced)
+    --------------------------
+    You may pass custom stage instances (``doc_parser``, ``g2p``,
+    ``phoneme_processing``,
+    ``audio_generation``, ``audio_postprocessing``) for testing
+    or experimentation.
+    Unspecified stages fall back to the library defaults.
+
+    Examples
+    --------
+    Configure everything in one dict (including nested generation settings)::
+
+        pipe = build_pipeline(
+            config={
+                "voice": "af_nova",
+                "model_source": "huggingface",
+                "model_variant": "v1.0",
+                "provider": "cpu",
+                "generation": {"lang": "en-us", "speed": 1.05},
+            },
+            eager=True,
+        )
+
+    Override only one generation field without replacing the others::
+
+        pipe = build_pipeline(
+            config={"voice": "af_nova", "generation": {"lang": "en-us", "speed": 1.0}},
+            overrides={"generation": {"speed": 0.9}},
+        )
+
+    Args:
+        config: Base pipeline configuration.
+            May be a :class:`PipelineConfig` or a mapping.
+        overrides: Additional configuration applied on top of ``config``.
+            Always wins.
+        backend: Optional pre-constructed :class:`~pykokoro.onnx_backend.Kokoro`
+            to bind ONNX stages to.
+        eager: If true (and no ``backend`` is supplied), eagerly create/own
+            backend and default stages.
+        doc_parser: Optional document parser stage.
+        g2p: Optional grapheme-to-phoneme stage.
+        phoneme_processing: Optional phoneme processing stage.
+        audio_generation: Optional audio generation stage.
+        audio_postprocessing: Optional audio postprocessing stage.
+
+    Returns:
+        A configured :class:`KokoroPipeline` instance.
+    """
+    cfg = _coerce_pipeline_config(config)
+    cfg = _merge_config(cfg, overrides)
+
+    pipeline = KokoroPipeline(
+        cfg,
+        doc_parser=doc_parser or SsmdDocumentParser(),
+        g2p=g2p or KokoroG2PAdapter(),
+        phoneme_processing=phoneme_processing,
+        audio_generation=audio_generation,
+        audio_postprocessing=audio_postprocessing,
+    )
+
+    # If backend injected: bind default stages to it
+    # (unless user already provided stages)
+    if backend is not None:
+        if pipeline.phoneme_processing is None:
+            pipeline.phoneme_processing = OnnxPhonemeProcessorAdapter(backend)
+        if pipeline.audio_generation is None:
+            pipeline.audio_generation = OnnxAudioGenerationAdapter(backend)
+        if pipeline.audio_postprocessing is None:
+            pipeline.audio_postprocessing = OnnxAudioPostprocessingAdapter(backend)
+        return pipeline
+
+    # Eager warmup: create backend now + bind stages + own/close them
+    if eager:
+        kokoro, _ = pipeline._ensure_kokoro(cfg)
+
+        if pipeline.phoneme_processing is None:
+            pipeline.phoneme_processing = OnnxPhonemeProcessorAdapter(kokoro)
+            pipeline._owns_phoneme_processing = True
+
+        if pipeline.audio_generation is None:
+            pipeline.audio_generation = OnnxAudioGenerationAdapter(kokoro)
+            pipeline._owns_audio_generation = True
+
+        if pipeline.audio_postprocessing is None:
+            pipeline.audio_postprocessing = OnnxAudioPostprocessingAdapter(kokoro)
+            pipeline._owns_audio_postprocessing = True
+
+    return pipeline
 
 
 def _default_lang_from_voice(cfg: PipelineConfig) -> PipelineConfig:

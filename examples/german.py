@@ -18,9 +18,7 @@ import os
 
 import soundfile as sf
 
-from pykokoro import KokoroPipeline, PipelineConfig
-from pykokoro.generation_config import GenerationConfig
-from pykokoro.voice_manager import VoiceBlend
+from pykokoro import build_pipeline
 
 # Enable phoneme debugging to see what phonemes are generated
 os.environ["PYKOKORO_DEBUG_PHONEMES"] = "1"
@@ -53,32 +51,30 @@ Technologie verändert unsere Welt jeden Tag.
 Auf Wiedersehen und vielen Dank fürs Zuhören!
 """
 
-# Voice options - uncomment one to use:
-# VOICE = "af_bella"  # American Female (English-trained, attempting German)
-# VOICE = "ef_dora"   # Spanish Female (Romance language, may handle German better)
-# VOICE = "ff_siwis"  # French Female (Romance language, may handle German better)
-# VOICE = "ff_siwis"  # Using French voice for better German pronunciation
-BLEND = "ff_siwis:50,ef_dora:50"  # Blend of French and Spanish voices
-
+VOICE = "df_eva"
+# VOICE = "dm_bernd"
 LANG = "de"  # German language code for espeak-ng phonemization
 
 
 def main():
     """Generate German speech using English-trained voice."""
     print("Initializing TTS engine...")
-    pipe = KokoroPipeline(
-        PipelineConfig(
-            voice=VoiceBlend.parse(BLEND),
-            generation=GenerationConfig(lang=LANG, speed=1.0),
-        )
+    pipe = build_pipeline(
+        config={
+            "voice": VOICE,
+            "model_source": "github",
+            "model_variant": "v1.1-de",
+            "generation": {
+                "lang": LANG,
+            },
+        }
     )
 
     print("=" * 60)
-    print("NOTE: Kokoro was NOT explicitly trained on German.")
-    print("The model will attempt German phonemization via espeak-ng.")
+    print("The model from Tundragoon/Kokoro-German is used for German.")
     print("Pronunciation may not be perfect or native-sounding.")
     print("=" * 60)
-    print(f"\nVoice: {BLEND}")
+    print(f"\nVoice: {VOICE}")
     print(f"Language: {LANG}")
 
     print("\nGenerating audio...")
